@@ -1,0 +1,24 @@
+[
+	{
+	    "id" : "ElectricImp",
+	    "caption" : "Electric Imp",
+	    "children" : [ 
+	    	{
+		    	"caption" : "Create Project",
+		    	"command" : "imp_create_project"
+		    },
+	    	{
+		    	"caption" : "Deploy",
+		    	"command" : "imp_push"
+		    },
+	    	{
+		    	"caption" : "Console",
+		    	"command" : "imp_show_console"
+		    },
+	    	{
+		    	"caption" : "Select Device",
+		    	"command" : "imp_select_device"
+		    }
+	    ]
+	}
+]

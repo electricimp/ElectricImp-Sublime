@@ -1,0 +1,6 @@
+[
+   { "keys": ["ctrl+shift+l"], "command": "imp_create_project" },
+   { "keys": ["ctrl+shift+d"], "command": "imp_push" },
+   { "keys": ["ctrl+shift+c"], "command": "imp_show_console" },
+   { "keys": ["ctrl+shift+i"], "command": "imp_select_device" }
+]

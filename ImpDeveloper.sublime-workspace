@@ -1,0 +1,570 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"time",
+				"timestamp"
+			],
+			[
+				"logs_",
+				"logs_timestamp"
+			],
+			[
+				"logs",
+				"logs_timestamp"
+			],
+			[
+				"ei",
+				"eiCommand"
+			],
+			[
+				"EI",
+				"EI_LOGS_TIMESTAMP"
+			],
+			[
+				"E",
+				"EI_LOGS_TIMESTAMP"
+			],
+			[
+				"get",
+				"get_http_headers"
+			],
+			[
+				"load",
+				"load_ie_settings"
+			],
+			[
+				"get_",
+				"get_ie_settings_file_name"
+			],
+			[
+				"latest",
+				"latest_revision"
+			],
+			[
+				"repl",
+				"replacement"
+			],
+			[
+				"rep",
+				"replacement"
+			],
+			[
+				"base",
+				"basename"
+			],
+			[
+				"EI_",
+				"EI_SETTINGS_FILE_NAME"
+			],
+			[
+				"project",
+				"project_path"
+			],
+			[
+				"crea",
+				"create_project"
+			],
+			[
+				"build",
+				"build_api_key"
+			],
+			[
+				"sublime",
+				"sublime_plugin"
+			],
+			[
+				"is",
+				"is_electric_imp_project"
+			],
+			[
+				"pro",
+				"project_file_name"
+			],
+			[
+				"bas",
+				"basename"
+			],
+			[
+				"open",
+				"open_console"
+			],
+			[
+				"DE",
+				"DEVICE_FILE_NAME"
+			],
+			[
+				"file",
+				"fileName"
+			],
+			[
+				"subli",
+				"sublime_plugin"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"contents": "import os\nimport sys\nimport sublime\nimport sublime_plugin\nimport json\nimport base64\nimport shutil\nimport sched\nimport time\nimport datetime\nimport urllib\n\n# request-dists is the folder in our plugin\nsys.path.append(os.path.join(os.path.dirname(__file__), \"requests\"))\n\nimport requests\n\nEI_BUILD_URL          = \"https://build.electricimp.com/v4/\"\nPLUGIN_SETTINGS_FILE  = \"ImpDeveloper.sublime-settings\"\n\nEI_BUILD_API_KEY      = \"build-api-key\"\nEI_MODEL_ID           = \"model-id\"\nEI_DEVICE_FILE        = \"device-file\"\nEI_AGENT_FILE         = \"agent-file\"\nEI_DEVICE_ID          = \"device-id\"\n\nDEFAULT_PROJECT_NAME  = \"ei-project\"\nTEMPLATE_DIR_NAME     = \"project-template\"\nPROJECT_FILE_TEMPLATE = \"_project_name_.sublime-project\"\n\nsettings = None\nproject_windows = []\n\nclass BaseElectricImpCommand(sublime_plugin.WindowCommand):\n\n	def __init__(self, window):\n		self.window = window\n\n	def base64_encode(self, str):\n		return base64.b64encode(str.encode()).decode()\n\n	def get_http_headers(self, build_api_key):\n		return {\n			\"Authorization\" : \"Basic \" + self.base64_encode(build_api_key),\n			\"Content-Type\" : \"application/json\"\n		}\n\n	def get_ei_settings_file_name(self):\n		project_file_name = self.window.project_file_name()\n		if project_file_name:\n			project_dir = os.path.dirname(project_file_name)\n			settings_file_name = os.path.join(\n				project_dir, \n				os.path.basename(os.path.splitext(project_file_name)[0]) + \".electric-imp-settings\")\n			return settings_file_name\n		return None\n\n	def is_electric_imp_project(self):\n		settings_file_name = self.get_ei_settings_file_name()\n		return settings_file_name is not None and os.path.exists(settings_file_name)\n\n	def init_tty(self):\n		global project_windows\n		if self.window not in project_windows and self.is_electric_imp_project():\n			self.window.terminal = self.window.get_output_panel(\"textarea\")\n			self.window.terminal.logs_timestamp = \"2000-01-01T00:00:00.000+00:00\"\n			project_windows.append(self.window)\n			print(\"adding new project window: \" + str(len(project_windows)))\n		self.window.run_command(\"show_panel\", {\"panel\": \"output.textarea\"})\n\n	def tty(self, text):\n		global project_windows\n		if self.window in project_windows:\n			terminal = self.window.terminal\n			terminal.set_read_only(False)\n			terminal.run_command(\"append\", {\"characters\": text + \"\\n\"})\n			terminal.set_read_only(True)\n		else:\n			print(text);\n\n	def prompt_for_device(self):\n		ei_settings = self.load_ei_settings()\n		url = EI_BUILD_URL + \"models/\" + ei_settings.get(EI_MODEL_ID)\n		response = requests.get(url, headers=self.get_http_headers(ei_settings.get(EI_BUILD_API_KEY))).json()\n		self.device_ids = response.get(\"model\").get(\"devices\")\n		self.window.show_quick_panel(self.device_ids, self.on_device_selected)\n\n	def on_device_selected(self, index):\n		ei_settings = self.load_ei_settings()\n		ei_settings[EI_DEVICE_ID] = self.device_ids[index]\n		self.save_ei_settings(ei_settings)\n\n	def save_ei_settings(self, ei_settings):\n		with open(self.get_ei_settings_file_name(), \"w\") as settings_file:\n			json.dump(ei_settings, settings_file)\n\n	def load_ei_settings(self):\n		with open(self.get_ei_settings_file_name()) as file:    \n			return json.load(file)\n\n	def get_logs_timestamp(self):\n		return self.window.terminal.logs_timestamp\n\n	def set_logs_timestamp(self, timestamp):\n		self.window.terminal.logs_timestamp = timestamp\n\nclass ImpPushCommand(BaseElectricImpCommand):\n	def run(self):\n		self.init_tty()\n		ei_settings = self.load_ei_settings()\n		if EI_DEVICE_ID not in ei_settings:\n			decision = sublime.ok_cancel_dialog(\"Please select a device to display the logs for\")\n``			self.prompt_for_device()\n\n		project_dir = os.path.dirname(self.window.project_file_name())\n		agent_code  = self.read_file(os.path.join(project_dir, ei_settings.get(EI_AGENT_FILE)))\n		device_code = self.read_file(os.path.join(project_dir, ei_settings.get(EI_DEVICE_FILE)))\n\n		url = EI_BUILD_URL + \"models/\" + ei_settings.get(EI_MODEL_ID) + \"/revisions\"\n		data = '{\"agent_code\": ' + json.dumps(agent_code) + ', \"device_code\" : ' + json.dumps(device_code) + ' }'\n		response = requests.post(url, data=data, headers=self.get_http_headers(ei_settings.get(EI_BUILD_API_KEY))).json()\n		self.tty(\"Revision uploaded: \" + str(response[\"revision\"][\"version\"]))\n\n		url = EI_BUILD_URL + \"models/\" + ei_settings.get(EI_MODEL_ID) + \"/restart\"\n		response = requests.post(url, headers=self.get_http_headers(ei_settings.get(EI_BUILD_API_KEY)))\n\n	def is_enabled(self):\n		return self.is_electric_imp_project()\n\n	def read_file(self, filename):\n		with open(filename) as f: s = f.read()\n		return s\n\nclass ImpShowConsoleCommand(BaseElectricImpCommand):\n	def run(self):\n		self.init_tty()\n\n	def is_enabled(self):\n			return self.is_electric_imp_project()\n\nclass ImpSelectDeviceCommand(BaseElectricImpCommand):\n	def run(self):\n		self.prompt_for_device()\n\n	def is_enabled(self):\n			return self.is_electric_imp_project()\n\nclass ImpCreateProjectCommand(BaseElectricImpCommand):\n	def run(self):\n		self.init_tty()\n		self.default_project_path = self.get_default_project_path()\n		self.window.show_input_panel(\"New Electric Imp Project Location:\", \n			self.default_project_path, self.on_project_path_entered, None, None)		\n\n	def get_default_project_path(self):\n		default_project_path_setting = settings.get(\"default_project_path\")\n		default_project_path = None\n		if not default_project_path_setting:\n			if sublime.platform() == \"windows\":\n				default_project_path = os.path.expanduser(\"~\\\\\" + DEFAULT_PROJECT_NAME).replace(\"\\\\\", \"/\")\n			else:\n				default_project_path = os.path.expanduser(\"~/\" + DEFAULT_PROJECT_NAME)\n		else:\n			default_project_path = default_project_path_setting\n		return default_project_path \n\n	def on_project_path_entered(self, path):\n		self.tty(\"Project path specified: \" + path)\n		self.project_path = path\n\n		if os.path.exists(path):\n			decision = sublime.ok_cancel_dialog(\n				\"Something already exists at \" + path +\n				\".\\nDo you want to create project in that folder?\" +\n				\"\\n(Existing objects will not be overwritten)\"\n			)\n			if not decision:\n				return\n		self.prompt_build_api_key()\n\n	def prompt_build_api_key(self):\n		self.window.show_input_panel(\"Electric Imp Build API key:\", \n			\"09fc8b113fdcadcdff868daacf875017\", self.on_build_api_key_entered, None, None)		\n	\n	def on_build_api_key_entered(self, key):\n		self.tty(\"build api key entered: \" + key)\n		self.build_api_key = key\n		if self.build_api_key_is_valid(key):\n			self.tty(\"build API key is valid\")\n			self.prompt_for_model()\n		else:\n			decision = sublime.ok_cancel_dialog(\n				\"Build API key is invalid. Try another one?\"\n			)\n			if decision:\n				self.prompt_build_api_key()\n\n	def prompt_for_model(self):\n		response = requests.get(EI_BUILD_URL + \"models\", headers=self.get_http_headers(self.build_api_key)).json()\n		if (len(response[\"models\"]) > 0):\n			sublime.message_dialog(\"Now please select one of the\\navailable Models for your project\")\n			self.all_model_names = [model[\"name\"] for model in response[\"models\"]]\n			self.all_model_ids = [model[\"id\"] for model in response[\"models\"]]\n		else:\n			sublime.message_dialog(\n				\"There are no models registered in the system.\\n\" +\n				\"Please register one at the developer console and try again.\"\n			)\n\n		self.window.show_quick_panel(self.all_model_names, self.on_model_choosen)\n\n	def on_model_choosen(self, index):\n		self.model_id = self.all_model_ids[index]\n		self.model_name = self.all_model_names[index]\n\n		self.tty(\"model choosen (name, id): (\" + self.model_name + \", \" + self.model_id + \")\")\n		self.create_project()\n\n	def create_project(self):\n		self.tty(\"Creating project at:\" + self.project_path)\n		try:\n			os.stat(self.project_path)\n		except:\n			os.mkdir(self.project_path)\n\n		self.copy_project_template_file(PROJECT_FILE_TEMPLATE)\n\n		# Create Electric Imp project settings file\n		settings_file_name = dst = os.path.join(self.project_path, \n			os.path.basename(self.project_path) + \".electric-imp-settings\");\n		settings = {\n			EI_BUILD_API_KEY : self.build_api_key,\n			EI_MODEL_ID      : self.model_id,\n			EI_DEVICE_FILE   : self.model_name + \".device.nut\",\n			EI_AGENT_FILE    : self.model_name + \".agent.nut\"\n		}\n		with open(settings_file_name, \"w\") as settings_file:\n			json.dump(settings, settings_file)\n\n		self.pull_model_revision()\n		self.window.run_command(\"open_dir\", {\"dir\":self.project_path})\n\n	def copy_project_template_file(self, filename):\n		src = os.path.join(self.get_template_dir(), filename)\n		dst = os.path.join(self.project_path, \n			filename.replace(\"_project_name_\", os.path.basename(self.project_path)))\n		shutil.copy(src, dst)\n   \n	def pull_model_revision(self):\n		agent_file  = os.path.join(self.project_path, self.model_name + \".agent.nut\")\n		device_file = os.path.join(self.project_path, self.model_name + \".device.nut\")\n\n		revisions = requests.get(\n			EI_BUILD_URL + \"models/\" + self.model_id + \"/revisions\", \n			headers=self.get_http_headers(self.build_api_key)).json()\n		if len(revisions[\"revisions\"]) > 0:\n			latest_revision_url = EI_BUILD_URL + \"models/\" + self.model_id + \"/revisions/\" + \\\n								  str(revisions[\"revisions\"][0][\"version\"]);\n			code = requests.get(\n				latest_revision_url, \n				headers=self.get_http_headers(self.build_api_key)).json()\n			with open(agent_file, \"w\") as file:\n				file.write(code[\"revision\"][\"agent_code\"])\n			with open(device_file, \"w\") as file:\n				file.write(code[\"revision\"][\"device_code\"])\n		else:\n			# Create empty files\n			open(agent_file,  'a').close()\n			open(device_file, 'a').close()\n\n	def get_template_dir(self):\n		return os.path.join(os.path.dirname(os.path.realpath(__file__)), TEMPLATE_DIR_NAME)\n\n	def build_api_key_is_valid(self, key):\n		return requests.get(EI_BUILD_URL + \"models\", \n			headers=self.get_http_headers(key)).status_code == 200\n\ndef plugin_loaded():\n	global settings\n	settings = sublime.load_settings(PLUGIN_SETTINGS_FILE)\n\ndef update_log_windows():\n	global project_windows\n	try:\n		for window in project_windows:\n			eiCommand   = BaseElectricImpCommand(window)\n			ei_settings = eiCommand.load_ei_settings()\n			device_id   = ei_settings.get(EI_DEVICE_ID)\n			timestamp   = eiCommand.get_logs_timestamp()\n			if device_id is None or timestamp is None: \n				continue\n			url = EI_BUILD_URL + \"devices/\" + ei_settings.get(EI_DEVICE_ID) + \"/logs?since=\" + urllib.parse.quote(timestamp)\n			response = requests.get(url, headers=eiCommand.get_http_headers(ei_settings.get(EI_BUILD_API_KEY))).json()\n			log_size = len(response[\"logs\"])\n			if \"logs\" in response and log_size > 0:\n				timestampt = response[\"logs\"][log_size - 1][\"timestamp\"]\n				eiCommand.set_logs_timestamp(timestampt)\n				eiCommand.save_ei_settings(ei_settings)\n\n				for log in response[\"logs\"]:\n					try:\n						type = {\n							\"status\"       : \"[Status]\",\n							\"server.log\"   : \"[Device]\",\n							\"server.error\" : \"[Error]\"\n						} [log[\"type\"]]\n					except:\n						type = \"[Log]\"\n					eiCommand.tty(log[\"timestamp\"] + \" \" + type + \" \" + log[\"message\"])\n	finally:\n		sublime.set_timeout_async(update_log_windows, 1000)\n\nupdate_log_windows()",
+			"file": "ImpDeveloper.py",
+			"file_size": 10993,
+			"file_write_time": 131148949170000000,
+			"settings":
+			{
+				"buffer_size": 10995,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "import os\nimport sys\nimport sublime\nimport sublime_plugin\nimport json\nimport base64\nimport shutil\nimport sched\nimport time\n\n# request-dists is the folder in our plugin\nsys.path.append(os.path.join(os.path.dirname(__file__), \"requests\"))\n\nimport requests\n\nEI_BUILD_URL          = \"https://build.electricimp.com/v4/\"\nPLUGIN_SETTINGS_FILE  = \"ImpDeveloper.sublime-settings\"\n\nEI_BUILD_API_KEY      = \"build-api-key\"\nEI_MODEL_ID           = \"model-id\"\nEI_DEVICE_FILE        = \"device-file\"\nEI_AGENT_FILE         = \"agent-file\"\nEI_DEVICE_ID          = \"device-id\"\nEI_LOGS_TIMESTAMP     = \"logs-timestamp\"\n\nDEFAULT_PROJECT_NAME  = \"ei-project\"\nTEMPLATE_DIR_NAME     = \"project-template\"\nPROJECT_FILE_TEMPLATE = \"_project_name_.sublime-project\"\n\nsettings = None\nproject_windows = []\n\nclass BaseElectricImpCommand(sublime_plugin.WindowCommand):\n\n	def __init__(self, window):\n		self.window = window\n\n	def base64_encode(self, str):\n		return base64.b64encode(str.encode()).decode()\n\n	def get_http_headers(self, build_api_key):\n		return {\n			\"Authorization\" : \"Basic \" + self.base64_encode(build_api_key),\n			\"Content-Type\" : \"application/json\"\n		}\n\n	def get_ei_settings_file_name(self):\n		project_file_name = self.window.project_file_name()\n		if project_file_name:\n			project_dir = os.path.dirname(project_file_name)\n			settings_file_name = os.path.join(\n				project_dir, \n				os.path.basename(os.path.splitext(project_file_name)[0]) + \".electric-imp-settings\")\n			return settings_file_name\n		return None\n\n	def is_electric_imp_project(self):\n		settings_file_name = self.get_ei_settings_file_name()\n		return settings_file_name is not None and os.path.exists(settings_file_name)\n\n	def init_tty(self):\n		global project_windows\n		if self.window not in project_windows and self.is_electric_imp_project():\n			self.window.terminal = self.window.get_output_panel(\"textarea\")\n			project_windows.append(self.window)\n		self.window.run_command(\"show_panel\", {\"panel\": \"output.textarea\"})\n\n	def tty(self, text):\n		global project_windows\n		if self.window in project_windows:\n			terminal = self.window.terminal\n			terminal.set_read_only(False)\n			terminal.run_command(\"append\", {\"characters\": text + \"\\n\"})\n			terminal.set_read_only(True)\n		else:\n			print(text)\n\n	def prompt_for_device(self):\n		ei_settings = self.load_ei_settings()\n		url = EI_BUILD_URL + \"models/\" + ei_settings.get(EI_MODEL_ID)\n		response = requests.get(url, headers=self.get_http_headers(ei_settings.get(EI_BUILD_API_KEY))).json()\n		self.device_ids = response.get(\"model\").get(\"devices\")\n		self.window.show_quick_panel(self.device_ids, self.on_device_selected)\n\n	def on_device_selected(self, index):\n		ei_settings = self.load_ei_settings()\n		device_id = self.device_ids[index]\n		ei_settings[EI_DEVICE_ID] = device_id\n		ei_settings[EI_LOGS_TIMESTAMP] = 0\n		with open(self.get_ei_settings_file_name(), \"w\") as settings_file:\n			json.dump(ei_settings, settings_file)\n\n	def load_ei_settings(self):\n		with open(self.get_ei_settings_file_name()) as file:    \n			return json.load(file)\n\nclass ImpPushCommand(BaseElectricImpCommand):\n	def run(self):\n		self.init_tty()\n		ei_settings = self.load_ei_settings()\n		if EI_DEVICE_ID not in ei_settings:\n			decision = sublime.ok_cancel_dialog(\"Please select a device to display the logs for\")\n			self.prompt_for_device()\n\n		project_dir = os.path.dirname(self.window.project_file_name())\n		agent_code  = self.read_file(os.path.join(project_dir, ei_settings.get(EI_AGENT_FILE)))\n		device_code = self.read_file(os.path.join(project_dir, ei_settings.get(EI_DEVICE_FILE)))\n\n		url = EI_BUILD_URL + \"models/\" + ei_settings.get(EI_MODEL_ID) + \"/revisions\"\n		data = '{\"agent_code\": ' + json.dumps(agent_code) + ', \"device_code\" : ' + json.dumps(device_code) + ' }'\n		response = requests.post(url, data=data, headers=self.get_http_headers(ei_settings.get(EI_BUILD_API_KEY))).json()\n		self.tty(\"Revision uploaded: \" + str(response[\"revision\"][\"version\"]))\n\n	def is_enabled(self):\n		return self.is_electric_imp_project()\n\n	def read_file(self, filename):\n		with open(filename) as f: s = f.read()\n		return s\n\nclass ImpShowConsoleCommand(BaseElectricImpCommand):\n	def run(self):\n		self.init_tty()\n\n	def is_enabled(self):\n			return self.is_electric_imp_project()\n\nclass ImpSelectDeviceCommand(BaseElectricImpCommand):\n	def run(self):\n		self.prompt_for_device()\n\n	def is_enabled(self):\n			return self.is_electric_imp_project()\n\nclass ImpCreateProjectCommand(BaseElectricImpCommand):\n	def run(self):\n		self.init_tty()\n		self.default_project_path = self.get_default_project_path()\n		self.window.show_input_panel(\"New Electric Imp Project Location:\", \n			self.default_project_path, self.on_project_path_entered, None, None)		\n\n	def get_default_project_path(self):\n		default_project_path_setting = settings.get(\"default_project_path\")\n		default_project_path = None\n		if not default_project_path_setting:\n			if sublime.platform() == \"windows\":\n				default_project_path = os.path.expanduser(\"~\\\\\" + DEFAULT_PROJECT_NAME).replace(\"\\\\\", \"/\")\n			else:\n				default_project_path = os.path.expanduser(\"~/\" + DEFAULT_PROJECT_NAME)\n		else:\n			default_project_path = default_project_path_setting\n		return default_project_path \n\n	def on_project_path_entered(self, path):\n		self.tty(\"Project path specified: \" + path)\n		self.project_path = path\n\n		if os.path.exists(path):\n			decision = sublime.ok_cancel_dialog(\n				\"Something already exists at \" + path +\n				\".\\nDo you want to create project in that folder?\" +\n				\"\\n(Existing objects will not be overwritten)\"\n			)\n			if not decision:\n				return\n		self.prompt_build_api_key()\n\n	def prompt_build_api_key(self):\n		self.window.show_input_panel(\"Electric Imp Build API key:\", \n			\"09fc8b113fdcadcdff868daacf875017\", self.on_build_api_key_entered, None, None)		\n	\n	def on_build_api_key_entered(self, key):\n		self.tty(\"build api key entered: \" + key)\n		self.build_api_key = key\n		if self.build_api_key_is_valid(key):\n			self.tty(\"build API key is valid\")\n			self.prompt_for_model()\n		else:\n			decision = sublime.ok_cancel_dialog(\n				\"Build API key is invalid. Try another one?\"\n			)\n			if decision:\n				self.prompt_build_api_key()\n\n	def prompt_for_model(self):\n		response = requests.get(EI_BUILD_URL + \"models\", headers=self.get_http_headers(self.build_api_key)).json()\n		if (len(response[\"models\"]) > 0):\n			sublime.message_dialog(\"Now please select one of the\\navailable Models for your project\")\n			self.all_model_names = [model[\"name\"] for model in response[\"models\"]]\n			self.all_model_ids = [model[\"id\"] for model in response[\"models\"]]\n		else:\n			sublime.message_dialog(\n				\"There are no models registered in the system.\\n\" +\n				\"Please register one at the developer console and try again.\"\n			)\n\n		self.window.show_quick_panel(self.all_model_names, self.on_model_choosen)\n\n	def on_model_choosen(self, index):\n		self.model_id = self.all_model_ids[index]\n		self.model_name = self.all_model_names[index]\n\n		self.tty(\"model choosen (name, id): (\" + self.model_name + \", \" + self.model_id + \")\")\n		self.create_project()\n\n	def create_project(self):\n		self.tty(\"Creating project at:\" + self.project_path)\n		try:\n			os.stat(self.project_path)\n		except:\n			os.mkdir(self.project_path)\n\n		self.copy_project_template_file(PROJECT_FILE_TEMPLATE)\n\n		# Create Electric Imp project settings file\n		settings_file_name = dst = os.path.join(self.project_path, \n			os.path.basename(self.project_path) + \".electric-imp-settings\");\n		settings = {\n			EI_BUILD_API_KEY : self.build_api_key,\n			EI_MODEL_ID      : self.model_id,\n			EI_DEVICE_FILE   : self.model_name + \".device.nut\",\n			EI_AGENT_FILE    : self.model_name + \".agent.nut\"\n		}\n		with open(settings_file_name, \"w\") as settings_file:\n			json.dump(settings, settings_file)\n\n		self.pull_model_revision()\n		self.window.run_command(\"open_dir\", {\"dir\":self.project_path})\n\n	def copy_project_template_file(self, filename):\n		src = os.path.join(self.get_template_dir(), filename)\n		dst = os.path.join(self.project_path, \n			filename.replace(\"_project_name_\", os.path.basename(self.project_path)))\n		shutil.copy(src, dst)\n   \n	def pull_model_revision(self):\n		agent_file  = os.path.join(self.project_path, self.model_name + \".agent.nut\")\n		device_file = os.path.join(self.project_path, self.model_name + \".device.nut\")\n\n		revisions = requests.get(\n			EI_BUILD_URL + 'models/' + self.model_id + '/revisions', \n			headers=self.get_http_headers(self.build_api_key)).json()\n		if len(revisions['revisions']) > 0:\n			latest_revision_url = EI_BUILD_URL + 'models/' + self.model_id + '/revisions/' + \\\n								  str(revisions['revisions'][0]['version']);\n			code = requests.get(\n				latest_revision_url, \n				headers=self.get_http_headers(self.build_api_key)).json()\n			with open(agent_file, \"w\") as file:\n				file.write(code['revision']['agent_code'])\n			with open(device_file, \"w\") as file:\n				file.write(code['revision']['device_code'])\n		else:\n			# Create empty files\n			open(agent_file,  'a').close()\n			open(device_file, 'a').close()\n\n	def get_template_dir(self):\n		return os.path.join(os.path.dirname(os.path.realpath(__file__)), TEMPLATE_DIR_NAME)\n\n	def build_api_key_is_valid(self, key):\n		return requests.get(EI_BUILD_URL + \"models\", \n			headers=self.get_http_headers(key)).status_code == 200\n\ndef plugin_loaded():\n	global settings\n	settings = sublime.load_settings(PLUGIN_SETTINGS_FILE)\n\n# counter = 0\n# def print_time():\n# 	global counter\n# 	counter += 1\n# 	print(str(counter))\n# 	sublime.set_timeout_async(print_time, 1000)\n\n# print_time()\n",
+			"settings":
+			{
+				"buffer_size": 9479,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "Default (OSX).sublime-keymap",
+			"settings":
+			{
+				"buffer_size": 253,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "README.md",
+			"settings":
+			{
+				"buffer_size": 2414,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"contents": "APIs structure:\n\nwhat existed bprior to build api:\n/v3/ide/ \n/v3/ops/ - production\n/api - mobile apis\n/account  - login\n/debug  \n\nNext set of APIs is based on JSON apis under /v5: roles, invitations, products, device_group, devices\n\njson apis.org \n\nDeviceGroup\n	name\n	type\n\nJino, Kevin to work with on the production flow\n\n\n\n\n\n\n",
+			"settings":
+			{
+				"buffer_size": 328,
+				"line_ending": "Unix",
+				"name": "APIs structure:"
+			}
+		},
+		{
+			"file": "Main.sublime-menu",
+			"settings":
+			{
+				"buffer_size": 444,
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 307.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"instal",
+				"Package Control: Install Package"
+			]
+		],
+		"width": 467.0
+	},
+	"console":
+	{
+		"height": 250.0,
+		"history":
+		[
+			"a = {}; b = \"b\"; if True: print(\"a\")",
+			"a = {}; b = \"b\"; if True print(\"a\")",
+			"a = {}; b = \"b\"; print(\"a\")",
+			"a = {}; b = \"b\"; if b: print(\"a\")",
+			"a = {}; b = \"b\"; if (b not in a): print(\"a\")",
+			"a = {}; b = \"b\"; if b not in a: print(\"a\")",
+			"a = {}; b = 1; if b not in a: print(\"a\")",
+			"if \"1\" not in a: \\",
+			"if \"1\" not in a:",
+			"if \"1\" not in a",
+			"if \"1\" not in a: print(\"a\");",
+			"if \"1\" not in a: print(\"a\")",
+			"a = {}; ",
+			"a = {}; if \"1\" not in a: print(\"a\")",
+			"a = {}; exists(a[\"1\"])",
+			"a = {}; print(a[\"1\"])",
+			"{\"1\": 1, \"2\":2}.get(\"1\")",
+			"import os; os.path.basename('/var/tmp/hello')",
+			"os.path.basename('/var/tmp/hello')",
+			"import os; os.path.basename(os.path.splitext('/user/bin/file.ext-asdf')[0]);",
+			"import os; os.path.splitext('/user/bin/file.ext-asdf')[0];",
+			"import os; os.path.splitext('/user/bin/file.ext-asdf');",
+			"import os; os.path.splitext('/user/bin/file.ext');",
+			"import os.path; os.path.splitext('/user/bin/file.ext');",
+			"os.path.splitext('/user/bin/file.ext')",
+			"view.run_command(\"imp_create_project\")",
+			"view.run_command(\"imp_push\")",
+			"view.run_command(\"imp-push\")",
+			"import urllib.request,os,hashlib; h = '2915d1851351e5ee549c20394736b442' + '8bc59f460fa1548d1514676163dafc88'; pf = 'Package Control.sublime-package'; ipp = sublime.installed_packages_path(); urllib.request.install_opener( urllib.request.build_opener( urllib.request.ProxyHandler()) ); by = urllib.request.urlopen( 'http://packagecontrol.io/' + pf.replace(' ', '%20')).read(); dh = hashlib.sha256(by).hexdigest(); print('Error validating download (got %s instead of %s), please try manual install' % (dh, h)) if dh != h else open(os.path.join( ipp, pf), 'wb' ).write(by)"
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/project-template"
+	],
+	"file_history":
+	[
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/project-template/_project_name_.electric-imp-settings",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/project-template/_project_name_.sublime-project",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/Default (OSX).sublime-keymap",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/ImpDeveloper.sublime-settings",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/ImpDeveloper.sublime-project",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/ElectricImp/README.md",
+		"/Users/pavelpetroshenko/Library/Application Support/Sublime Text 3/Packages/Imp/imp-plugin.sublime-project"
+	],
+	"find":
+	{
+		"height": 35.0
+	},
+	"find_in_files":
+	{
+		"height": 93.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+			"timestamp",
+			"EI_LOGS_TIMESTAMP",
+			"\n		",
+			"prompt_for_device",
+			"load_ei_settings",
+			"self.tty(",
+			"init_tty",
+			"is_electric_imp_project",
+			"get_ie_settings_file_name",
+			"):\n",
+			"prompt_for_device",
+			"load_ei_settings",
+			"self.tty(",
+			"init_tty",
+			"self.tty(",
+			"init_tty",
+			"self.tty",
+			"init_tty",
+			"is_electric_imp_project",
+			"get_ie_settings_file_name",
+			"is_electric_imp_project",
+			"is_electric_imp_projetc",
+			"is_ei",
+			"print",
+			"open_console",
+			"show_console",
+			")\n",
+			"join",
+			"get_ie_settings_file_name",
+			"SETTINGS_FILE",
+			"settings.",
+			"is_electric_imp_project",
+			"os.path.",
+			"os.",
+			"'",
+			"_handlers"
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+			"",
+			"\""
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"selected": 0,
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "ImpDeveloper.py",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 10995,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								4569,
+								4569
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 1680.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 9479,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								9419,
+								9462
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Python/Python.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 3066.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"type": "text"
+				},
+				{
+					"buffer": 2,
+					"file": "Default (OSX).sublime-keymap",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 253,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								215,
+								215
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/JavaScript/JSON.sublime-syntax"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 3,
+					"type": "text"
+				},
+				{
+					"buffer": 3,
+					"file": "README.md",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 2414,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								891,
+								891
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Markdown/Markdown.sublime-syntax"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 5,
+					"type": "text"
+				},
+				{
+					"buffer": 4,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 328,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								322,
+								322
+							]
+						],
+						"settings":
+						{
+							"auto_name": "APIs structure:",
+							"syntax": "Packages/Text/Plain text.tmLanguage"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 4,
+					"type": "text"
+				},
+				{
+					"buffer": 5,
+					"file": "Main.sublime-menu",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 444,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								422,
+								422
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/JavaScript/JSON.sublime-syntax",
+							"translate_tabs_to_spaces": false
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 2,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 34.0
+	},
+	"input":
+	{
+		"height": 31.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"pinned_build_system": "",
+	"project": "ImpDeveloper.sublime-project",
+	"replace":
+	{
+		"height": 64.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 500.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 380.0
+	},
+	"select_symbol":
+	{
+		"height": 392.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 749.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 260.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}
