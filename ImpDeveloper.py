@@ -125,8 +125,17 @@ class ImpPushCommand(BaseElectricImpCommand):
 		self.init_tty()
 		ei_settings = self.load_ei_settings()
 		project_dir = os.path.dirname(self.window.project_file_name())
-		agent_code  = self.read_file(os.path.join(project_dir, ei_settings.get(EI_AGENT_FILE)))
-		device_code = self.read_file(os.path.join(project_dir, ei_settings.get(EI_DEVICE_FILE)))
+
+		agent_file_name  = os.path.join(project_dir, ei_settings.get(EI_AGENT_FILE))
+		device_file_name = os.path.join(project_dir, ei_settings.get(EI_DEVICE_FILE))
+
+		if not os.path.exists(agent_file_name) or not os.path.exists(device_file_name):
+			self.log_debug("Can't find code files")
+			sublime.message_dialog("Code files for agent and device are absent. Please check the project settings: " + 
+				self.get_ei_settings_file_name())
+
+		agent_code  = self.read_file(agent_file_name)
+		device_code = self.read_file(device_file_name)
 
 		url = EI_BUILD_URL + "models/" + ei_settings.get(EI_MODEL_ID) + "/revisions"
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
@@ -181,12 +190,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.project_path = path
 
 		if os.path.exists(path):
-			decision = sublime.ok_cancel_dialog(
-				"Something already exists at " + path +
-				".\nDo you want to create project in that folder?" +
-				"\n(Existing objects will not be overwritten)"
-			)
-			if not decision:
+			if not sublime.ok_cancel_dialog(
+				"Something already exists at " + path + ". Do you want to create project in that folder?"):
 				return
 		self.prompt_build_api_key()
 
@@ -201,23 +206,22 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 			self.log_debug("build API key is valid")
 			self.prompt_for_model()
 		else:
-			decision = sublime.ok_cancel_dialog(
-				"Build API key is invalid. Try another one?"
-			)
-			if decision:
+			if sublime.ok_cancel_dialog("Build API key is invalid. Try another one?"):
 				self.prompt_build_api_key()
 
 	def prompt_for_model(self):
 		response = requests.get(EI_BUILD_URL + "models", headers=self.get_http_headers(self.build_api_key)).json()
 		if (len(response["models"]) > 0):
-			sublime.message_dialog("Now please select one of the\navailable Models for your project")
+			if not sublime.ok_cancel_dialog("Please select one of the available Models for the project"):
+				return
 			self.all_model_names = [model["name"] for model in response["models"]]
 			self.all_model_ids = [model["id"] for model in response["models"]]
 		else:
 			sublime.message_dialog(
-				"There are no models registered in the system.\n" +
-				"Please register one at the developer console and try again."
+				"There are no models registered in the system. " +
+				"Please register one from the developer console and try again."
 			)
+			return
 
 		self.window.show_quick_panel(self.all_model_names, self.on_model_choosen)
 
