@@ -206,7 +206,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 			self.log_debug("build API key is valid")
 			self.prompt_for_model()
 		else:
-			if sublime.ok_cancel_dialog("Build API key is invalid. Try another one?"):
+			if sublime.ok_cancel_dialog("Build API key is invalid. Please try another one."):
 				self.prompt_build_api_key()
 
 	def prompt_for_model(self):
