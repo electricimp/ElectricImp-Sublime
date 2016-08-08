@@ -17,6 +17,7 @@ import requests
 
 EI_BUILD_URL          = "https://build.electricimp.com/v4/"
 PLUGIN_SETTINGS_FILE  = "ImpDeveloper.sublime-settings"
+DEBUG_FLAG            = "debug"
 
 EI_BUILD_API_KEY      = "build-api-key"
 EI_MODEL_ID           = "model-id"
@@ -62,10 +63,18 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def init_tty(self):
 		global project_windows
 		if self.window not in project_windows and self.is_electric_imp_project():
+			ei_settings = self.load_ei_settings()
+			# Prompt for device if it wasn't selected yet
+			if EI_DEVICE_ID not in ei_settings:
+				decision = sublime.ok_cancel_dialog("Please select a device to display the logs for")
+				if decision:
+					self.prompt_for_device()
+				else:
+					return
 			self.window.terminal = self.window.get_output_panel("textarea")
 			self.window.terminal.logs_timestamp = "2000-01-01T00:00:00.000+00:00"
 			project_windows.append(self.window)
-			print("adding new project window: " + str(len(project_windows)))
+			self.log_debug("adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
 		self.window.run_command("show_panel", {"panel": "output.textarea"})
 
 	def tty(self, text):
@@ -95,8 +104,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 			json.dump(ei_settings, settings_file)
 
 	def load_ei_settings(self):
-		with open(self.get_ei_settings_file_name()) as file:    
-			return json.load(file)
+		file_name = self.get_ei_settings_file_name()
+		if file_name:
+			with open(file_name) as file:    
+				return json.load(file)
 
 	def get_logs_timestamp(self):
 		return self.window.terminal.logs_timestamp
@@ -104,14 +115,15 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def set_logs_timestamp(self, timestamp):
 		self.window.terminal.logs_timestamp = timestamp
 
+	def log_debug(self, text):
+		global settings
+		if settings.get(DEBUG_FLAG) == True:
+			print("  [ElectricImp] " + text)
+
 class ImpPushCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
 		ei_settings = self.load_ei_settings()
-		if EI_DEVICE_ID not in ei_settings:
-			decision = sublime.ok_cancel_dialog("Please select a device to display the logs for")
-			self.prompt_for_device()
-
 		project_dir = os.path.dirname(self.window.project_file_name())
 		agent_code  = self.read_file(os.path.join(project_dir, ei_settings.get(EI_AGENT_FILE)))
 		device_code = self.read_file(os.path.join(project_dir, ei_settings.get(EI_DEVICE_FILE)))
@@ -165,7 +177,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		return default_project_path 
 
 	def on_project_path_entered(self, path):
-		self.tty("Project path specified: " + path)
+		self.log_debug("Project path specified: " + path)
 		self.project_path = path
 
 		if os.path.exists(path):
@@ -183,10 +195,10 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 			"", self.on_build_api_key_entered, None, None)		
 	
 	def on_build_api_key_entered(self, key):
-		self.tty("build api key entered: " + key)
+		self.log_debug("build api key entered: " + key)
 		self.build_api_key = key
 		if self.build_api_key_is_valid(key):
-			self.tty("build API key is valid")
+			self.log_debug("build API key is valid")
 			self.prompt_for_model()
 		else:
 			decision = sublime.ok_cancel_dialog(
@@ -213,11 +225,11 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.model_id = self.all_model_ids[index]
 		self.model_name = self.all_model_names[index]
 
-		self.tty("model choosen (name, id): (" + self.model_name + ", " + self.model_id + ")")
+		self.log_debug("model choosen (name, id): (" + self.model_name + ", " + self.model_id + ")")
 		self.create_project()
 
 	def create_project(self):
-		self.tty("Creating project at:" + self.project_path)
+		self.log_debug("Creating project at:" + self.project_path)
 		try:
 			os.stat(self.project_path)
 		except:
@@ -283,11 +295,17 @@ def update_log_windows():
 	global project_windows
 	try:
 		for window in project_windows:
-			eiCommand   = BaseElectricImpCommand(window)
+			eiCommand = BaseElectricImpCommand(window)
+			if not eiCommand.is_electric_imp_project():
+				# It's not a windows that corresponds to an EI project, remove it from the list
+				project_windows.remove(window)
+				eiCommand.log_debug("Removing window from the windows project: " + str(window) + ", total windows now: " + str(len(project_windows)))
+				continue
 			ei_settings = eiCommand.load_ei_settings()
 			device_id   = ei_settings.get(EI_DEVICE_ID)
 			timestamp   = eiCommand.get_logs_timestamp()
-			if device_id is None or timestamp is None: 
+			if device_id is None or timestamp is None:
+				# Device is not selected yet and the console is not setup for the project, nothing to do
 				continue
 			url = EI_BUILD_URL + "devices/" + ei_settings.get(EI_DEVICE_ID) + "/logs?since=" + urllib.parse.quote(timestamp)
 			response = requests.get(url, headers=eiCommand.get_http_headers(ei_settings.get(EI_BUILD_API_KEY))).json()
@@ -295,7 +313,6 @@ def update_log_windows():
 			if "logs" in response and log_size > 0:
 				timestampt = response["logs"][log_size - 1]["timestamp"]
 				eiCommand.set_logs_timestamp(timestampt)
-				eiCommand.save_ei_settings(ei_settings)
 
 				for log in response["logs"]:
 					try:
@@ -305,6 +322,7 @@ def update_log_windows():
 							"server.error" : "[Error]"
 						} [log["type"]]
 					except:
+						eiCommand.log_debug("Unrecognized log type: " + log["type"])
 						type = "[Log]"
 					eiCommand.tty(log["timestamp"] + " " + type + " " + log["message"])
 	finally:
