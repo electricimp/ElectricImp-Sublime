@@ -1,0 +1,87 @@
+
+{ "name": "Squirrel",
+  "scopeName": "source.squirrel",
+  "fileTypes": ["nut"],
+  "patterns": [
+    { "name": "keyword.control.flow.squirrel",
+      "match": "\\b(if|else|while|do|for|foreach|break|continue|switch|case|default)\\b"
+    },
+    { "name": "keyword.control.flow.jump.squirrel",
+      "match": "\\b(return|throw|resume|yield)\\b"
+    },
+    { "name": "keyword.control.exception.squirrel",
+      "match": "\\b(try|catch)\\b"
+    },
+    { "name": "keyword.operator.squirrel",
+      "match": "\\b(clone|delete|in|typeof|instanceof)\\b"
+    },
+    { "name": "constant.language.squirrel",
+      "match": "\\b(true|false|null)\\b"
+    },
+    { "name": "variable.language.squirrel",
+      "match": "\\b(this|vargc|vargv|parent)\\b"
+    },
+    { "name": "comment.line.double-slash.squirrel",
+      "match": "(//).*$\\n?",
+      "captures": {
+        "1": { "name": "punctuation.definition.comment.squirrel" }
+      }
+    },
+    { "name": "comment.block.squirrel",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    { "name": "string.quoted.other.squirrel",
+      "begin": "@\"",
+      "end": "\"(?!\")",
+      "patterns": [
+        { "name": "constant.character.squirrel",
+          "match": "\"\""
+        }
+      ]
+    },
+    { "name": "string.quoted.double.squirrel",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.squirrel",
+          "match": "\\\\([tabnrvf\\\\\"'0]|x[\\da-fA-F]{1,4})"
+        },
+        { "name": "invalid.character.escape",
+          "match": "\\\\x?."
+        },
+        { "name": "invalid.string.newline",
+          "match": "\\n"
+        }
+      ]
+    },
+    { "name": "constant.character.squirrel",
+      "match": "'([^\\\\']|\\\\([tabnrvf\\\\\"'0]|x[\\da-fA-F]{1,4}))'"
+    },
+    { "name": "invalid.character",
+      "match": "'(''|[^']*'?)"
+    },
+    { "name": "constant.numeric.squirrel",
+      "match": "\\b(0|[1-9]\\d*|0[xX][\\da-fA-F]{1,8}|0[0-3]?[0-7]{1,10})\\b"
+    },
+    { "match": "\\b(local)\\b(?:\\s+([a-zA-Z_][a-zA-Z\\d_]*))?"
+    , "captures": {
+        "1": { "name": "keyword.other.declaration.squirrel" },
+        "2": { "name": "variable.other.local.squirrel" }
+      }
+    },
+    { "match": "\\b(function)\\b(?:\\s+([a-zA-Z_][a-zA-Z\\d_]*))?"
+    , "captures": {
+        "1": { "name": "keyword.other.declaration.squirrel" },
+        "2": { "name": "name.function.squirrel" }
+      }
+    },
+    { "match": "\\b(class)\\b(?:\\s+([a-zA-Z_][a-zA-Z\\d_]*))?"
+    , "captures": {
+        "1": { "name": "keyword.other.declaration.squirrel" },
+        "2": { "name": "name.type.squirrel" }
+      }
+    }
+  ],
+  "uuid": "907f94ac-e9a7-41ea-b9c0-f0f9bb3e8ed6"
+}
