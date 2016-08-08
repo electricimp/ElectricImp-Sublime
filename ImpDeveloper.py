@@ -196,7 +196,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.prompt_build_api_key()
 
 	def prompt_build_api_key(self):
-		self.window.show_input_panel("Electric Imp Build API key:", 
+		self.window.show_input_panel("Electric Imp Build API key:",
 			"", self.on_build_api_key_entered, None, None)		
 	
 	def on_build_api_key_entered(self, key):
