@@ -109,13 +109,13 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def get_build_api_key(self):
 		api_key_map = self.load_settings(PR_BUILD_API_KEY_FILE)
 		if api_key_map:
-			return api_key_map.get()
+			return api_key_map.get(EI_BUILD_API_KEY)
 
 	def prompt_for_device(self):
 		url = PL_BUILD_API_URL + "models/" + self.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
 		response = requests.get(url, headers=self.get_http_headers(self.get_build_api_key())).json()
 		self.__tmp_device_ids = response.get("model").get("devices")
-		self.window.show_quick_panel(self.device_ids, self.on_device_selected)
+		self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
 
 	def on_device_selected(self, index):
 		settings = self.load_settings(PR_SETTINGS_FILE)
@@ -133,8 +133,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 	def load_settings(self, filename):
 		path = self.get_settings_file_path(filename)
+		self.log_debug("Loading settings file: {}".format(path))
 		if path:
-			with open(filename) as file:    
+			with open(path) as file:
 				return json.load(file)
 
 	def get_logs_timestamp(self):
@@ -345,7 +346,7 @@ def update_log_windows():
 				continue
 			device_id = eiCommand.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
 			timestamp = eiCommand.get_logs_timestamp()
-			build_key = eiCommand.getBuildApiKey()
+			build_key = eiCommand.get_build_api_key()
 			if device_id is None or timestamp is None:
 				# Device is not selected yet and the console is not setup for the project, nothing to do
 				continue
