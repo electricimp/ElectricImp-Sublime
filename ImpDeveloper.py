@@ -65,9 +65,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		}
 
 	def get_settings_dir(self):
-		project_filename = self.window.project_filename()
-		if project_filename:
-			project_dir = os.path.dirname(project_filename)
+		project_file_name = self.window.project_file_name()
+		if project_file_name:
+			project_dir = os.path.dirname(project_file_name)
 			return os.path.join(project_dir, PR_SETTINGS_DIRECTORY)
 
 	def get_settings_file_path(self, filename):
@@ -76,11 +76,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 			return os.path.join(settings_dir, filename)
 
 	def is_electric_imp_project(self):
-		try:
-			settings_filename = self.get_settings_file_path(PR_SETTINGS_FILE)
-			return settings_filename is not None and os.path.exists(settings_filename)
-		except:
-			return False
+		settings_filename = self.get_settings_file_path(PR_SETTINGS_FILE)
+		return settings_filename is not None and os.path.exists(settings_filename)
 
 	def init_tty(self):
 		global project_windows
