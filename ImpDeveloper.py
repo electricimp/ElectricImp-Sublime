@@ -133,7 +133,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 	def load_settings(self, filename):
 		path = self.get_settings_file_path(filename)
-		self.log_debug("Loading settings file: {}".format(path))
 		if path:
 			with open(path) as file:
 				return json.load(file)
@@ -153,7 +152,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
 		settings = self.load_settings(PR_SETTINGS_FILE)
-		project_dir = os.path.dirname(self.window.project_filename())
+		project_dir = os.path.dirname(self.window.project_file_name())
 
 		agent_filename  = os.path.join(project_dir, settings.get(EI_AGENT_FILE))
 		device_filename = os.path.join(project_dir, settings.get(EI_DEVICE_FILE))
