@@ -58,7 +58,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def base64_encode(self, str):
 		return base64.b64encode(str.encode()).decode()
 
-	def get_http_headers(self, build_api_key):
+	def get_http_headers(self, key=None):
+		build_api_key = key if key is not None else self.get_build_api_key()
 		return {
 			"Authorization" : "Basic " + self.base64_encode(build_api_key),
 			"Content-Type" : "application/json"
@@ -113,7 +114,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 	def prompt_for_device(self):
 		url = PL_BUILD_API_URL + "models/" + self.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
-		response = requests.get(url, headers=self.get_http_headers(self.get_build_api_key())).json()
+		response = requests.get(url, headers=self.get_http_headers()).json()
 		self.__tmp_device_ids = response.get("model").get("devices")
 		self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
 
@@ -152,10 +153,10 @@ class ImpPushCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
 		settings = self.load_settings(PR_SETTINGS_FILE)
-		project_dir = os.path.dirname(self.window.project_file_name())
 
-		agent_filename  = os.path.join(project_dir, settings.get(EI_AGENT_FILE))
-		device_filename = os.path.join(project_dir, settings.get(EI_DEVICE_FILE))
+		source_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
+		agent_filename  = os.path.join(source_dir, settings.get(EI_AGENT_FILE))
+		device_filename = os.path.join(source_dir, settings.get(EI_DEVICE_FILE))
 
 		if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
 			self.log_debug("Can't find code files")
@@ -166,18 +167,18 @@ class ImpPushCommand(BaseElectricImpCommand):
 
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-		build_api_key = self.get_build_api_key()
-		response = requests.post(url, data=data, headers=self.get_http_headers(build_api_key)).json()
+		response = requests.post(url, data=data, headers=self.get_http_headers()).json()
 		self.tty("Revision uploaded: " + str(response["revision"]["version"]))
 
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
-		response = requests.post(url, headers=self.get_http_headers(build_api_key))
+		response = requests.post(url, headers=self.get_http_headers())
 
 	def is_enabled(self):
 		return self.is_electric_imp_project()
 
 	def read_file(self, filename):
-		with open(filename) as f: s = f.read()
+		with open(filename, 'r', encoding="utf-8") as f:
+			s = f.read()
 		return s
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
@@ -313,9 +314,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 			code = requests.get(
 				latest_revision_url, 
 				headers=self.get_http_headers(self.__tmp_build_api_key)).json()
-			with open(agent_file, "w") as file:
+			with open(agent_file, "w", encoding="utf-8") as file:
 				file.write(code["revision"]["agent_code"])
-			with open(device_file, "w") as file:
+			with open(device_file, "w", encoding="utf-8") as file:
 				file.write(code["revision"]["device_code"])
 		else:
 			# Create empty files
