@@ -42,9 +42,10 @@ STR_CODE_IS_ABSENT       = "Code files for agent or device are absent. Please ch
 STR_NEW_PROJECT_LOCATION = "New Electric Imp Project Location:"
 STR_FOLDER_EXISTS        = "Something already exists at {}. Do you want to create project in that folder?"
 STR_BUILD_API_KEY        = "Electric Imp Build API key:"
-STR_INVALID_API_KEY      = "Build API key is invalid. Please try another one."
+STR_INVALID_API_KEY      = "Build API key is invalid. Please try another one"
 STR_SELECT_MODEL         = "Please select one of the available Models for the project"
-STR_NO_MODELS_AVAILABLE  = "There are no models registered in the system. Please register one from the developer console and try again."
+STR_NO_MODELS_AVAILABLE  = "There are no models registered in the system. Please register one from the developer console and try again"
+STR_MISSING_API_KEY      = "The Build API key is missing. You need to specify one now"
 
 # Global variables
 plugin_settings = None
@@ -83,14 +84,22 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def init_tty(self):
 		global project_windows
 		if self.window not in project_windows and self.is_electric_imp_project():
+			# Check if Build API key exists
+			build_api_key = self.get_build_api_key()
+			if not build_api_key:
+				decision = sublime.ok_cancel_dialog(STR_MISSING_API_KEY)
+				if decision:
+					self.prompt_build_api_key()
+				return
+
 			settings = self.load_settings(PR_SETTINGS_FILE)
 			# Prompt for device if it wasn't selected yet
 			if EI_DEVICE_ID not in settings:
 				decision = sublime.ok_cancel_dialog(STR_SELECT_DEVICE)
 				if decision:
-					self.prompt_for_device()
-				else:
-					return
+					self.prompt_device()
+				return
+
 			self.window.terminal = self.window.get_output_panel("textarea")
 			self.window.terminal.logs_timestamp = "2000-01-01T00:00:00.000+00:00"
 			project_windows.append(self.window)
@@ -112,11 +121,31 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		if api_key_map:
 			return api_key_map.get(EI_BUILD_API_KEY)
 
-	def prompt_for_device(self):
+	def prompt_device(self):
 		url = PL_BUILD_API_URL + "models/" + self.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
 		response = requests.get(url, headers=self.get_http_headers()).json()
 		self.__tmp_device_ids = response.get("model").get("devices")
 		self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
+
+
+	def prompt_build_api_key(self):
+		self.window.show_input_panel(STR_BUILD_API_KEY,
+			"", self.on_build_api_key_entered, None, None)
+
+	def on_build_api_key_entered(self, key):
+		self.log_debug("build api key provided: " + key)
+		if self.build_api_key_is_valid(key):
+			self.log_debug("build API key is valid")
+			self.save_settings(PR_BUILD_API_KEY_FILE, {
+				EI_BUILD_API_KEY : key
+			})
+		else:
+			if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
+				self.prompt_build_api_key()
+
+	def build_api_key_is_valid(self, key):
+		return requests.get(PL_BUILD_API_URL + "models",
+			headers=self.get_http_headers(key)).status_code == 200
 
 	def on_device_selected(self, index):
 		settings = self.load_settings(PR_SETTINGS_FILE)
@@ -226,10 +255,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 				return
 		self.prompt_build_api_key()
 
-	def prompt_build_api_key(self):
-		self.window.show_input_panel(STR_BUILD_API_KEY,
-			"", self.on_build_api_key_entered, None, None)
-
 	def on_build_api_key_entered(self, key):
 		self.log_debug("build api key provided: " + key)
 		if self.build_api_key_is_valid(key):
@@ -329,10 +354,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
 	def get_template_dir(self):
 		return os.path.join(os.path.dirname(os.path.realpath(__file__)), PR_TEMPLATE_DIR_NAME)
-
-	def build_api_key_is_valid(self, key):
-		return requests.get(PL_BUILD_API_URL + "models", 
-			headers=self.get_http_headers(key)).status_code == 200
 
 def plugin_loaded():
 	global plugin_settings
