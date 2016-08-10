@@ -45,7 +45,7 @@ STR_BUILD_API_KEY        = "Electric Imp Build API key:"
 STR_INVALID_API_KEY      = "Build API key is invalid. Please try another one"
 STR_SELECT_MODEL         = "Please select one of the available Models for the project"
 STR_NO_MODELS_AVAILABLE  = "There are no models registered in the system. Please register one from the developer console and try again"
-STR_MISSING_API_KEY      = "The Build API key is missing. You need to specify one now"
+STR_MISSING_API_KEY      = "The Build API key is missing. You need to specify one first"
 
 # Global variables
 plugin_settings = None
@@ -83,28 +83,27 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 	def init_tty(self):
 		global project_windows
-		if self.window not in project_windows and self.is_electric_imp_project():
-			# Check if Build API key exists
-			build_api_key = self.get_build_api_key()
-			if not build_api_key:
-				decision = sublime.ok_cancel_dialog(STR_MISSING_API_KEY)
-				if decision:
-					self.prompt_build_api_key()
-				return
-
-			settings = self.load_settings(PR_SETTINGS_FILE)
-			# Prompt for device if it wasn't selected yet
-			if EI_DEVICE_ID not in settings:
-				decision = sublime.ok_cancel_dialog(STR_SELECT_DEVICE)
-				if decision:
-					self.prompt_device()
-				return
-
+		if self.window not in project_windows:
 			self.window.terminal = self.window.get_output_panel("textarea")
 			self.window.terminal.logs_timestamp = "2000-01-01T00:00:00.000+00:00"
-			project_windows.append(self.window)
 			self.log_debug("adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
+			project_windows.append(self.window)
+
 		self.window.run_command("show_panel", {"panel": "output.textarea"})
+
+	def check_settings(self):
+		# Check if Build API key exists
+		if not self.get_build_api_key():
+			decision = sublime.ok_cancel_dialog(STR_MISSING_API_KEY)
+			if decision:
+				self.prompt_build_api_key()
+			return
+
+		# Prompt for device if it wasn't selected yet
+		if EI_DEVICE_ID not in self.load_settings(PR_SETTINGS_FILE):
+			decision = sublime.ok_cancel_dialog(STR_SELECT_DEVICE)
+			if decision:
+				self.prompt_device()
 
 	def tty(self, text):
 		global project_windows
@@ -127,10 +126,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		self.__tmp_device_ids = response.get("model").get("devices")
 		self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
 
-
 	def prompt_build_api_key(self):
-		self.window.show_input_panel(STR_BUILD_API_KEY,
-			"", self.on_build_api_key_entered, None, None)
+		self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_entered, None, None)
 
 	def on_build_api_key_entered(self, key):
 		self.log_debug("build api key provided: " + key)
@@ -181,6 +178,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 class ImpPushCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
+		self.check_settings()
 
 		if self.get_build_api_key() is None:
 			self.log_debug("The build API file is missing, please check the settings")
@@ -217,6 +215,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 class ImpShowConsoleCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
+		self.check_settings()
 
 	def is_enabled(self):
 			return self.is_electric_imp_project()
@@ -230,12 +229,12 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
 	def run(self):
-		self.init_tty()
 		self.default_project_path = self.get_default_project_path()
 		self.window.show_input_panel(STR_NEW_PROJECT_LOCATION, self.default_project_path, self.on_project_path_entered, None, None)		
 
 	def get_default_project_path(self):
-		default_project_path_setting = settings.get("default_project_path")
+		global plugin_settings
+		default_project_path_setting = plugin_settings.get(PR_DEFAULT_PROJECT_NAME)
 		default_project_path = None
 		if not default_project_path_setting:
 			if sublime.platform() == "windows":
@@ -296,6 +295,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 			os.makedirs(settings_dir)
 
 		self.copy_project_template_file(PR_PROJECT_FILE_TEMPLATE)
+		self.copy_gitignore()
 
 		# Create Electric Imp project settings file
 		self.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
@@ -328,6 +328,10 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		dst = os.path.join(self.__tmp_project_path, 
 			filename.replace("_project_name_", os.path.basename(self.__tmp_project_path)))
 		shutil.copy(src, dst)
+
+	def copy_gitignore(self):
+		src = os.path.join(self.get_template_dir(), ".gitignore")
+		shutil.copy(src, self.__tmp_project_path)
    
 	def pull_model_revision(self):
 		source_dir  = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)

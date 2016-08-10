@@ -1,0 +1,3 @@
+# exclude Build API key file
+
+settings/build-api.key
