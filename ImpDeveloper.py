@@ -20,6 +20,7 @@ import requests
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
 PL_SETTINGS_FILE         = "ImpDeveloper.sublime-settings"
 PL_DEBUG_FLAG            = "debug"
+PL_AGENT_URL             = "https://agent.electricimp.com/{}"
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -38,7 +39,7 @@ EI_AGENT_FILE            = "agent-file"
 EI_DEVICE_ID             = "device-id"
 
 # String constants that are visible for users
-STR_SELECT_DEVICE        = "Please select a device to display the logs for"
+STR_SELECT_DEVICE        = "Please select an Imp device to connect to"
 STR_CODE_IS_ABSENT       = "Code files for agent or device are absent. Please check the project settings at {}"
 STR_NEW_PROJECT_LOCATION = "New Electric Imp Project Location:"
 STR_FOLDER_EXISTS        = "Something already exists at {}. Do you want to create project in that folder?"
@@ -47,6 +48,7 @@ STR_INVALID_API_KEY      = "Build API key is invalid. Please try another one"
 STR_SELECT_MODEL         = "Please select one of the available Models for the project"
 STR_NO_MODELS_AVAILABLE  = "There are no models registered in the system. Please register one from the developer console and try again"
 STR_MISSING_API_KEY      = "The Build API key is missing. You need to specify one first"
+STR_AGENT_URL_COPIED     = "The agent URL for the selected device {} is:\n{}\nIt is copied into the clipboard"
 
 # Global variables
 plugin_settings = None
@@ -140,6 +142,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		else:
 			if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
 				self.prompt_build_api_key()
+		self.check_settings()
 
 	def build_api_key_is_valid(self, key):
 		return requests.get(PL_BUILD_API_URL + "models",
@@ -219,14 +222,30 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
 		self.check_settings()
 
 	def is_enabled(self):
-			return self.is_electric_imp_project()
+		return self.is_electric_imp_project()
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
 	def run(self):
 		self.prompt_for_device()
 
 	def is_enabled(self):
-			return self.is_electric_imp_project()
+		return self.is_electric_imp_project()
+
+class ImpGetAgentUrlCommand(BaseElectricImpCommand):
+	def run(self):
+		self.check_settings()
+		settings = self.load_settings(PR_SETTINGS_FILE)
+		if EI_DEVICE_ID in settings:
+			device_id = settings.get(EI_DEVICE_ID)
+			response  = requests.get(PL_BUILD_API_URL + "devices/" + device_id, headers=self.get_http_headers()).json()
+			print(str(response))
+			agent_id  = response.get("device").get("agent_id")
+			agent_url = PL_AGENT_URL.format(agent_id)
+			sublime.set_clipboard(agent_url)
+			sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
+
+	def is_enabled(self):
+		return self.is_electric_imp_project()
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
 	def run(self):

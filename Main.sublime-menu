@@ -18,6 +18,10 @@
 	    	{
 		    	"caption" : "Select Device",
 		    	"command" : "imp_select_device"
+		    },
+	    	{
+		    	"caption" : "Get Agent URL",
+		    	"command" : "imp_get_agent_url"
 		    }
 	    ]
 	}
