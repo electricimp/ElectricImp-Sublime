@@ -134,7 +134,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 	def load_settings(self, filename):
 		path = self.get_settings_file_path(filename)
-		if path:
+		if path and os.path.exists(path):
 			with open(path) as file:
 				return json.load(file)
 
@@ -147,13 +147,17 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def log_debug(self, text):
 		global plugin_settings
 		if plugin_settings.get(PL_DEBUG_FLAG) == True:
-			print("  [ElectricImp] " + text)
+			print("  [EI::Debug] " + text)
 
 class ImpPushCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
-		settings = self.load_settings(PR_SETTINGS_FILE)
 
+		if self.get_build_api_key() is None:
+			self.log_debug("The build API file is missing, please check the settings")
+			return
+
+		settings   = self.load_settings(PR_SETTINGS_FILE)
 		source_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
 		agent_filename  = os.path.join(source_dir, settings.get(EI_AGENT_FILE))
 		device_filename = os.path.join(source_dir, settings.get(EI_DEVICE_FILE))
@@ -346,12 +350,11 @@ def update_log_windows():
 				continue
 			device_id = eiCommand.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
 			timestamp = eiCommand.get_logs_timestamp()
-			build_key = eiCommand.get_build_api_key()
-			if device_id is None or timestamp is None:
+			if None in [device_id, timestamp, eiCommand.get_build_api_key()]:
 				# Device is not selected yet and the console is not setup for the project, nothing to do
 				continue
 			url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
-			response = requests.get(url, headers=eiCommand.get_http_headers(build_key)).json()
+			response = requests.get(url, headers=eiCommand.get_http_headers()).json()
 			log_size = len(response["logs"])
 			if "logs" in response and log_size > 0:
 				timestampt = response["logs"][log_size - 1]["timestamp"]
