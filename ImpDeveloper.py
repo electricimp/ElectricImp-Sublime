@@ -9,6 +9,7 @@ import sched
 import time
 import datetime
 import urllib
+import subprocess
 
 # request-dists is the folder in our plugin
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
@@ -288,13 +289,13 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		source_dir = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)
 		settings_dir = os.path.join(self.__tmp_project_path, PR_SETTINGS_DIRECTORY)
 
-		self.log_debug("Creating project at:" + self.__tmp_project_path)
+		self.log_debug("Creating project at: " + self.__tmp_project_path)
 		if not os.path.exists(source_dir):
 			os.makedirs(source_dir)
 		if not os.path.exists(settings_dir):
 			os.makedirs(settings_dir)
 
-		self.copy_project_template_file(PR_PROJECT_FILE_TEMPLATE)
+		self.copy_project_template_file()
 		self.copy_gitignore()
 
 		# Create Electric Imp project settings file
@@ -312,8 +313,12 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		# Pull the latest code revision from the server
 		self.pull_model_revision()
 
-		# Open the project in the file browser
-		self.window.run_command("open_dir", {"dir":self.__tmp_project_path})
+		try:
+			# Try opening the project in the new window
+			self.sublime_command_line(["-n", self.get_project_file_name()])
+		except:
+			# If failed, open the project in the file browser
+			self.window.run_command("open_dir", {"dir":self.__tmp_project_path})
 
 		# Clean up all temporary variables
 		self.__tmp_model_id = None
@@ -323,10 +328,27 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.__tmp_build_api_key = None
 		self.__tmp_all_model_names = None
 
-	def copy_project_template_file(self, filename):
-		src = os.path.join(self.get_template_dir(), filename)
-		dst = os.path.join(self.__tmp_project_path, 
-			filename.replace("_project_name_", os.path.basename(self.__tmp_project_path)))
+	def get_sublime_path(self):
+		execs = {
+			'osx'     : '/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl',
+			'linux'   : '/opt/sublime/sublime_text',
+			"windows" : 'C:\\Program Files\\Sublime Text 3\\sublime_text.exe'
+		}
+		platform = sublime.platform()
+		if platform in execs:
+			return execs[platform]
+
+	def sublime_command_line(self, args):
+		args.insert(0, self.get_sublime_path())
+		return subprocess.Popen(args)
+
+	def get_project_file_name(self):
+		return os.path.join(self.__tmp_project_path, 
+			PR_PROJECT_FILE_TEMPLATE.replace("_project_name_", os.path.basename(self.__tmp_project_path)))
+
+	def copy_project_template_file(self):
+		src = os.path.join(self.get_template_dir(), PR_PROJECT_FILE_TEMPLATE)
+		dst = self.get_project_file_name()
 		shutil.copy(src, dst)
 
 	def copy_gitignore(self):
