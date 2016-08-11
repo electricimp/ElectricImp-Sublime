@@ -1,15 +1,15 @@
 Electric Imp Sublime Plugin
 =================================
 
-**Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are supported!**
+**Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are supported (tested on OS X).**
 
 ## Installation (manual)
 
 1. Download or checkout the plugin package from https://github.com/ElectricImp-CSE/ElectricImp-Sublime
 
 2. Install the plugin by manally copying the package content into
-  - (OS X): /Users/<username>/Library/Application Support/Sublime Text 3/Packages/
-  - (Windows): "%AppData%\Sublime Text 3\Packages\% 
+  - (OS X): /Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/
+  - (Windows): "%AppData%\Sublime Text 3\Packages\%"
 
 ## Usage
 
@@ -46,9 +46,9 @@ As the result of these actions the project folder is created at the specified lo
 
 ```
 {
-	"model-id"      : "my-model-id",
-	"device-file"   : "mymodel.device.nut",
-	"agent-file"    : "mymodel.agent.nut",
+  "model-id"      : "my-model-id",
+  "device-file"   : "mymodel.device.nut",
+  "agent-file"    : "mymodel.agent.nut",
   "device-id"     : "my-selected-device-id"
 }
 ```
