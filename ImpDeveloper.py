@@ -99,14 +99,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		if not self.get_build_api_key():
 			decision = sublime.ok_cancel_dialog(STR_MISSING_API_KEY)
 			if decision:
-				self.prompt_build_api_key()
+				self.prompt_for_build_api_key()
 			return
 
 		# Prompt for device if it wasn't selected yet
 		if EI_DEVICE_ID not in self.load_settings(PR_SETTINGS_FILE):
 			decision = sublime.ok_cancel_dialog(STR_SELECT_DEVICE)
 			if decision:
-				self.prompt_device()
+				self.prompt_for_device()
 
 	def tty(self, text):
 		global project_windows
@@ -123,13 +123,13 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		if api_key_map:
 			return api_key_map.get(EI_BUILD_API_KEY)
 
-	def prompt_device(self):
+	def prompt_for_device(self):
 		url = PL_BUILD_API_URL + "models/" + self.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
 		response = requests.get(url, headers=self.get_http_headers()).json()
 		self.__tmp_device_ids = response.get("model").get("devices")
 		self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
 
-	def prompt_build_api_key(self):
+	def prompt_for_build_api_key(self):
 		self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_entered, None, None)
 
 	def on_build_api_key_entered(self, key):
@@ -141,7 +141,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 			})
 		else:
 			if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
-				self.prompt_build_api_key()
+				self.prompt_for_build_api_key()
 		self.check_settings()
 
 	def build_api_key_is_valid(self, key):
@@ -275,7 +275,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		if os.path.exists(path):
 			if not sublime.ok_cancel_dialog(STR_FOLDER_EXISTS.format(path)):
 				return
-		self.prompt_build_api_key()
+		self.prompt_for_build_api_key()
 
 	def on_build_api_key_entered(self, key):
 		self.log_debug("build api key provided: " + key)
@@ -285,7 +285,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 			self.prompt_for_model()
 		else:
 			if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
-				self.prompt_build_api_key()
+				self.prompt_for_build_api_key()
 
 	def prompt_for_model(self):
 		response = requests.get(PL_BUILD_API_URL + "models", headers=self.get_http_headers(self.__tmp_build_api_key)).json()
