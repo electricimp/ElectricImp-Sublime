@@ -1,7 +1,7 @@
-Electric Imp Sublime Plugin v0.1
+Electric Imp Sublime Plugin
 =================================
 
-**Electric Imp Sublime Plugin v0.1 supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are supported!**
+**Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are supported!**
 
 ## Installation (manual)
 
@@ -25,24 +25,31 @@ As the result of these actions the project folder is created at the specified lo
 
 ```
 -- <Project Name>
-  |-> <Project Name>.sublime-project        (Sublime project file)
-  |-> <Project Name>.electric-imp-settings  (Electric Imp project specific settings)
-  |-> <Model Name>.device.nut               (Device code)
-  |-> <Model Name>.agent.nut                (Agent code)
- ```
+  |--> <Project Name>.sublime-project     (Sublime project file)
+  |--> src                                (Source folder) 
+  .   |--> <Model Name>.device.nut        (Device code)
+  .   |--> <Model Name>.agent.nut         (Agent code)
+  |--> settings                           (Electric Imp settings folder)
+  .   |--> build-api.key                  (SENSITIVE: Build API key stored for the project
+  .   |--> electric-imp.settings          (Generic Electric Imp settings)
+  |--> .gitignore                         (.gitignore file to exclude Build API key from git repository)
+```
+
+**IMPORTANT: settings/build-api.key should not be put under a source control as it contains sensitive information!**
 
 <Project Name>.electric-imp-settings file contains:
 
 - The Build API key for the project
 - Imp Model ID for the project
-- Device and Agent code file names 
+- Device and Agent code file names
+- Selected device id
 
 ```
 {
-	"build-api-key" : "09fc8b113fdscadcdff868daacf875017",
-	"model-id"      : "UwIoEuX9to8Q",
+	"model-id"      : "my-model-id",
 	"device-file"   : "mymodel.device.nut",
-	"agent-file"    : "mymodel.agent.nut"
+	"agent-file"    : "mymodel.agent.nut",
+  "device-id"     : "my-selected-device-id"
 }
 ```
 
@@ -66,6 +73,10 @@ The console can be popped up by selecting Electric Imp->Console menu item. It sh
 
 Device can be selected through the Electric Imp->Select Device menu item. The selected device is used as a source of logs for the Server Logs Console.
 
+#### Retrieving Agent URL
+
+Agent URL can be retrieved by selecting Electric Imp->Get Agent URL menu item.
+
 ### Key Shortcuts
 
 **Electric Imp specific menu items are only available if an Electric Imp project is opened in the currently active window**
@@ -76,14 +87,15 @@ Device can be selected through the Electric Imp->Select Device menu item. The se
 - Select Device: Ctrc + Shift + I
 
 
-## Feature available in v0.1
+## Features supported in the current Version
 
 - Push of the code to the server
 - Live logs view
+- Generating a URL to the agent associated with the device
 - An early version of the Squirrel language code highlighter (Alpha version, may not be accurate)
 - An early version of the API inline code suggestions (Alpha version, may not be accurate)
 
-## Restrictions in version v0.1
+## Existing restrictions
 
 - No inline code compilation errors or code lintering is provided
 - No multiple file support
@@ -92,8 +104,9 @@ Device can be selected through the Electric Imp->Select Device menu item. The se
 
 ## Future Development Plans
 
+- Improved hightlighting and API suggestions
 - Multiple files support
 - Squirrel code lintering and inline error highlighting
 - Advanced Squirrel preprocessor support
-- Refactoring or advanced navigation features
+- Squirrel refactoring or advanced navigation features
 - Simple administrative functionality (managing Models, devices, migration of devices, etc.)
