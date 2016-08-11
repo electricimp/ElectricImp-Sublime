@@ -203,7 +203,10 @@ class ImpPushCommand(BaseElectricImpCommand):
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
 		response = requests.post(url, data=data, headers=self.get_http_headers()).json()
-		self.tty("Revision uploaded: " + str(response["revision"]["version"]))
+		if "revision" in response:
+			self.tty("Revision uploaded: " + str(response["revision"]["version"]))
+		else:
+			self.tty("Upload failed")
 
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
 		response = requests.post(url, headers=self.get_http_headers())
