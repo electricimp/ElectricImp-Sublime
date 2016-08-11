@@ -104,7 +104,7 @@ Agent URL can be retrieved by selecting Electric Imp->Get Agent URL menu item.
 
 ## Future Development Plans
 
-- Improved hightlighting and API suggestions
+- Improved highlighting and API suggestions
 - Multiple files support
 - Squirrel code lintering and inline error highlighting
 - Advanced Squirrel preprocessor support
