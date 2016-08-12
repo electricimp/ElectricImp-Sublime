@@ -49,6 +49,9 @@ STR_SELECT_MODEL         = "Please select one of the available Models for the pr
 STR_NO_MODELS_AVAILABLE  = "There are no models registered in the system. Please register one from the developer console and try again"
 STR_MISSING_API_KEY      = "The Build API key is missing. You need to specify one first"
 STR_AGENT_URL_COPIED     = "The agent URL for the selected device {} is:\n{}\nIt is copied into the clipboard"
+STR_NO_DEVICES_AVAILABLE = "There are no devices assigned to the model. Please assign a device and try again"
+STR_MODEL_DOES_NOT_EXIST = "The model {}, the project is associated with, doesn't exist. Please check the project settings"
+STR_FAILED_TO_GET_LOGS   = "An error occured while retrieving logs for the specified model/device. Please check the settings"
 
 # Global variables
 plugin_settings = None
@@ -87,11 +90,17 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def init_tty(self):
 		global project_windows
 		if self.window not in project_windows:
-			self.window.terminal = self.window.get_output_panel("textarea")
-			self.window.terminal.logs_timestamp = "2000-01-01T00:00:00.000+00:00"
+			self.create_new_console()
+
 			self.log_debug("adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
 			project_windows.append(self.window)
+		self.show_console()
 
+	def create_new_console(self):
+		self.window.terminal = self.window.get_output_panel("textarea")
+		self.window.terminal.logs_timestamp = "2000-01-01T00:00:00.000+00:00"
+
+	def show_console(self):
 		self.window.run_command("show_panel", {"panel": "output.textarea"})
 
 	def check_settings(self):
@@ -124,10 +133,19 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 			return api_key_map.get(EI_BUILD_API_KEY)
 
 	def prompt_for_device(self):
-		url = PL_BUILD_API_URL + "models/" + self.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
-		response = requests.get(url, headers=self.get_http_headers()).json()
-		self.__tmp_device_ids = response.get("model").get("devices")
-		self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
+		model_id = self.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
+		url = PL_BUILD_API_URL + "models/" + model_id
+		response = requests.get(url, headers=self.get_http_headers())
+		# If request failed, the model doesn't seem to exist anymore
+		if response.status_code != requests.codes.ok:
+			sublime.message_dialog(STR_MODEL_DOES_NOT_EXIST.format(model_id))
+			return
+		json = response.json()
+		self.__tmp_device_ids = json.get("model").get("devices")
+		if len(self.__tmp_device_ids) > 0:
+			self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
+		else:
+			sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
 
 	def prompt_for_build_api_key(self):
 		self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_entered, None, None)
@@ -150,8 +168,15 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 	def on_device_selected(self, index):
 		settings = self.load_settings(PR_SETTINGS_FILE)
-		settings[EI_DEVICE_ID] = self.__tmp_device_ids[index]
-		self.save_settings(PR_SETTINGS_FILE, settings)
+		new_device_id = self.__tmp_device_ids[index]
+		old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
+		if new_device_id != old_device_id:
+			# Update the device id
+			settings[EI_DEVICE_ID] = self.__tmp_device_ids[index]
+			self.save_settings(PR_SETTINGS_FILE, settings)
+			# Clean up the terminal window
+			self.create_new_console()
+			self.show_console()
 		# Clean up temporary variables
 		self.__tmp_device_ids = None
 
@@ -202,14 +227,14 @@ class ImpPushCommand(BaseElectricImpCommand):
 
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-		response = requests.post(url, data=data, headers=self.get_http_headers()).json()
-		if "revision" in response:
+		response = requests.post(url, data=data, headers=self.get_http_headers())
+		if response.status_code == requests.codes.ok:
+			json = response.json()
 			self.tty("Revision uploaded: " + str(response["revision"]["version"]))
+			url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
+			response = requests.post(url, headers=self.get_http_headers())
 		else:
-			self.tty("Upload failed")
-
-		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
-		response = requests.post(url, headers=self.get_http_headers())
+			self.tty("Upload failed: " + response.text)
 
 	def is_enabled(self):
 		return self.is_electric_imp_project()
@@ -241,7 +266,6 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 		if EI_DEVICE_ID in settings:
 			device_id = settings.get(EI_DEVICE_ID)
 			response  = requests.get(PL_BUILD_API_URL + "devices/" + device_id, headers=self.get_http_headers()).json()
-			print(str(response))
 			agent_id  = response.get("device").get("agent_id")
 			agent_url = PL_AGENT_URL.format(agent_id)
 			sublime.set_clipboard(agent_url)
@@ -423,22 +447,29 @@ def update_log_windows():
 				# Device is not selected yet and the console is not setup for the project, nothing to do
 				continue
 			url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
-			response = requests.get(url, headers=eiCommand.get_http_headers()).json()
-			log_size = len(response["logs"])
-			if "logs" in response and log_size > 0:
-				timestampt = response["logs"][log_size - 1]["timestamp"]
-				eiCommand.set_logs_timestamp(timestampt)
+			response = requests.get(url, headers=eiCommand.get_http_headers())
 
-				for log in response["logs"]:
+			# There was an error while retrieving logs from the server
+			if response.status_code != requests.codes.ok:
+				eiCommand.log_debug(STR_FAILED_TO_GET_LOGS)
+				continue
+
+			json = response.json()
+			log_size = len(json["logs"])
+			if "logs" in json and log_size > 0:
+				timestampt = json["logs"][log_size - 1]["timestamp"]
+				eiCommand.set_logs_timestamp(timestampt)
+				for log in json["logs"]:
 					try:
 						type = {
 							"status"       : "[Status]",
 							"server.log"   : "[Device]",
-							"server.error" : "[Error]"
+							"server.error" : "[Error]",
+							"lastexitcode" : "[Exit]"
 						} [log["type"]]
 					except:
 						eiCommand.log_debug("Unrecognized log type: " + log["type"])
-						type = "[Log]"
+						type = "[Device]"
 					eiCommand.tty(log["timestamp"] + " " + type + " " + log["message"])
 	finally:
 		sublime.set_timeout_async(update_log_windows, 1000)
