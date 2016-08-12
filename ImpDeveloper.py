@@ -58,7 +58,7 @@ plugin_settings = None
 project_windows = []
 
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
-
+	"""The base class for all the Electric Imp Commands"""
 	def __init__(self, window):
 		self.window = window
 
@@ -91,9 +91,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		global project_windows
 		if self.window not in project_windows:
 			self.create_new_console()
-
-			self.log_debug("adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
 			project_windows.append(self.window)
+			log_debug("adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
 		self.show_console()
 
 	def create_new_console(self):
@@ -140,8 +139,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		if response.status_code != requests.codes.ok:
 			sublime.message_dialog(STR_MODEL_DOES_NOT_EXIST.format(model_id))
 			return
-		json = response.json()
-		self.__tmp_device_ids = json.get("model").get("devices")
+		response_json = response.json()
+		self.__tmp_device_ids = response_json.get("model").get("devices")
 		if len(self.__tmp_device_ids) > 0:
 			self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
 		else:
@@ -151,9 +150,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_entered, None, None)
 
 	def on_build_api_key_entered(self, key):
-		self.log_debug("build api key provided: " + key)
+		log_debug("build api key provided: " + key)
 		if self.build_api_key_is_valid(key):
-			self.log_debug("build API key is valid")
+			log_debug("build API key is valid")
 			self.save_settings(PR_BUILD_API_KEY_FILE, {
 				EI_BUILD_API_KEY : key
 			})
@@ -171,12 +170,15 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 		new_device_id = self.__tmp_device_ids[index]
 		old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
 		if new_device_id != old_device_id:
+			log_debug("New device selected: saving new settings file and restarting the console...")
 			# Update the device id
 			settings[EI_DEVICE_ID] = self.__tmp_device_ids[index]
 			self.save_settings(PR_SETTINGS_FILE, settings)
 			# Clean up the terminal window
 			self.create_new_console()
 			self.show_console()
+		else:
+			log_debug("Newly selected device is the same as the old one. Nothing to do.")
 		# Clean up temporary variables
 		self.__tmp_device_ids = None
 
@@ -199,18 +201,13 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 	def set_logs_timestamp(self, timestamp):
 		self.window.terminal.logs_timestamp = timestamp
 
-	def log_debug(self, text):
-		global plugin_settings
-		if plugin_settings.get(PL_DEBUG_FLAG) == True:
-			print("  [EI::Debug] " + text)
-
 class ImpPushCommand(BaseElectricImpCommand):
 	def run(self):
 		self.init_tty()
 		self.check_settings()
 
 		if self.get_build_api_key() is None:
-			self.log_debug("The build API file is missing, please check the settings")
+			log_debug("The build API file is missing, please check the settings")
 			return
 
 		settings   = self.load_settings(PR_SETTINGS_FILE)
@@ -219,7 +216,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 		device_filename = os.path.join(source_dir, settings.get(EI_DEVICE_FILE))
 
 		if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
-			self.log_debug("Can't find code files")
+			log_debug("Can't find code files")
 			sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
 
 		agent_code  = self.read_file(agent_filename)
@@ -229,8 +226,10 @@ class ImpPushCommand(BaseElectricImpCommand):
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
 		response = requests.post(url, data=data, headers=self.get_http_headers())
 		if response.status_code == requests.codes.ok:
-			json = response.json()
-			self.tty("Revision uploaded: " + str(response["revision"]["version"]))
+			response_json = response.json()
+			self.tty("Revision uploaded: " + str(response_json["revision"]["version"]))
+
+			# Not it's time to restart the Model
 			url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
 			response = requests.post(url, headers=self.get_http_headers())
 		else:
@@ -293,7 +292,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		return default_project_path 
 
 	def on_project_path_entered(self, path):
-		self.log_debug("Project path specified: " + path)
+		log_debug("Project path specified: " + path)
 		self.__tmp_project_path = path
 
 		if os.path.exists(path):
@@ -302,9 +301,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.prompt_for_build_api_key()
 
 	def on_build_api_key_entered(self, key):
-		self.log_debug("build api key provided: " + key)
+		log_debug("build api key provided: " + key)
 		if self.build_api_key_is_valid(key):
-			self.log_debug("build API key is valid")
+			log_debug("build API key is valid")
 			self.__tmp_build_api_key = key
 			self.prompt_for_model()
 		else:
@@ -328,14 +327,14 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.__tmp_model_id = self.__tmp_all_model_ids[index]
 		self.__tmp_model_name = self.__tmp_all_model_names[index]
 
-		self.log_debug("model choosen (name, id): (" + self.__tmp_model_name + ", " + self.__tmp_model_id + ")")
+		log_debug("model choosen (name, id): (" + self.__tmp_model_name + ", " + self.__tmp_model_id + ")")
 		self.create_project()
 
 	def create_project(self):
 		source_dir = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)
 		settings_dir = os.path.join(self.__tmp_project_path, PR_SETTINGS_DIRECTORY)
 
-		self.log_debug("Creating project at: " + self.__tmp_project_path)
+		log_debug("Creating project at: " + self.__tmp_project_path)
 		if not os.path.exists(source_dir):
 			os.makedirs(source_dir)
 		if not os.path.exists(settings_dir):
@@ -427,6 +426,11 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 	def get_template_dir(self):
 		return os.path.join(os.path.dirname(os.path.realpath(__file__)), PR_TEMPLATE_DIR_NAME)
 
+def log_debug(text):
+	global plugin_settings
+	if plugin_settings.get(PL_DEBUG_FLAG) == True:
+		print("  [EI::Debug] " + text)
+
 def plugin_loaded():
 	global plugin_settings
 	plugin_settings = sublime.load_settings(PL_SETTINGS_FILE)
@@ -444,7 +448,7 @@ def update_log_windows():
 			device_id = eiCommand.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
 			timestamp = eiCommand.get_logs_timestamp()
 			if None in [device_id, timestamp, eiCommand.get_build_api_key()]:
-				# Device is not selected yet and the console is not setup for the project, nothing to do
+				# Device is not selected yet and the console is not setup for the project, nothing we can do here
 				continue
 			url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
 			response = requests.get(url, headers=eiCommand.get_http_headers())
@@ -454,12 +458,12 @@ def update_log_windows():
 				eiCommand.log_debug(STR_FAILED_TO_GET_LOGS)
 				continue
 
-			json = response.json()
-			log_size = len(json["logs"])
-			if "logs" in json and log_size > 0:
-				timestampt = json["logs"][log_size - 1]["timestamp"]
+			response_json = response.json()
+			log_size = 0 if "logs" not in response_json else len(response_json["logs"])
+			if log_size > 0:
+				timestampt = response_json["logs"][log_size - 1]["timestamp"]
 				eiCommand.set_logs_timestamp(timestampt)
-				for log in json["logs"]:
+				for log in response_json["logs"]:
 					try:
 						type = {
 							"status"       : "[Status]",
