@@ -52,6 +52,7 @@ STR_AGENT_URL_COPIED     = "The agent URL for the selected device {} is:\n{}\nIt
 STR_NO_DEVICES_AVAILABLE = "There are no devices assigned to the model. Please assign a device and try again"
 STR_MODEL_DOES_NOT_EXIST = "The model {}, the project is associated with, doesn't exist. Please check the project settings"
 STR_FAILED_TO_GET_LOGS   = "An error occured while retrieving logs for the specified model/device. Please check the settings"
+STR_ENTER_BUILD_API_KEY  = "Please provide your Electric Imp Build API key. This key can be found in the Developer Console (login into your account and click on the top right button with you user name and select \"Build API Keys\")"
 
 # Global variables
 plugin_settings = None
@@ -147,6 +148,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 			sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
 
 	def prompt_for_build_api_key(self):
+		sublime.message_dialog(STR_ENTER_BUILD_API_KEY)
 		self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_entered, None, None)
 
 	def on_build_api_key_entered(self, key):
@@ -225,6 +227,10 @@ class ImpPushCommand(BaseElectricImpCommand):
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
 		response = requests.post(url, data=data, headers=self.get_http_headers())
+
+		# Update the logs first
+		update_log_windows(False)
+
 		if response.status_code == requests.codes.ok:
 			response_json = response.json()
 			self.tty("Revision uploaded: " + str(response_json["revision"]["version"]))
@@ -233,7 +239,41 @@ class ImpPushCommand(BaseElectricImpCommand):
 			url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
 			response = requests.post(url, headers=self.get_http_headers())
 		else:
-			self.tty("Upload failed: " + response.text)
+			# {
+			# 	'error': {
+			# 		'message_short': 'Device code compile failed', 
+			# 		'details': {
+			# 			'agent_errors': None, 
+			# 			'device_errors': [
+			# 				{
+			# 					'row': 3, 
+			# 					'error': 'expression expected', 
+			# 					'column': 24
+			# 				}
+			# 			]
+			# 		}, 
+			# 		'code': 'CompileFailed', 
+			# 		'message_full': 'Device code compile failed\nDevice Errors:\n3:24 expression expected'
+			# 	}, 
+			# 	'success': False
+			# }
+			def build_error_list(errors, errorLocation):
+				report = ""
+				if errors != None:
+					report = "		{} code:\n".format(errorLocation)
+					for e in errors:
+						report += "				Line: {}, Column: {}, Message: {}\n".format(e["row"], e["column"], e["error"])
+				return report
+
+			response_json = response.json()
+			error = response_json["error"]
+			if error and error["code"] == "CompileFailed":
+				error_message = "Deply failed because of the compilation errors:\n"
+				error_message += build_error_list(error["details"]["agent_errors"], "Agent")
+				error_message += build_error_list(error["details"]["device_errors"], "Device")
+				self.tty(error_message)
+			else:
+				log_debug("Code deply failed because of unknown error: {}".format(str(response_json["error"]["code"])))
 
 	def is_enabled(self):
 		return self.is_electric_imp_project()
@@ -435,7 +475,7 @@ def plugin_loaded():
 	global plugin_settings
 	plugin_settings = sublime.load_settings(PL_SETTINGS_FILE)
 
-def update_log_windows():
+def update_log_windows(restart_timer = True):
 	global project_windows
 	try:
 		for window in project_windows:
@@ -443,7 +483,7 @@ def update_log_windows():
 			if not eiCommand.is_electric_imp_project():
 				# It's not a windows that corresponds to an EI project, remove it from the list
 				project_windows.remove(window)
-				eiCommand.log_debug("Removing window from the windows project: " + str(window) + ", total windows now: " + str(len(project_windows)))
+				log_debug("Removing window from the windows project: " + str(window) + ", total windows now: " + str(len(project_windows)))
 				continue
 			device_id = eiCommand.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
 			timestamp = eiCommand.get_logs_timestamp()
@@ -455,7 +495,7 @@ def update_log_windows():
 
 			# There was an error while retrieving logs from the server
 			if response.status_code != requests.codes.ok:
-				eiCommand.log_debug(STR_FAILED_TO_GET_LOGS)
+				log_debug(STR_FAILED_TO_GET_LOGS)
 				continue
 
 			response_json = response.json()
@@ -472,10 +512,11 @@ def update_log_windows():
 							"lastexitcode" : "[Exit]"
 						} [log["type"]]
 					except:
-						eiCommand.log_debug("Unrecognized log type: " + log["type"])
+						log_debug("Unrecognized log type: " + log["type"])
 						type = "[Device]"
 					eiCommand.tty(log["timestamp"] + " " + type + " " + log["message"])
 	finally:
-		sublime.set_timeout_async(update_log_windows, 1000)
+		if restart_timer:
+			sublime.set_timeout_async(update_log_windows, 1000)
 
 update_log_windows()
