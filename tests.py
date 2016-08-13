@@ -1,3 +1,10 @@
+########################################################################
+# This is a sceleton for plugin unit tests. More tests to be added here. 
+
+# The tests can be run from the Sublime Text Console this way:
+# > window.run_command("run_all_tests")
+########################################################################
+
 import os
 import sys
 import sublime
@@ -30,5 +37,4 @@ class OSTests(unittest.TestCase):
 		global current_window
 		create_project_command = imp_developer.ImpCreateProjectCommand(current_window)
 		path = create_project_command.get_sublime_path()
-		print(path)
-		self.assertTrue(fos.path.exists(path))
+		self.assertTrue(os.path.exists(path))
