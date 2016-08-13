@@ -1,7 +1,7 @@
 
 { "name": "Squirrel",
   "scopeName": "source.squirrel",
-  "fileTypes": ["nut", "agent.nut", "device.nut"],
+  "fileTypes": ["nut"],
   "patterns": [
     { "name": "keyword.control.flow.squirrel",
       "match": "\\b(if|else|while|do|for|foreach|break|continue|switch|case|default)\\b"
