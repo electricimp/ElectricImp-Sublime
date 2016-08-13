@@ -23,8 +23,8 @@ current_window = None
 
 class RunAllTestsCommand(sublime_plugin.WindowCommand):
 	def run(self):
-		global test_classes, current_view
-		current_view = self
+		global test_classes, current_window
+		current_window = self
 		for klass in test_classes:
 			suite = unittest.TestLoader().loadTestsFromTestCase(klass)
 			unittest.TextTestRunner(verbosity=2).run(suite)
