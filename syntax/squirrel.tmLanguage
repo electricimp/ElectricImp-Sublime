@@ -5,6 +5,8 @@
     <key>fileTypes</key>
     <array>
         <string>nut</string>
+        <string>agent.nut</string>
+        <string>device.nut</string>
     </array>
     <key>name</key>
     <string>Squirrel</string>

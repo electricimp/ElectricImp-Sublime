@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>name</key>
-    <string>Comments</string>
+	<string>Comments</string>
 	<key>scope</key>
 	<string>source.nut</string>
 	<key>settings</key>
