@@ -10,6 +10,7 @@ import time
 import datetime
 import urllib
 import subprocess
+import datetime
 
 # request-dists is the folder in our plugin
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
@@ -505,8 +506,8 @@ def update_log_windows(restart_timer = True):
 			response_json = response.json()
 			log_size = 0 if "logs" not in response_json else len(response_json["logs"])
 			if log_size > 0:
-				timestampt = response_json["logs"][log_size - 1]["timestamp"]
-				eiCommand.set_logs_timestamp(timestampt)
+				timestamp = response_json["logs"][log_size - 1]["timestamp"]
+				eiCommand.set_logs_timestamp(timestamp)
 				for log in response_json["logs"]:
 					try:
 						type = {
@@ -518,7 +519,8 @@ def update_log_windows(restart_timer = True):
 					except:
 						log_debug("Unrecognized log type: " + log["type"])
 						type = "[Device]"
-					eiCommand.tty(log["timestamp"] + " " + type + " " + log["message"])
+					dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)),"%Y-%m-%dT%H:%M:%S.%f%z")
+					eiCommand.tty(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + log["message"])
 	finally:
 		if restart_timer:
 			sublime.set_timeout_async(update_log_windows, 1000)
