@@ -400,8 +400,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
 		try:
 			# Try opening the project in the new window
-			self.sublime_command_line(["-n", self.get_project_file_name()])
+			self.run_sublime_from_command_line(["-n", self.get_project_file_name()])
 		except:
+			log_debug("Error executing sublime: {} ".format(sys.exc_info()[0]))
 			# If failed, open the project in the file browser
 			self.window.run_command("open_dir", {"dir":self.__tmp_project_path})
 
@@ -414,16 +415,19 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		self.__tmp_all_model_names = None
 
 	def get_sublime_path(self):
-		execs = {
-			'osx'     : '/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl',
-			'linux'   : '/opt/sublime/sublime_text',
-			"windows" : 'C:\\Program Files\\Sublime Text 3\\sublime_text.exe'
-		}
 		platform = sublime.platform()
-		if platform in execs:
-			return execs[platform]
+		if platform == "osx":
+			return "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl"
+		elif platform == "windows":
+			path64 = "C:\\Program Files\\Sublime Text 3\\sublime_text.exe"
+			path32 = "C:\\Program Files (x86)\\Sublime Text 3\\sublime_text.exe"
+			return path64 if os.path.exists(path64) else path32
+		elif platform == "linux":
+			return "/opt/sublime/sublime_text"
+		else:
+			log_debug("Unknown platform: {}".format(platform))
 
-	def sublime_command_line(self, args):
+	def run_sublime_from_command_line(self, args):
 		args.insert(0, self.get_sublime_path())
 		return subprocess.Popen(args)
 

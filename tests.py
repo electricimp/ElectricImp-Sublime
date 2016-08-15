@@ -11,6 +11,19 @@ import sublime
 import sublime_plugin
 import unittest
 
+
+BASE_PATH = os.path.abspath(os.path.dirname(__file__))
+CODE_DIRS = [
+  # 'plugin_tests',
+]
+sys.path += [BASE_PATH] + [os.path.join(BASE_PATH, f) for f in CODE_DIRS]
+
+### =======
+### reload plugin files on change
+if 'plugin_helpers.reloader' in sys.modules:
+  imp.reload(sys.modules['plugin_tests'])
+import plugin_tests
+
 sys.path.append(os.path.dirname(__file__))
 
 import imp_developer
