@@ -213,6 +213,9 @@ class ImpPushCommand(BaseElectricImpCommand):
 			log_debug("The build API file is missing, please check the settings")
 			return
 
+		# Save all the views first
+		self.save_all_current_window_views()
+
 		settings   = self.load_settings(PR_SETTINGS_FILE)
 		source_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
 		agent_filename  = os.path.join(source_dir, settings.get(EI_AGENT_FILE))
@@ -232,6 +235,10 @@ class ImpPushCommand(BaseElectricImpCommand):
 		# Update the logs first
 		update_log_windows(False)
 
+		# Process response and handle errors appropriately
+		self.process_response(response, settings)
+
+	def process_response(self, response, settings):
 		if response.status_code == requests.codes.ok:
 			response_json = response.json()
 			self.tty("Revision uploaded: " + str(response_json["revision"]["version"]))
@@ -275,6 +282,10 @@ class ImpPushCommand(BaseElectricImpCommand):
 				self.tty(error_message)
 			else:
 				log_debug("Code deply failed because of unknown error: {}".format(str(response_json["error"]["code"])))
+
+	def save_all_current_window_views(self):
+		log_debug("Saving all views...")
+		self.window.run_command("save_all")
 
 	def is_enabled(self):
 		return self.is_electric_imp_project()
