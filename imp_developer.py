@@ -17,11 +17,13 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
 
 import requests
 
-# Plugin specific constants
+# Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
 PL_SETTINGS_FILE         = "ImpDeveloper.sublime-settings"
 PL_DEBUG_FLAG            = "debug"
 PL_AGENT_URL             = "https://agent.electricimp.com/{}"
+PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
+PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -31,6 +33,10 @@ PR_SETTINGS_FILE         = "electric-imp.settings"
 PR_BUILD_API_KEY_FILE    = "build-api.key"
 PR_SOURCE_DIRECTORY      = "src"
 PR_SETTINGS_DIRECTORY    = "settings"
+PR_BUILD_DIRECTORY       = ".build"
+PR_DEVICE_FILE_SUFFIX    = ".device.nut"
+PR_AGENT_FILE_SUFFIX     = ".agent.nut"
+PR_PREPROCESSED_PREFIX   = "preprocessed"
 
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
@@ -216,10 +222,8 @@ class ImpPushCommand(BaseElectricImpCommand):
 		# Save all the views first
 		self.save_all_current_window_views()
 
-		settings   = self.load_settings(PR_SETTINGS_FILE)
-		source_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
-		agent_filename  = os.path.join(source_dir, settings.get(EI_AGENT_FILE))
-		device_filename = os.path.join(source_dir, settings.get(EI_DEVICE_FILE))
+		# Preprocess the sources
+		agent_filename, device_filename = self.preprocess_code()
 
 		if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
 			log_debug("Can't find code files")
@@ -228,6 +232,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 		agent_code  = self.read_file(agent_filename)
 		device_code = self.read_file(device_filename)
 
+		settings = self.load_settings(PR_SETTINGS_FILE)
 		url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
 		data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
 		response = requests.post(url, data=data, headers=self.get_http_headers())
@@ -237,6 +242,76 @@ class ImpPushCommand(BaseElectricImpCommand):
 
 		# Process response and handle errors appropriately
 		self.process_response(response, settings)
+
+	def get_root_nodejs_dir_path(self):
+		result = None
+		platform = sublime.platform()
+		if platform == "windows":
+			path64 = PL_WIN_PROGRAMS_DIR_64 + "nodejs\\"
+			path32 = PL_WIN_PROGRAMS_DIR_32 + "nodejs\\"
+			if   os.path.exists(path64):
+				result = path64
+			elif os.path.exists(path32):
+				result = path32
+		elif platform in ["linux", "osx"]:
+			bin_dir = "bin/node"
+			js_dir1 = "/usr/local/nodejs/"
+			js_dir2 = "/usr/local/"
+			if   os.path.exists(os.path.join(js_dir1, bin_dir)):
+				result = js_dir1
+			elif os.path.exists(os.path.join(js_dir2, bin_dir)):
+				result = js_dir2
+		return result
+
+	def get_node_path(self):
+		platform = sublime.platform()
+		if   platform == "windows":
+			return self.get_root_nodejs_dir_path() + "bin\\node"
+		elif platform in ["linux", "osx"]:
+			return self.get_root_nodejs_dir_path() + "bin/node"
+
+	def get_node_cli_path(self):
+		platform = sublime.platform()
+		if   platform == "windows":
+			return self.get_root_nodejs_dir_path() + "lib\\node_modules\\Builder\\src\\cli.js"
+		elif platform in ["linux", "osx"]:
+			return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"		
+
+	def preprocess_code(self):
+		settings = self.load_settings(PR_SETTINGS_FILE)
+
+		src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
+		bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
+
+		source_agent_filename  = os.path.join(src_dir, settings.get(EI_AGENT_FILE))
+		result_agent_filename  = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_SUFFIX)
+		source_device_filename = os.path.join(src_dir, settings.get(EI_DEVICE_FILE))
+		result_device_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_SUFFIX)
+
+		if not os.path.exists(bld_dir):
+			os.makedirs(bld_dir)
+
+		for code_files in 	[[
+									source_agent_filename, 
+									result_agent_filename
+								],[
+									source_device_filename, 
+									result_device_filename 
+							]]:
+			try:
+				args = [
+					self.get_node_path(),
+					self.get_node_cli_path(),
+					"-l",
+					code_files[0]
+				]
+				with open(code_files[1], "w") as output:
+					subprocess.check_call(args, stdout=output)
+			except subprocess.CalledProcessError as error:
+				log_debug("Error running preprocessor. The process returned code: " + error.returncode)
+
+		return result_agent_filename, result_device_filename
+
 
 	def process_response(self, response, settings):
 		if response.status_code == requests.codes.ok:
@@ -286,7 +361,6 @@ class ImpPushCommand(BaseElectricImpCommand):
 	def save_all_current_window_views(self):
 		log_debug("Saving all views...")
 		self.window.run_command("save_all")
-
 	def is_enabled(self):
 		return self.is_electric_imp_project()
 
@@ -398,8 +472,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		# Create Electric Imp project settings file
 		self.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
 			EI_MODEL_ID      : self.__tmp_model_id,
-			EI_DEVICE_FILE   : self.__tmp_model_name + ".device.nut",
-			EI_AGENT_FILE    : self.__tmp_model_name + ".agent.nut"
+			EI_AGENT_FILE    : self.__tmp_model_name + PR_AGENT_FILE_SUFFIX,
+			EI_DEVICE_FILE   : self.__tmp_model_name + PR_DEVICE_FILE_SUFFIX
 		})
 
 		# Create Electric Imp project settings file
@@ -431,9 +505,12 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 		if platform == "osx":
 			return "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl"
 		elif platform == "windows":
-			path64 = "C:\\Program Files\\Sublime Text 3\\sublime_text.exe"
-			path32 = "C:\\Program Files (x86)\\Sublime Text 3\\sublime_text.exe"
-			return path64 if os.path.exists(path64) else path32
+			path64 = PL_WIN_PROGRAMS_DIR_64 + "Sublime Text 3\\sublime_text.exe"
+			path32 = PL_WIN_PROGRAMS_DIR_32 + "Sublime Text 3\\sublime_text.exe"
+			if   os.path.exists(path64):
+				return path64
+			elif os.path.exists(path32):
+				return path32
 		elif platform == "linux":
 			return "/opt/sublime/sublime_text"
 		else:
@@ -458,8 +535,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
    
 	def pull_model_revision(self):
 		source_dir  = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)
-		agent_file  = os.path.join(source_dir, self.__tmp_model_name + ".agent.nut")
-		device_file = os.path.join(source_dir, self.__tmp_model_name + ".device.nut")
+		agent_file  = os.path.join(source_dir, self.__tmp_model_name + PR_AGENT_FILE_SUFFIX)
+		device_file = os.path.join(source_dir, self.__tmp_model_name + PR_DEVICE_FILE_SUFFIX)
 
 		revisions = requests.get(
 			PL_BUILD_API_URL + "models/" + self.__tmp_model_id + "/revisions", 
