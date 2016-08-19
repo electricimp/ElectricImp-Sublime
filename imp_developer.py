@@ -135,7 +135,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             terminal.run_command("append", {"characters": text + "\n"})
             terminal.set_read_only(True)
         else:
-            print(text);
+            print(text)
 
     def get_build_api_key(self):
         api_key_map = self.load_settings(PR_BUILD_API_KEY_FILE)
@@ -345,7 +345,7 @@ class ImpPushCommand(BaseElectricImpCommand):
             # }
             def build_error_list(errors, errorLocation):
                 report = ""
-                if errors != None:
+                if errors is not None:
                     report = "		{} code:\n".format(errorLocation)
                     for e in errors:
                         report += "				Line: {}, Column: {}, Message: {}\n".format(e["row"], e["column"],
