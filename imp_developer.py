@@ -1,16 +1,14 @@
+import base64
+import datetime
+import json
 import os
+import shutil
+import subprocess
 import sys
+import urllib
+
 import sublime
 import sublime_plugin
-import json
-import base64
-import shutil
-import sched
-import time
-import datetime
-import urllib
-import subprocess
-import datetime
 
 # request-dists is the folder in our plugin
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
