@@ -71,8 +71,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def __init__(self, window):
         self.window = window
+        self.__tmp_device_ids = None
 
-    def base64_encode(self, str):
+    @staticmethod
+    def base64_encode(str):
         return base64.b64encode(str.encode()).decode()
 
     def get_http_headers(self, key=None):
@@ -194,7 +196,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Clean up temporary variables
         self.__tmp_device_ids = None
 
-    def dump_map_to_json_file(self, filename, map):
+    @staticmethod
+    def dump_map_to_json_file(filename, map):
         with open(filename, "w") as file:
             json.dump(map, file)
 
@@ -247,7 +250,8 @@ class ImpPushCommand(BaseElectricImpCommand):
         # Process response and handle errors appropriately
         self.process_response(response, settings)
 
-    def get_root_nodejs_dir_path(self):
+    @staticmethod
+    def get_root_nodejs_dir_path():
         result = None
         platform = sublime.platform()
         if platform == "windows":
@@ -369,7 +373,8 @@ class ImpPushCommand(BaseElectricImpCommand):
     def is_enabled(self):
         return self.is_electric_imp_project()
 
-    def read_file(self, filename):
+    @staticmethod
+    def read_file(filename):
         with open(filename, 'r', encoding="utf-8") as f:
             s = f.read()
         return s
@@ -409,15 +414,29 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
-    def run(self):
-        self.default_project_path = self.get_default_project_path()
-        self.window.show_input_panel(STR_NEW_PROJECT_LOCATION, self.default_project_path, self.on_project_path_entered,
-                                     None, None)
 
-    def get_default_project_path(self):
+    def __init__(self, window):
+        super(ImpCreateProjectCommand, self).__init__(window)
+
+        # Define all the temporary variables
+        self.__tmp_model_id = None
+        self.__tmp_model_name = None
+        self.__tmp_project_path = None
+        self.__tmp_all_model_ids = None
+        self.__tmp_build_api_key = None
+        self.__tmp_all_model_names = None
+
+    def run(self):
+        self.window.show_input_panel(STR_NEW_PROJECT_LOCATION,
+                                     self.get_default_project_path(),
+                                     self.on_project_path_entered,
+                                     None,
+                                     None)
+
+    @staticmethod
+    def get_default_project_path():
         global plugin_settings
         default_project_path_setting = plugin_settings.get(PR_DEFAULT_PROJECT_NAME)
-        default_project_path = None
         if not default_project_path_setting:
             if sublime.platform() == "windows":
                 default_project_path = os.path.expanduser("~\\" + PR_DEFAULT_PROJECT_NAME).replace("\\", "/")
@@ -449,7 +468,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def prompt_for_model(self):
         response = requests.get(PL_BUILD_API_URL + "models",
                                 headers=self.get_http_headers(self.__tmp_build_api_key)).json()
-        if (len(response["models"]) > 0):
+        if len(response["models"]) > 0:
             if not sublime.ok_cancel_dialog(STR_SELECT_MODEL):
                 return
             self.__tmp_all_model_names = [model["name"] for model in response["models"]]
@@ -511,7 +530,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         self.__tmp_build_api_key = None
         self.__tmp_all_model_names = None
 
-    def get_sublime_path(self):
+    @staticmethod
+    def get_sublime_path():
         platform = sublime.platform()
         if platform == "osx":
             return "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl"
@@ -555,7 +575,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             headers=self.get_http_headers(self.__tmp_build_api_key)).json()
         if len(revisions["revisions"]) > 0:
             latest_revision_url = PL_BUILD_API_URL + "models/" + self.__tmp_model_id + "/revisions/" + \
-                                  str(revisions["revisions"][0]["version"]);
+                                  str(revisions["revisions"][0]["version"])
             code = requests.get(
                 latest_revision_url,
                 headers=self.get_http_headers(self.__tmp_build_api_key)).json()
@@ -574,7 +594,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
 def log_debug(text):
     global plugin_settings
-    if plugin_settings.get(PL_DEBUG_FLAG) == True:
+    if plugin_settings.get(PL_DEBUG_FLAG):
         print("  [EI::Debug] " + text)
 
 
