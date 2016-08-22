@@ -1,7 +1,12 @@
+# Copyright (c) 2016 Electric Imp
+# This file is licensed under the MIT License
+# http://opensource.org/licenses/MIT
+
 import base64
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -9,6 +14,11 @@ import urllib
 
 import sublime
 import sublime_plugin
+
+# Import all the text resources
+from enum import Enum
+
+from resources.strings import *
 
 # request-dists is the folder in our plugin
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
@@ -22,6 +32,7 @@ PL_DEBUG_FLAG            = "debug"
 PL_AGENT_URL             = "https://agent.electricimp.com/{}"
 PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
+PL_LOG_START_TIME        = "2000-01-01T00:00:00.000+00:00"
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -32,9 +43,9 @@ PR_BUILD_API_KEY_FILE    = "build-api.key"
 PR_SOURCE_DIRECTORY      = "src"
 PR_SETTINGS_DIRECTORY    = "settings"
 PR_BUILD_DIRECTORY       = "build"
-PR_DEVICE_FILE_SUFFIX    = ".device.nut"
-PR_AGENT_FILE_SUFFIX     = ".agent.nut"
-PR_PREPROCESSED_PREFIX   = "preprocessed"
+PR_DEVICE_FILE_NAME      = "device.nut"
+PR_AGENT_FILE_NAME       = "agent.nut"
+PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
@@ -43,26 +54,167 @@ EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
 EI_DEVICE_ID             = "device-id"
 
-# String constants that are visible for users
-STR_SELECT_DEVICE        = "Please select an Imp device to connect to"
-STR_CODE_IS_ABSENT       = "Code files for agent or device are absent. Please check the project settings at {}"
-STR_NEW_PROJECT_LOCATION = "New Electric Imp Project Location:"
-STR_FOLDER_EXISTS        = "The folder {} already exists. Do you want to create project in this folder?"
-STR_BUILD_API_KEY        = "Electric Imp Build API key:"
-STR_INVALID_API_KEY      = "Build API key is invalid. Please try another one"
-STR_SELECT_MODEL         = "Please select one of the available Models for the project"
-STR_NO_MODELS_AVAILABLE  = "There are no models registered in the system. Please register one from the developer console and try again"
-STR_MISSING_API_KEY      = "The Build API key is missing. You need to specify one first"
-STR_AGENT_URL_COPIED     = "The agent URL for the selected device {} is:\n{}\nIt is copied into the clipboard"
-STR_NO_DEVICES_AVAILABLE = "There are no devices assigned to the model. Please assign a device and try again"
-STR_MODEL_DOES_NOT_EXIST = "The model {}, the project is associated with, doesn't exist. Please check the project settings"
-STR_FAILED_TO_GET_LOGS   = "An error occured while retrieving logs for the specified model/device. Please check the settings"
-STR_ENTER_BUILD_API_KEY  = "Please provide your Electric Imp Build API key. This key can be found in the Developer Console (login into your account and click on the top right button with you user name and select \"Build API Keys\")"
-
 # Global variables
 plugin_settings = None
 project_windows = []
 
+
+class ProjectManager:
+    """Electric Imp project specific fuctionality"""
+
+    def __init__(self, window):
+        self.window = window
+
+    def get_settings_dir(self):
+        project_file_name = self.window.project_file_name()
+        if project_file_name:
+            project_dir = os.path.dirname(project_file_name)
+            return os.path.join(project_dir, PR_SETTINGS_DIRECTORY)
+
+    @staticmethod
+    def dump_map_to_json_file(filename, map):
+        with open(filename, "w") as file:
+            json.dump(map, file)
+
+    def save_settings(self, filename, settings):
+        self.dump_map_to_json_file(self.get_settings_file_path(filename), settings)
+
+    def load_settings(self, filename):
+        path = self.get_settings_file_path(filename)
+        if path and os.path.exists(path):
+            with open(path) as file:
+                return json.load(file)
+
+    def get_settings_file_path(self, filename):
+        settings_dir = self.get_settings_dir()
+        if settings_dir and filename:
+            return os.path.join(settings_dir, filename)
+
+class UIManager:
+    """Electric Imp plugin UI manager"""
+
+    def __init__(self, window):
+        self.window = window
+
+class BuildAPIConnection:
+    """Implementation of all the Electric Imp connection functionality"""
+
+class Preprocessor:
+    """Preprocessor and Builder specific implementation"""
+
+    class SourceType(Enum):
+        AGENT  = 0.
+        device = 1
+
+    def __init__(self, window, settings):
+        self.window = window
+        self.settings = settings
+
+    @staticmethod
+    def get_root_nodejs_dir_path():
+        result = None
+        platform = sublime.platform()
+        if platform == "windows":
+            path64 = PL_WIN_PROGRAMS_DIR_64 + "nodejs\\"
+            path32 = PL_WIN_PROGRAMS_DIR_32 + "nodejs\\"
+            if os.path.exists(path64):
+                result = path64
+            elif os.path.exists(path32):
+                result = path32
+        elif platform in ["linux", "osx"]:
+            bin_dir = "bin/node"
+            js_dir1 = "/usr/local/nodejs/"
+            js_dir2 = "/usr/local/"
+            if os.path.exists(os.path.join(js_dir1, bin_dir)):
+                result = js_dir1
+            elif os.path.exists(os.path.join(js_dir2, bin_dir)):
+                result = js_dir2
+        return result
+
+
+    def get_node_path(self):
+        platform = sublime.platform()
+        if platform == "windows":
+            return self.get_root_nodejs_dir_path() + "bin\\node"
+        elif platform in ["linux", "osx"]:
+            return self.get_root_nodejs_dir_path() + "bin/node"
+
+
+    def get_node_cli_path(self):
+        platform = sublime.platform()
+        if platform == "windows":
+            return self.get_root_nodejs_dir_path() + "lib\\node_modules\\Builder\\src\\cli.js"
+        elif platform in ["linux", "osx"]:
+            return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
+
+    def preprocess_code(self):
+        src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
+        bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
+
+        source_agent_filename = os.path.join(self.get_src_dir(), self.settings.get(EI_AGENT_FILE))
+        result_agent_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
+        source_device_filename = os.path.join(self.get_src_dir(), self.settings.get(EI_DEVICE_FILE))
+        result_device_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
+
+        if not os.path.exists(bld_dir):
+            os.makedirs(bld_dir)
+
+        for code_files in [[
+            source_agent_filename,
+            result_agent_filename
+        ], [
+            source_device_filename,
+            result_device_filename
+        ]]:
+            try:
+                args = [
+                    self.get_node_path(),
+                    self.get_node_cli_path(),
+                    "-l",
+                    code_files[0]
+                ]
+                with open(code_files[1], "w") as output:
+                    subprocess.check_call(args, stdout=output)
+            except subprocess.CalledProcessError as error:
+                log_debug("Error running preprocessor. The process returned code: " + error.returncode)
+
+        return result_agent_filename, result_device_filename
+
+    def decompile_file(self, source_type):
+        # Setup the preprocessed file name based on the source type
+        bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
+        if source_type == self.SourceType.AGENT:
+            preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
+            orig_filename = PR_AGENT_FILE_NAME
+        elif source_type == self.SourceType.DEVICE:
+            preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
+            orig_filename = PR_DEVICE_FILE_NAME
+        else:
+            log_debug("Wrong source type")
+            return
+
+        # Parse the target file and build the code line table
+        code_table = {}
+        pattern = re.compile(r"#line \d+ \"*\"")
+        curr_line = orig_line = 0
+        with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
+            while 1:
+                line = f.readline()
+                if not line:
+                    break
+                match = pattern.search(line)
+                if match:
+                    orig_line, orig_filename = match.group()
+                code_table[curr_line] = (orig_filename, int(orig_line))
+                orig_line += 1
+                curr_line += 1
+
+        return code_table
+
+    """Converts error location in the preprocessed code into the original filename and line number"""
+    def get_error_location(self, source_type, line):
+        code_table = self.decompile_file(source_type)
+        return code_table[line]
 
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
@@ -70,6 +222,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def __init__(self, window):
         self.window = window
         self.__tmp_device_ids = None
+
+        self.uiManager = UIManager(window)
+        self.apiConnector = BuildAPIConnection()
+        self.project_manager = ProjectManager(window)
 
     @staticmethod
     def base64_encode(str):
@@ -81,17 +237,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             "Authorization": "Basic " + self.base64_encode(build_api_key),
             "Content-Type" : "application/json"
         }
-
-    def get_settings_dir(self):
-        project_file_name = self.window.project_file_name()
-        if project_file_name:
-            project_dir = os.path.dirname(project_file_name)
-            return os.path.join(project_dir, PR_SETTINGS_DIRECTORY)
-
-    def get_settings_file_path(self, filename):
-        settings_dir = self.get_settings_dir()
-        if settings_dir and filename:
-            return os.path.join(settings_dir, filename)
 
     def is_electric_imp_project(self):
         settings_filename = self.get_settings_file_path(PR_SETTINGS_FILE)
@@ -108,7 +253,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def create_new_console(self):
         self.window.terminal = self.window.get_output_panel("textarea")
-        self.window.terminal.logs_timestamp = "2000-01-01T00:00:00.000+00:00"
+        self.window.terminal.logs_timestamp = PL_LOG_START_TIME
 
     def show_console(self):
         self.window.run_command("show_panel", {"panel": "output.textarea"})
@@ -194,20 +339,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Clean up temporary variables
         self.__tmp_device_ids = None
 
-    @staticmethod
-    def dump_map_to_json_file(filename, map):
-        with open(filename, "w") as file:
-            json.dump(map, file)
-
-    def save_settings(self, filename, settings):
-        self.dump_map_to_json_file(self.get_settings_file_path(filename), settings)
-
-    def load_settings(self, filename):
-        path = self.get_settings_file_path(filename)
-        if path and os.path.exists(path):
-            with open(path) as file:
-                return json.load(file)
-
     def get_logs_timestamp(self):
         return self.window.terminal.logs_timestamp
 
@@ -216,6 +347,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 
 class ImpPushCommand(BaseElectricImpCommand):
+    """Code push command implementation"""
+
+    def __init__(self, window):
+        super(ImpPushCommand, self).__init__(window)
+        self.Preprocessor = Preprocessor(window, self.project_manager.load_settings(PR_SETTINGS_FILE))
+
     def run(self):
         self.init_tty()
         self.check_settings()
@@ -247,76 +384,6 @@ class ImpPushCommand(BaseElectricImpCommand):
 
         # Process response and handle errors appropriately
         self.process_response(response, settings)
-
-    @staticmethod
-    def get_root_nodejs_dir_path():
-        result = None
-        platform = sublime.platform()
-        if platform == "windows":
-            path64 = PL_WIN_PROGRAMS_DIR_64 + "nodejs\\"
-            path32 = PL_WIN_PROGRAMS_DIR_32 + "nodejs\\"
-            if os.path.exists(path64):
-                result = path64
-            elif os.path.exists(path32):
-                result = path32
-        elif platform in ["linux", "osx"]:
-            bin_dir = "bin/node"
-            js_dir1 = "/usr/local/nodejs/"
-            js_dir2 = "/usr/local/"
-            if os.path.exists(os.path.join(js_dir1, bin_dir)):
-                result = js_dir1
-            elif os.path.exists(os.path.join(js_dir2, bin_dir)):
-                result = js_dir2
-        return result
-
-    def get_node_path(self):
-        platform = sublime.platform()
-        if platform == "windows":
-            return self.get_root_nodejs_dir_path() + "bin\\node"
-        elif platform in ["linux", "osx"]:
-            return self.get_root_nodejs_dir_path() + "bin/node"
-
-    def get_node_cli_path(self):
-        platform = sublime.platform()
-        if platform == "windows":
-            return self.get_root_nodejs_dir_path() + "lib\\node_modules\\Builder\\src\\cli.js"
-        elif platform in ["linux", "osx"]:
-            return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
-
-    def preprocess_code(self):
-        settings = self.load_settings(PR_SETTINGS_FILE)
-
-        src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
-        bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
-
-        source_agent_filename  = os.path.join(src_dir, settings.get(EI_AGENT_FILE))
-        result_agent_filename  = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_SUFFIX)
-        source_device_filename = os.path.join(src_dir, settings.get(EI_DEVICE_FILE))
-        result_device_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_SUFFIX)
-
-        if not os.path.exists(bld_dir):
-            os.makedirs(bld_dir)
-
-        for code_files in [[
-            source_agent_filename,
-            result_agent_filename
-        ], [
-            source_device_filename,
-            result_device_filename
-        ]]:
-            try:
-                args = [
-                    self.get_node_path(),
-                    self.get_node_cli_path(),
-                    "-l",
-                    code_files[0]
-                ]
-                with open(code_files[1], "w") as output:
-                    subprocess.check_call(args, stdout=output)
-            except subprocess.CalledProcessError as error:
-                log_debug("Error running preprocessor. The process returned code: " + error.returncode)
-
-        return result_agent_filename, result_device_filename
 
     def process_response(self, response, settings):
         if response.status_code == requests.codes.ok:
@@ -418,7 +485,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         # Define all the temporary variables
         self.__tmp_model_id = None
-        self.__tmp_model_name = None
         self.__tmp_project_path = None
         self.__tmp_all_model_ids = None
         self.__tmp_build_api_key = None
@@ -479,9 +545,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
     def on_model_choosen(self, index):
         self.__tmp_model_id = self.__tmp_all_model_ids[index]
-        self.__tmp_model_name = self.__tmp_all_model_names[index]
-
-        log_debug("model choosen (name, id): (" + self.__tmp_model_name + ", " + self.__tmp_model_id + ")")
+        log_debug("model chosen (name, id): (" + self.__tmp_all_model_names[index] + ", " + self.__tmp_model_id + ")")
         self.create_project()
 
     def create_project(self):
@@ -500,8 +564,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         # Create Electric Imp project settings file
         self.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
             EI_MODEL_ID:    self.__tmp_model_id,
-            EI_AGENT_FILE:  self.__tmp_model_name + PR_AGENT_FILE_SUFFIX,
-            EI_DEVICE_FILE: self.__tmp_model_name + PR_DEVICE_FILE_SUFFIX
+            EI_AGENT_FILE:  PR_AGENT_FILE_NAME,
+            EI_DEVICE_FILE: PR_DEVICE_FILE_NAME
         })
 
         # Create Electric Imp project settings file
@@ -522,7 +586,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         # Clean up all temporary variables
         self.__tmp_model_id = None
-        self.__tmp_model_name = None
         self.__tmp_project_path = None
         self.__tmp_all_model_ids = None
         self.__tmp_build_api_key = None
@@ -565,8 +628,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
     def pull_model_revision(self):
         source_dir  = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)
-        agent_file  = os.path.join(source_dir, self.__tmp_model_name + PR_AGENT_FILE_SUFFIX)
-        device_file = os.path.join(source_dir, self.__tmp_model_name + PR_DEVICE_FILE_SUFFIX)
+        agent_file  = os.path.join(source_dir, PR_AGENT_FILE_NAME)
+        device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
         revisions = requests.get(
             PL_BUILD_API_URL + "models/" + self.__tmp_model_id + "/revisions",
