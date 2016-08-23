@@ -116,6 +116,7 @@ class Env:
             window.__ei_env__ = Env()
         # There is nothing to do if the window has an environment registered already
 
+
 class UIManager:
     """Electric Imp plugin UI manager"""
 
@@ -177,6 +178,7 @@ class HTTPConnection:
     @staticmethod
     def is_response_valid(response):
         return response.status_code != requests.codes.ok
+
 
 class Preprocessor:
     """Preprocessor and Builder specific implementation"""
@@ -479,9 +481,11 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         self.ui_manager.init_tty()
         self.prompt_for_settings_if_missing()
 
+
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
     def run(self):
         self.prompt_for_device()
+
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
@@ -670,6 +674,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     # Create Project menu item is always enabled regardless of the project type
     def is_enabled(self):
         return True
+
 
 def log_debug(text):
     global plugin_settings
