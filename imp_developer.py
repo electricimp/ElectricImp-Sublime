@@ -97,6 +97,38 @@ class UIManager:
     def __init__(self, window):
         self.window = window
 
+    def create_new_console(self):
+        class ElectricImpEnvironment:
+            pass
+        self.window.ei_env = ElectricImpEnvironment()
+        self.window.ei_env.terminal = self.window.get_output_panel("textarea")
+        self.window.ei_env.logs_timestamp = PL_LOG_START_TIME
+
+    def write_to_console(self, text):
+        terminal = self.window.ei_env.terminal
+        terminal.set_read_only(False)
+        terminal.run_command("append", {"characters": text + "\n"})
+        terminal.set_read_only(True)
+
+    def init_tty(self):
+        global project_windows
+        if self.window not in project_windows:
+            self.create_new_console()
+            project_windows.append(self.window)
+            log_debug(
+                "adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
+        self.show_console()
+
+    def show_console(self):
+        self.window.run_command("show_panel", {"panel": "output.textarea"})
+
+    def get_logs_timestamp(self):
+        return self.window.ei_env.logs_timestamp
+
+    def set_logs_timestamp(self, timestamp):
+        self.window.ei_env.logs_timestamp = timestamp
+
+
 class BuildAPIConnection:
     """Implementation of all the Electric Imp connection functionality"""
 
@@ -105,7 +137,7 @@ class Preprocessor:
 
     class SourceType():
         AGENT  = 0
-        device = 1
+        DEVICE = 1
 
     def __init__(self, window, settings):
         self.window = window
@@ -239,22 +271,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             "Content-Type" : "application/json"
         }
 
-    def init_tty(self):
-        global project_windows
-        if self.window not in project_windows:
-            self.create_new_console()
-            project_windows.append(self.window)
-            log_debug(
-                "adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
-        self.show_console()
-
-    def create_new_console(self):
-        self.window.terminal = self.window.get_output_panel("textarea")
-        self.window.terminal.logs_timestamp = PL_LOG_START_TIME
-
-    def show_console(self):
-        self.window.run_command("show_panel", {"panel": "output.textarea"})
-
     def check_settings(self):
         # Check if Build API key exists
         if not self.get_build_api_key():
@@ -272,10 +288,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def tty(self, text):
         global project_windows
         if self.window in project_windows:
-            terminal = self.window.terminal
-            terminal.set_read_only(False)
-            terminal.run_command("append", {"characters": text + "\n"})
-            terminal.set_read_only(True)
+            self.ui_manager.write_to_console(text)
         else:
             print(text)
 
@@ -329,18 +342,18 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             settings[EI_DEVICE_ID] = self.__tmp_device_ids[index]
             self.project_manager.save_settings(PR_SETTINGS_FILE, settings)
             # Clean up the terminal window
-            self.create_new_console()
-            self.show_console()
+            self.ui_manager.create_new_console()
+            self.ui_manager.show_console()
         else:
             log_debug("Newly selected device is the same as the old one. Nothing to do.")
         # Clean up temporary variables
         self.__tmp_device_ids = None
 
     def get_logs_timestamp(self):
-        return self.window.terminal.logs_timestamp
+        return self.ui_manager.get_logs_timestamp()
 
     def set_logs_timestamp(self, timestamp):
-        self.window.terminal.logs_timestamp = timestamp
+        self.ui_manager.set_logs_timestamp(timestamp)
 
 
 class ImpPushCommand(BaseElectricImpCommand):
@@ -351,7 +364,7 @@ class ImpPushCommand(BaseElectricImpCommand):
         self.preprocessor = Preprocessor(window, self.project_manager.load_settings(PR_SETTINGS_FILE))
 
     def run(self):
-        self.init_tty()
+        self.ui_manager.init_tty()
         self.check_settings()
 
         if self.get_build_api_key() is None:
@@ -444,7 +457,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
     def run(self):
-        self.init_tty()
+        self.ui_manager.init_tty()
         self.check_settings()
 
     def is_enabled(self):
