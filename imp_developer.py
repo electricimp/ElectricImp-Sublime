@@ -15,12 +15,11 @@ import urllib
 import sublime
 import sublime_plugin
 
-# Import all the text resources
+# Plugin specific imports
 from plugin_resources.strings import *
 
-# request-dists is the folder in our plugin
+# Append requests module to the system module path
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
-
 import requests
 
 # Generic plugin constants
@@ -390,7 +389,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 
             # Not it's time to restart the Model
             url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
-            response = requests.post(url, headers=self.get_http_headers())
+            requests.post(url, headers=self.get_http_headers())
         else:
             # {
             # 	'error': {
@@ -422,7 +421,7 @@ class ImpPushCommand(BaseElectricImpCommand):
             response_json = response.json()
             error = response_json["error"]
             if error and error["code"] == "CompileFailed":
-                error_message = "Deply failed because of the compilation errors:\n"
+                error_message = "Deploy failed because of the compilation errors:\n"
                 error_message += build_error_list(error["details"]["agent_errors"], "Agent")
                 error_message += build_error_list(error["details"]["device_errors"], "Device")
                 self.tty(error_message)
@@ -692,21 +691,23 @@ def update_log_windows(restart_timer=True):
                 timestamp = response_json["logs"][log_size - 1]["timestamp"]
                 eiCommand.set_logs_timestamp(timestamp)
                 for log in response_json["logs"]:
+                    type = {
+                        "status"       : "[Server]",
+                        "server.log"   : "[Device]",
+                        "server.error" : "[Device]",
+                        "lastexitcode" : "[Device]",
+                        "agent.log"    : "[Agent] ",
+                        "agent.error"  : "[Agent] "
+                    }[log["type"]]
                     try:
-                        type = {
-                            "status"       : "[Status]",
-                            "server.log"   : "[Device]",
-                            "server.error" : "[Error]",
-                            "lastexitcode" : "[Exit]"
-                        }[log["type"]]
+                        pass
                     except:
                         log_debug("Unrecognized log type: " + log["type"])
-                        type = "[Device]"
+                        type = "[Unrecognized]"
                     dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
                     eiCommand.tty(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + log["message"])
     finally:
         if restart_timer:
             sublime.set_timeout_async(update_log_windows, 1000)
-
 
 update_log_windows()
