@@ -101,20 +101,28 @@ class ProjectManager:
 class Env:
     """Window (project) specific environment object"""
 
-    def __init__(self):
-        self.terminal = None
-        self.preprocessor = None
-        self.logs_timestamp = None
+    def __init__(self, window):
+        # UI Manager
+        self.ui_manager = UIManager(window)
+        # Electric Imp Project manager
+        self.project_manager = ProjectManager(window)
+        # Preprocessor
+        self.preprocessor = Preprocessor(window, self.project_manager.load_settings(PR_SETTINGS_FILE))
 
     @staticmethod
-    def get_env_for(window):
+    def For(window):
         return window.__ei_env__
 
     @staticmethod
-    def register_env_for(window):
+    def create_env_if_doesnt_exist_for(window):
         if window.__ei_env__ is None:
-            window.__ei_env__ = Env()
+            window.__ei_env__ = Env(window)
         # There is nothing to do if the window has an environment registered already
+        return window.__ei_env__
+
+    @staticmethod
+    def unregister_env_for(window):
+        window.__ei_env__ = None
 
 
 class UIManager:
@@ -122,15 +130,14 @@ class UIManager:
 
     def __init__(self, window):
         self.window = window
-        Env.register_env_for(window)
 
     def create_new_console(self):
-        env = Env.get_env_for(self.window)
+        env = Env.For(self.window)
         env.terminal = self.window.get_output_panel("textarea")
         env.logs_timestamp = PL_LOG_START_TIME
 
     def write_to_console(self, text):
-        terminal = Env.get_env_for(self.window).terminal
+        terminal = Env.For(self.window).terminal
         terminal.set_read_only(False)
         terminal.run_command("append", {"characters": text + "\n"})
         terminal.set_read_only(True)
@@ -152,20 +159,20 @@ class HTTPConnection:
     """Implementation of all the Electric Imp connection functionality"""
 
     @staticmethod
-    def base64_encode(str):
+    def __base64_encode(str):
         return base64.b64encode(str.encode()).decode()
 
     @staticmethod
     def __get_http_headers(key):
         return {
-            "Authorization": "Basic " + HTTPConnection.base64_encode(key),
+            "Authorization": "Basic " + HTTPConnection.__base64_encode(key),
             "Content-Type": "application/json"
         }
 
     @staticmethod
     def is_build_api_key_valid(key):
         return requests.get(PL_BUILD_API_URL + "models",
-                            headers=HTTPConnection.__get_http_headers(key)).status_code == 200
+                            headers=HTTPConnection.__get_http_headers(key)).status_code == requests.codes.ok
 
     @staticmethod
     def get(key, url):
@@ -190,6 +197,7 @@ class Preprocessor:
     def __init__(self, window, settings):
         self.window = window
         self.settings = settings
+        self.line_table = {Preprocessor.SourceType.AGENT: None, Preprocessor.SourceType.DEVICE: None}
 
     @staticmethod
     def get_root_nodejs_dir_path():
@@ -226,7 +234,7 @@ class Preprocessor:
         elif platform in ["linux", "osx"]:
             return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
 
-    def preprocess_code(self):
+    def preprocess(self):
         src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
 
@@ -257,9 +265,12 @@ class Preprocessor:
             except subprocess.CalledProcessError as error:
                 log_debug("Error running preprocessor. The process returned code: " + error.returncode)
 
+        for source_type in self.line_table:
+            self.line_table[source_type] = self.__build_line_table(source_type)
+
         return result_agent_filename, result_device_filename
 
-    def decompile_file(self, source_type):
+    def __build_line_table(self, source_type):
         # Setup the preprocessed file name based on the source type
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
         if source_type == self.SourceType.AGENT:
@@ -273,7 +284,7 @@ class Preprocessor:
             return
 
         # Parse the target file and build the code line table
-        code_table = {}
+        line_table = {}
         pattern = re.compile(r"#line \d+ \"*\"")
         curr_line = orig_line = 0
         with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
@@ -284,16 +295,16 @@ class Preprocessor:
                 match = pattern.search(line)
                 if match:
                     orig_line, orig_filename = match.group()
-                code_table[curr_line] = (orig_filename, int(orig_line))
+                line_table[curr_line] = (orig_filename, int(orig_line))
                 orig_line += 1
                 curr_line += 1
 
-        return code_table
+        return line_table
 
-    """Converts error location in the preprocessed code into the original filename and line number"""
+    # Converts error location in the preprocessed code into the original filename and line number
     def get_error_location(self, source_type, line):
-        code_table = self.decompile_file(source_type)
-        return code_table[line]
+        code_table = self.line_table[source_type]
+        return None if code_table is None else code_table[line]
 
 
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
@@ -303,19 +314,18 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.window = window
         self.__tmp_device_ids = None
 
-        self.ui_manager = UIManager(window)
-        self.project_manager = ProjectManager(window)
+        self.env = Env.create_env_if_doesnt_exist_for(window)
 
     def prompt_for_settings_if_missing(self):
         # Check if Build API key exists
-        if not self.project_manager.get_build_api_key():
+        if not self.env.project_manager.get_build_api_key():
             decision = sublime.ok_cancel_dialog(STR_MISSING_API_KEY)
             if decision:
                 self.prompt_for_build_api_key()
             return
 
         # Prompt for device if it wasn't selected yet
-        if EI_DEVICE_ID not in self.project_manager.load_settings(PR_SETTINGS_FILE):
+        if EI_DEVICE_ID not in self.env.project_manager.load_settings(PR_SETTINGS_FILE):
             decision = sublime.ok_cancel_dialog(STR_SELECT_DEVICE)
             if decision:
                 self.prompt_for_device()
@@ -323,14 +333,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def print_to_tty(self, text):
         global project_windows
         if self.window in project_windows:
-            self.ui_manager.write_to_console(text)
+            self.env.ui_manager.write_to_console(text)
         else:
             print(text)
 
     def prompt_for_device(self):
-        model_id = self.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
+        model_id = self.env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
         url = PL_BUILD_API_URL + "models/" + model_id
-        response = HTTPConnection.get(self.project_manager.get_build_api_key(), url)
+        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url)
         # If request failed, the model doesn't seem to exist anymore
         if not HTTPConnection.is_response_valid(response):
             sublime.message_dialog(STR_MODEL_DOES_NOT_EXIST.format(model_id))
@@ -359,24 +369,24 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.prompt_for_settings_if_missing()
 
     def on_device_selected(self, index):
-        settings = self.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
         new_device_id = self.__tmp_device_ids[index]
         old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
         if new_device_id != old_device_id:
             log_debug("New device selected: saving new settings file and restarting the console...")
             # Update the device id
             settings[EI_DEVICE_ID] = self.__tmp_device_ids[index]
-            self.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
             # Clean up the terminal window
-            self.ui_manager.create_new_console()
-            self.ui_manager.show_console()
+            self.env.ui_manager.create_new_console()
+            self.env.ui_manager.show_console()
         else:
             log_debug("Newly selected device is the same as the old one. Nothing to do.")
         # Clean up temporary variables
         self.__tmp_device_ids = None
 
     def is_enabled(self):
-        return self.project_manager.is_electric_imp_project()
+        return self.env.project_manager.is_electric_imp_project()
 
 
 class ImpPushCommand(BaseElectricImpCommand):
@@ -384,14 +394,12 @@ class ImpPushCommand(BaseElectricImpCommand):
 
     def __init__(self, window):
         super(ImpPushCommand, self).__init__(window)
-        self.ui_manager.get_ei_env().preprocessor = Preprocessor(window,
-                                                                 self.project_manager.load_settings(PR_SETTINGS_FILE))
 
     def run(self):
-        self.ui_manager.init_tty()
+        self.env.ui_manager.init_tty()
         self.prompt_for_settings_if_missing()
 
-        if self.project_manager.get_build_api_key() is None:
+        if self.env.project_manager.get_build_api_key() is None:
             log_debug("The build API file is missing, please check the settings")
             return
 
@@ -399,7 +407,7 @@ class ImpPushCommand(BaseElectricImpCommand):
         self.save_all_current_window_views()
 
         # Preprocess the sources
-        agent_filename, device_filename = self.preprocessor.preprocess_code()
+        agent_filename, device_filename = self.preprocessor.preprocess()
 
         if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
             log_debug("Can't find code files")
@@ -408,10 +416,10 @@ class ImpPushCommand(BaseElectricImpCommand):
         agent_code  = self.read_file(agent_filename)
         device_code = self.read_file(device_filename)
 
-        settings = self.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
         url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
         data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-        response = HTTPConnection.post(self.project_manager.get_build_api_key(), url, data)
+        response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
 
         # Update the logs first
         update_log_windows(False)
@@ -426,7 +434,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 
             # Not it's time to restart the Model
             url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
-            HTTPConnection.post(self.project_manager.get_build_api_key(), url)
+            HTTPConnection.post(self.env.project_manager.get_build_api_key(), url)
         else:
             # {
             # 	'error': {
@@ -478,7 +486,7 @@ class ImpPushCommand(BaseElectricImpCommand):
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
     def run(self):
-        self.ui_manager.init_tty()
+        self.env.ui_manager.init_tty()
         self.prompt_for_settings_if_missing()
 
 
@@ -493,7 +501,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         settings = self.load_settings(PR_SETTINGS_FILE)
         if EI_DEVICE_ID in settings:
             device_id = settings.get(EI_DEVICE_ID)
-            response  = HTTPConnection.get(self.project_manager.get_build_api_key(),
+            response  = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                       PL_BUILD_API_URL + "devices/" + device_id).json()
             agent_id  = response.get("device").get("agent_id")
             agent_url = PL_AGENT_URL.format(agent_id)
@@ -584,14 +592,14 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         self.copy_gitignore()
 
         # Create Electric Imp project settings file
-        self.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
+        self.env.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
             EI_MODEL_ID:    self.__tmp_model_id,
             EI_AGENT_FILE:  PR_AGENT_FILE_NAME,
             EI_DEVICE_FILE: PR_DEVICE_FILE_NAME
         })
 
         # Create Electric Imp project settings file
-        self.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_BUILD_API_KEY_FILE), {
+        self.env.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_BUILD_API_KEY_FILE), {
             EI_BUILD_API_KEY: self.__tmp_build_api_key
         })
 
@@ -691,13 +699,13 @@ def update_log_windows(restart_timer=True):
     global project_windows
     try:
         for window in project_windows:
-            env = Env.get_env_for(window)
+            env = Env.For(window)
             eiCommand = BaseElectricImpCommand(window)
             if not eiCommand.project_manager.is_electric_imp_project():
                 # It's not a windows that corresponds to an EI project, remove it from the list
                 project_windows.remove(window)
-                log_debug("Removing window from the windows project: " + str(window) + ", total windows now: " + str(
-                    len(project_windows)))
+                env.unregister_env_for(window)
+                log_debug("Removing project window: " + str(window) + ", total #: " + str(len(project_windows)))
                 continue
             device_id = eiCommand.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
