@@ -107,7 +107,7 @@ class Env:
         # Electric Imp Project manager
         self.project_manager = ProjectManager(window)
         # Preprocessor
-        self.preprocessor = Preprocessor(window, self.project_manager.load_settings(PR_SETTINGS_FILE))
+        self.code_processor = Preprocessor(window, self.project_manager.load_settings(PR_SETTINGS_FILE))
 
     @staticmethod
     def For(window):
@@ -115,7 +115,7 @@ class Env:
 
     @staticmethod
     def create_env_if_doesnt_exist_for(window):
-        if window.__ei_env__ is None:
+        if not hasattr(window, "__ei_env__"):
             window.__ei_env__ = Env(window)
         # There is nothing to do if the window has an environment registered already
         return window.__ei_env__
@@ -153,6 +153,10 @@ class UIManager:
 
     def show_console(self):
         self.window.run_command("show_panel", {"panel": "output.textarea"})
+
+    def show_file_browser(self, default_path, on_path_selected):
+        subprocess.Popen(['open', '-R', default_path])
+
 
 
 class HTTPConnection:
@@ -358,7 +362,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def on_build_api_key_entered(self, key):
         log_debug("build api key provided: " + key)
-        if self.is_build_api_key_valid(key):
+        if HTTPConnection.is_build_api_key_valid(key):
             log_debug("build API key is valid")
             self.save_settings(PR_BUILD_API_KEY_FILE, {
                 EI_BUILD_API_KEY: key
@@ -389,11 +393,11 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         return self.env.project_manager.is_electric_imp_project()
 
 
-class ImpPushCommand(BaseElectricImpCommand):
+class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Code push command implementation"""
 
     def __init__(self, window):
-        super(ImpPushCommand, self).__init__(window)
+        super(ImpBuildAndRunCommand, self).__init__(window)
 
     def run(self):
         self.env.ui_manager.init_tty()
@@ -407,7 +411,7 @@ class ImpPushCommand(BaseElectricImpCommand):
         self.save_all_current_window_views()
 
         # Preprocess the sources
-        agent_filename, device_filename = self.preprocessor.preprocess()
+        agent_filename, device_filename = self.env.code_processor.preprocess()
 
         if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
             log_debug("Can't find code files")
@@ -552,7 +556,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
     def on_build_api_key_entered(self, key):
         log_debug("build api key provided: " + key)
-        if self.is_build_api_key_valid(key):
+        if HTTPConnection.is_build_api_key_valid(key):
             log_debug("build API key is valid")
             self.__tmp_build_api_key = key
             self.prompt_for_model()
@@ -701,19 +705,19 @@ def update_log_windows(restart_timer=True):
         for window in project_windows:
             env = Env.For(window)
             eiCommand = BaseElectricImpCommand(window)
-            if not eiCommand.project_manager.is_electric_imp_project():
+            if not env.project_manager.is_electric_imp_project():
                 # It's not a windows that corresponds to an EI project, remove it from the list
                 project_windows.remove(window)
                 env.unregister_env_for(window)
                 log_debug("Removing project window: " + str(window) + ", total #: " + str(len(project_windows)))
                 continue
-            device_id = eiCommand.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
+            device_id = env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
-            if None in [device_id, timestamp, eiCommand.project_manager.get_build_api_key()]:
+            if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
                 # Device is not selected yet and the console is not setup for the project, nothing we can do here
                 continue
             url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
-            response = HTTPConnection.get(eiCommand.project_manager.get_build_api_key(), url)
+            response = HTTPConnection.get(env.project_manager.get_build_api_key(), url)
 
             # There was an error while retrieving logs from the server
             if not HTTPConnection.is_response_valid(response):
