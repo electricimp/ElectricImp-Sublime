@@ -154,10 +154,9 @@ class UIManager:
     def show_console(self):
         self.window.run_command("show_panel", {"panel": "output.textarea"})
 
-    def show_file_browser(self, default_path, on_path_selected):
-        subprocess.Popen(['open', '-R', default_path])
-
-
+    def show_path_selector(self, caption, default_path, on_path_selected):
+        # TODO: Implement path selection autocomplete (CSE-70)
+        self.window.show_input_panel(caption, default_path, on_path_selected, None, None)
 
 class HTTPConnection:
     """Implementation of all the Electric Imp connection functionality"""
@@ -526,11 +525,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         self.__tmp_all_model_names = None
 
     def run(self):
-        self.window.show_input_panel(STR_NEW_PROJECT_LOCATION,
-                                     self.get_default_project_path(),
-                                     self.on_project_path_entered,
-                                     None,
-                                     None)
+        self.env.ui_manager.show_path_selector(STR_NEW_PROJECT_LOCATION, self.get_default_project_path(),
+                                               self.on_project_path_entered)
 
     @staticmethod
     def get_default_project_path():
@@ -547,12 +543,56 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
     def on_project_path_entered(self, path):
         log_debug("Project path specified: " + path)
-        self.__tmp_project_path = path
-
+        # self.__tmp_project_path = path
         if os.path.exists(path):
             if not sublime.ok_cancel_dialog(STR_FOLDER_EXISTS.format(path)):
                 return
-        self.prompt_for_build_api_key()
+        self.create_project(path)
+        # self.prompt_for_build_api_key()
+
+    def create_project(self, path):
+        source_dir = os.path.join(path, PR_SOURCE_DIRECTORY)
+        settings_dir = os.path.join(path, PR_SETTINGS_DIRECTORY)
+
+        log_debug("Creating project at: " + path)
+        if not os.path.exists(source_dir):
+            os.makedirs(source_dir)
+        if not os.path.exists(settings_dir):
+            os.makedirs(settings_dir)
+
+        self.copy_project_template_file(path)
+        self.copy_gitignore(path)
+
+        # Create Electric Imp project settings file
+        self.env.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
+            EI_AGENT_FILE:  PR_AGENT_FILE_NAME,
+            EI_DEVICE_FILE: PR_DEVICE_FILE_NAME
+        })
+
+        # Pull the latest code revision from the server
+        (agent_file, device_file) = self.create_source_files_if_absent(path)
+
+        ok = False
+        try:
+            # Try opening the project in the new window
+            self.run_sublime_from_command_line(["-n", self.get_project_file_name(path)])
+            ok = True
+        except:
+            log_debug("Error executing sublime: {} ".format(sys.exc_info()[0]))
+            # If failed, open the project in the file browser
+            self.window.run_command("open_dir", {"dir": path})
+
+        if ok:
+            def open_sources():
+                # TODO: Redo: this code assumes that the last open window was appended to the window list
+                last_window = sublime.windows()[-1]
+                if ProjectManager(last_window).is_electric_imp_project():
+                    last_window.open_file(agent_file)
+                    last_window.open_file(device_file)
+
+            # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
+            sublime.set_timeout_async(open_sources, 10)
+
 
     def on_build_api_key_entered(self, key):
         log_debug("build api key provided: " + key)
@@ -582,48 +622,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         log_debug("model chosen (name, id): (" + self.__tmp_all_model_names[index] + ", " + self.__tmp_model_id + ")")
         self.create_project()
 
-    def create_project(self):
-        source_dir = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)
-        settings_dir = os.path.join(self.__tmp_project_path, PR_SETTINGS_DIRECTORY)
-
-        log_debug("Creating project at: " + self.__tmp_project_path)
-        if not os.path.exists(source_dir):
-            os.makedirs(source_dir)
-        if not os.path.exists(settings_dir):
-            os.makedirs(settings_dir)
-
-        self.copy_project_template_file()
-        self.copy_gitignore()
-
-        # Create Electric Imp project settings file
-        self.env.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
-            EI_MODEL_ID:    self.__tmp_model_id,
-            EI_AGENT_FILE:  PR_AGENT_FILE_NAME,
-            EI_DEVICE_FILE: PR_DEVICE_FILE_NAME
-        })
-
-        # Create Electric Imp project settings file
-        self.env.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_BUILD_API_KEY_FILE), {
-            EI_BUILD_API_KEY: self.__tmp_build_api_key
-        })
-
-        # Pull the latest code revision from the server
-        self.pull_model_revision()
-
-        try:
-            # Try opening the project in the new window
-            self.run_sublime_from_command_line(["-n", self.get_project_file_name()])
-        except:
-            log_debug("Error executing sublime: {} ".format(sys.exc_info()[0]))
-            # If failed, open the project in the file browser
-            self.window.run_command("open_dir", {"dir": self.__tmp_project_path})
-
-        # Clean up all temporary variables
-        self.__tmp_model_id = None
-        self.__tmp_project_path = None
-        self.__tmp_all_model_ids = None
-        self.__tmp_build_api_key = None
-        self.__tmp_all_model_names = None
 
     @staticmethod
     def get_sublime_path():
@@ -643,42 +641,31 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             log_debug("Unknown platform: {}".format(platform))
 
     def run_sublime_from_command_line(self, args):
-        args.insert(0, self.get_sublime_path())
-        return subprocess.Popen(args)
+        args.insert(0, self.get_sublime_path() + "1")
+        return subprocess.call(args)
 
-    def get_project_file_name(self):
-        return os.path.join(self.__tmp_project_path,
-                            PR_PROJECT_FILE_TEMPLATE.replace("_project_name_",
-                                                             os.path.basename(self.__tmp_project_path)))
+    def get_project_file_name(self, path):
+        return os.path.join(path, PR_PROJECT_FILE_TEMPLATE.replace("_project_name_", os.path.basename(path)))
 
-    def copy_project_template_file(self):
+    def copy_project_template_file(self, path):
         src = os.path.join(self.get_template_dir(), PR_PROJECT_FILE_TEMPLATE)
-        dst = self.get_project_file_name()
+        dst = self.get_project_file_name(path)
         shutil.copy(src, dst)
 
-    def copy_gitignore(self):
+    def copy_gitignore(self, path):
         src = os.path.join(self.get_template_dir(), ".gitignore")
-        shutil.copy(src, self.__tmp_project_path)
+        shutil.copy(src, path)
 
-    def pull_model_revision(self):
-        source_dir  = os.path.join(self.__tmp_project_path, PR_SOURCE_DIRECTORY)
+    def create_source_files_if_absent(self, path):
+        source_dir  = os.path.join(path, PR_SOURCE_DIRECTORY)
         agent_file  = os.path.join(source_dir, PR_AGENT_FILE_NAME)
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
-        revisions = HTTPConnection.get(self.__tmp_build_api_key,
-                                  PL_BUILD_API_URL + "models/" + self.__tmp_model_id + "/revisions").json()
-        if len(revisions["revisions"]) > 0:
-            latest_revision_url = PL_BUILD_API_URL + "models/" + self.__tmp_model_id + "/revisions/" + \
-                                  str(revisions["revisions"][0]["version"])
-            code = HTTPConnection.get(self.__tmp_build_api_key, latest_revision_url).json()
-            with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(code["revision"]["agent_code"])
-            with open(device_file, "w", encoding="utf-8") as file:
-                file.write(code["revision"]["device_code"])
-        else:
-            # Create empty files
-            open(agent_file, 'a').close()
-            open(device_file, 'a').close()
+        # Create empty files if they don't exist
+        open(agent_file, 'a').close()
+        open(device_file, 'a').close()
+
+        return agent_file, device_file
 
     def get_template_dir(self):
         return os.path.join(os.path.dirname(os.path.realpath(__file__)), PR_TEMPLATE_DIR_NAME)
