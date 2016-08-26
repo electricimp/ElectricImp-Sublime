@@ -12,10 +12,14 @@ import subprocess
 import sys
 import urllib
 
+import imp
 import sublime
 import sublime_plugin
 
-# Plugin specific imports
+sys.path.append(os.path.join(os.path.dirname(__file__), "."))
+# Import resources
+if 'plugin_resources' in sys.modules:
+  imp.reload(sys.modules['plugin_resources.strings'])
 from plugin_resources.strings import *
 
 # Append requests module to the system module path
@@ -107,14 +111,18 @@ class Env:
         # Electric Imp Project manager
         self.project_manager = ProjectManager(window)
         # Preprocessor
-        self.code_processor = Preprocessor(window, self.project_manager.load_settings(PR_SETTINGS_FILE))
+        self.code_processor = Preprocessor(window, self.project_manager)
+
+        # Temp variables
+        self.__tmp_model = None
+        self.__tmp_device_ids = None
 
     @staticmethod
     def For(window):
         return window.__ei_env__
 
     @staticmethod
-    def create_env_if_doesnt_exist_for(window):
+    def create_env_if_does_not_exist_for(window):
         if not hasattr(window, "__ei_env__"):
             window.__ei_env__ = Env(window)
         # There is nothing to do if the window has an environment registered already
@@ -186,8 +194,16 @@ class HTTPConnection:
         return requests.post(url, data=data, headers=HTTPConnection.__get_http_headers(key))
 
     @staticmethod
+    def put(key, url, data=None):
+        return requests.put(url, data=data, headers=HTTPConnection.__get_http_headers(key))
+
+    @staticmethod
     def is_response_valid(response):
-        return response.status_code != requests.codes.ok
+        return response.status_code in [
+            requests.codes.ok,
+            requests.codes.created,
+            requests.codes.accepted
+        ]
 
 
 class Preprocessor:
@@ -197,9 +213,9 @@ class Preprocessor:
         AGENT  = 0
         DEVICE = 1
 
-    def __init__(self, window, settings):
+    def __init__(self, window, project_manager):
         self.window = window
-        self.settings = settings
+        self.project_manager = project_manager
         self.line_table = {Preprocessor.SourceType.AGENT: None, Preprocessor.SourceType.DEVICE: None}
 
     @staticmethod
@@ -238,12 +254,14 @@ class Preprocessor:
             return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
 
     def preprocess(self):
+        settings = Env.For(self.window).project_manager.load_settings(PR_SETTINGS_FILE)
+
         src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
 
-        source_agent_filename = os.path.join(src_dir, self.settings.get(EI_AGENT_FILE))
+        source_agent_filename = os.path.join(src_dir, settings.get(EI_AGENT_FILE))
         result_agent_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
-        source_device_filename = os.path.join(src_dir, self.settings.get(EI_DEVICE_FILE))
+        source_device_filename = os.path.join(src_dir, settings.get(EI_DEVICE_FILE))
         result_device_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
 
         if not os.path.exists(bld_dir):
@@ -268,8 +286,8 @@ class Preprocessor:
             except subprocess.CalledProcessError as error:
                 log_debug("Error running preprocessor. The process returned code: " + error.returncode)
 
-        for source_type in self.line_table:
-            self.line_table[source_type] = self.__build_line_table(source_type)
+        # for source_type in self.line_table:
+        #     self.line_table[source_type] = self.__build_line_table(source_type)
 
         return result_agent_filename, result_device_filename
 
@@ -278,27 +296,31 @@ class Preprocessor:
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
         if source_type == self.SourceType.AGENT:
             preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
-            orig_filename = PR_AGENT_FILE_NAME
+            orig_file = PR_AGENT_FILE_NAME
         elif source_type == self.SourceType.DEVICE:
             preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
-            orig_filename = PR_DEVICE_FILE_NAME
+            orig_file = PR_DEVICE_FILE_NAME
         else:
             log_debug("Wrong source type")
             return
 
         # Parse the target file and build the code line table
         line_table = {}
-        pattern = re.compile(r"#line \d+ \"*\"")
+        pattern = re.compile(r"#line (\d+) \"(.+)\"")
         curr_line = orig_line = 0
         with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
             while 1:
                 line = f.readline()
                 if not line:
                     break
-                match = pattern.search(line)
+                match = pattern.match(line)
                 if match:
-                    orig_line, orig_filename = match.group()
-                line_table[curr_line] = (orig_filename, int(orig_line))
+                    print(line)
+                    orig_line = match.group(1)
+                    print(orig_line)
+                    orig_file = match.group(2)
+                    print(orig_file)
+                line_table[curr_line] = (orig_file, orig_line)
                 orig_line += 1
                 curr_line += 1
 
@@ -315,70 +337,131 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def __init__(self, window):
         self.window = window
-        self.__tmp_device_ids = None
+        self.env = Env.create_env_if_does_not_exist_for(window)
 
-        self.env = Env.create_env_if_doesnt_exist_for(window)
+    def check_settings(self):
+        if self.is_missing_build_api_key():
+            self.prompt_for_build_api_key()
+        elif self.is_missing_model():
+            self.prompt_for_model()
+        elif self.is_missing_device():
+            self.prompt_for_device()
 
-    def prompt_for_settings_if_missing(self):
-        # Check if Build API key exists
-        if not self.env.project_manager.get_build_api_key():
-            decision = sublime.ok_cancel_dialog(STR_MISSING_API_KEY)
-            if decision:
-                self.prompt_for_build_api_key()
-            return
+    def is_missing_build_api_key(self):
+        return not self.env.project_manager.get_build_api_key()
 
-        # Prompt for device if it wasn't selected yet
-        if EI_DEVICE_ID not in self.env.project_manager.load_settings(PR_SETTINGS_FILE):
-            decision = sublime.ok_cancel_dialog(STR_SELECT_DEVICE)
-            if decision:
-                self.prompt_for_device()
+    def prompt_for_build_api_key(self, need_to_confirm=True):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILD_API_KEY): return
+        self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_provided, None, None)
 
-    def print_to_tty(self, text):
-        global project_windows
-        if self.window in project_windows:
-            self.env.ui_manager.write_to_console(text)
+    def is_missing_model(self):
+        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        return EI_MODEL_ID not in settings or settings.get(EI_MODEL_ID) is None
+
+    def prompt_for_model(self, need_to_confirm=True):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_PROVIDE_NAME): return
+        self.window.show_input_panel(STR_MODEL_NAME, "", self.on_model_name_provided, None, None)
+
+    def on_model_name_provided(self, name):
+        response = HTTPConnection.post(self.env.project_manager.get_build_api_key(),
+                                       PL_BUILD_API_URL + "models/", '{"name" : "' + name + '" }')
+
+        if response.status_code == requests.codes.bad_request \
+                and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
+            self.prompt_for_model(False)
+        elif not HTTPConnection.is_response_valid(response):
+            sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
+
+        # Save newly created model to the project settings
+        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings[EI_MODEL_ID] = response.json().get("model").get("id")
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        # Check settings
+        self.check_settings()
+
+    def is_missing_device(self):
+        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        return EI_DEVICE_ID not in settings or settings.get(EI_DEVICE_ID) is None
+
+    def load_devices(self, input_device_ids=None):
+        device_ids = input_device_ids if input_device_ids else []
+        device_names = []
+        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL + "devices/")
+        all_devices = response.json().get("devices")
+        if input_device_ids:
+            for d_id in input_device_ids:
+                for d in all_devices:
+                    if d.get("id") == d_id:
+                        device_names.append(d.get("name"))
+                        break
         else:
-            print(text)
+            for d in all_devices:
+                device_ids.append(d.get("id"))
+                device_names.append(d.get("name"))
 
-    def prompt_for_device(self):
-        model_id = self.env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
-        url = PL_BUILD_API_URL + "models/" + model_id
-        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url)
-        # If request failed, the model doesn't seem to exist anymore
-        if not HTTPConnection.is_response_valid(response):
-            sublime.message_dialog(STR_MODEL_DOES_NOT_EXIST.format(model_id))
-            return
-        response_json = response.json()
-        self.__tmp_device_ids = response_json.get("model").get("devices")
-        if len(self.__tmp_device_ids) > 0:
-            self.window.show_quick_panel(self.__tmp_device_ids, self.on_device_selected)
-        else:
+        return device_ids, device_names
+
+    def prompt_to_register_model_device(self, model, need_to_confirm=True):
+        (device_ids, device_names) = self.load_devices()
+
+        if len(device_ids) == 0:
             sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
+            return
 
-    def prompt_for_build_api_key(self):
-        sublime.message_dialog(STR_ENTER_BUILD_API_KEY)
-        self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_entered, None, None)
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REGISTER_DEVICE): return
 
-    def on_build_api_key_entered(self, key):
-        log_debug("build api key provided: " + key)
-        if HTTPConnection.is_build_api_key_valid(key):
-            log_debug("build API key is valid")
-            self.save_settings(PR_BUILD_API_KEY_FILE, {
-                EI_BUILD_API_KEY: key
-            })
-        else:
-            if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
-                self.prompt_for_build_api_key()
-        self.prompt_for_settings_if_missing()
+        Env.For(self.window).__tmp_model = model
+        Env.For(self.window).__tmp_device_ids = device_ids
+
+        self.window.show_quick_panel(device_names, self.on_device_to_register_selected)
+
+    def on_device_to_register_selected(self, index):
+        model = Env.For(self.window).__tmp_model
+        device_id = Env.For(self.window).__tmp_device_ids[index]
+
+        response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL + "devices/" + device_id,
+                                      '{"model_id": "' + model.get("id") + '"}')
+        if not HTTPConnection.is_response_valid(response):
+            print(response.json())
+            sublime.message_dialog(STR_MODEL_REGISTER_FAILED)
+
+        # Once the device is registered, select this device
+        self.on_device_selected(index)
+
+        Env.For(self.window).__tmp_model = None
+        Env.For(self.window).__tmp_device_ids = None
+
+    def prompt_for_device(self, need_to_confirm=True):
+
+        # We assume the model is set up already
+        model_id = self.env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
+        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL + "models/" + str(model_id))
+        model = devices_ids = None
+        if HTTPConnection.is_response_valid(response):
+            model = response.json()
+            devices_ids = model.get("model").get("devices")
+
+        if (model is None or devices_ids is None or len(devices_ids) == 0) \
+                and sublime.ok_cancel_dialog(STR_MODEL_HAS_NO_DEVICES):
+            self.prompt_to_register_model_device(model.get("model"), False)
+            return
+
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
+        (Env.For(self.window).__tmp_device_ids, device_names) = self.load_devices(devices_ids)
+        self.window.show_quick_panel(device_names, self.on_device_selected)
 
     def on_device_selected(self, index):
         settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
-        new_device_id = self.__tmp_device_ids[index]
+        new_device_id = Env.For(self.window).__tmp_device_ids[index]
         old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
         if new_device_id != old_device_id:
             log_debug("New device selected: saving new settings file and restarting the console...")
             # Update the device id
-            settings[EI_DEVICE_ID] = self.__tmp_device_ids[index]
+            settings[EI_DEVICE_ID] = Env.For(self.window).__tmp_device_ids[index]
             self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
             # Clean up the terminal window
             self.env.ui_manager.create_new_console()
@@ -386,7 +469,30 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         else:
             log_debug("Newly selected device is the same as the old one. Nothing to do.")
         # Clean up temporary variables
-        self.__tmp_device_ids = None
+        Env.For(self.window).__tmp_device_ids = None
+        # Loop back to the main settings check
+        self.check_settings()
+
+    def on_build_api_key_provided(self, key):
+        log_debug("build api key provided: " + key)
+        if HTTPConnection.is_build_api_key_valid(key):
+            log_debug("build API key is valid")
+            self.env.project_manager.save_settings(PR_BUILD_API_KEY_FILE, {
+                EI_BUILD_API_KEY: key
+            })
+        else:
+            if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
+                self.prompt_for_build_api_key(False)
+
+        # Loop back to the main settings check
+        self.check_settings()
+
+    def print_to_tty(self, text):
+        global project_windows
+        if self.window in project_windows:
+            self.env.ui_manager.write_to_console(text)
+        else:
+            print(text)
 
     def is_enabled(self):
         return self.env.project_manager.is_electric_imp_project()
@@ -400,7 +506,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
     def run(self):
         self.env.ui_manager.init_tty()
-        self.prompt_for_settings_if_missing()
+        self.check_settings()
 
         if self.env.project_manager.get_build_api_key() is None:
             log_debug("The build API file is missing, please check the settings")
@@ -490,7 +596,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 class ImpShowConsoleCommand(BaseElectricImpCommand):
     def run(self):
         self.env.ui_manager.init_tty()
-        self.prompt_for_settings_if_missing()
+        self.check_settings()
 
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
@@ -500,7 +606,7 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
-        self.prompt_for_settings_if_missing()
+        self.check_settings()
         settings = self.load_settings(PR_SETTINGS_FILE)
         if EI_DEVICE_ID in settings:
             device_id = settings.get(EI_DEVICE_ID)
@@ -520,9 +626,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         # Define all the temporary variables
         self.__tmp_model_id = None
         self.__tmp_project_path = None
-        self.__tmp_all_model_ids = None
         self.__tmp_build_api_key = None
-        self.__tmp_all_model_names = None
 
     def run(self):
         self.env.ui_manager.show_path_selector(STR_NEW_PROJECT_LOCATION, self.get_default_project_path(),
@@ -594,7 +698,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             sublime.set_timeout_async(open_sources, 10)
 
 
-    def on_build_api_key_entered(self, key):
+    def on_build_api_key_provided(self, key):
         log_debug("build api key provided: " + key)
         if HTTPConnection.is_build_api_key_valid(key):
             log_debug("build API key is valid")
@@ -603,25 +707,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         else:
             if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
                 self.prompt_for_build_api_key()
-
-    def prompt_for_model(self):
-        response = HTTPConnection.get(self.__tmp_build_api_key, PL_BUILD_API_URL + "models").json()
-        if len(response["models"]) > 0:
-            if not sublime.ok_cancel_dialog(STR_SELECT_MODEL):
-                return
-            self.__tmp_all_model_names = [model["name"] for model in response["models"]]
-            self.__tmp_all_model_ids = [model["id"] for model in response["models"]]
-        else:
-            sublime.message_dialog(STR_NO_MODELS_AVAILABLE)
-            return
-
-        self.window.show_quick_panel(self.__tmp_all_model_names, self.on_model_choosen)
-
-    def on_model_choosen(self, index):
-        self.__tmp_model_id = self.__tmp_all_model_ids[index]
-        log_debug("model chosen (name, id): (" + self.__tmp_all_model_names[index] + ", " + self.__tmp_model_id + ")")
-        self.create_project()
-
 
     @staticmethod
     def get_sublime_path():
@@ -641,7 +726,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             log_debug("Unknown platform: {}".format(platform))
 
     def run_sublime_from_command_line(self, args):
-        args.insert(0, self.get_sublime_path() + "1")
+        args.insert(0, self.get_sublime_path())
         return subprocess.call(args)
 
     def get_project_file_name(self, path):
