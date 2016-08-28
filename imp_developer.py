@@ -106,16 +106,18 @@ class Env:
     """Window (project) specific environment object"""
 
     def __init__(self, window):
+        # Check settings callback
+        self.__check_settings_callback = None
+        # Temp variables
+        self.__tmp_model = None
+        self.__tmp_device_ids = None
+
         # UI Manager
         self.ui_manager = UIManager(window)
         # Electric Imp Project manager
         self.project_manager = ProjectManager(window)
         # Preprocessor
         self.code_processor = Preprocessor(window, self.project_manager)
-
-        # Temp variables
-        self.__tmp_model = None
-        self.__tmp_device_ids = None
 
     @staticmethod
     def For(window):
@@ -339,13 +341,25 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.window = window
         self.env = Env.create_env_if_does_not_exist_for(window)
 
-    def check_settings(self):
+    def check_settings(self, callback=None):
+        # Setup pending callback
+        if callback:
+            self.env.__check_settings_callback = callback
+        else:
+            callback = self.env.__check_settings_callback
+
+        # Perform the checks and prompts for appropriate settings
         if self.is_missing_build_api_key():
             self.prompt_for_build_api_key()
         elif self.is_missing_model():
             self.create_new_model()
         elif self.is_missing_device():
             self.select_or_register_device()
+        else:
+            # All the checks passed, invoke the callback now
+            if callback:
+                callback()
+            self.env.__check_settings_callback = None
 
     def is_missing_build_api_key(self):
         return not self.env.project_manager.get_build_api_key()
@@ -512,35 +526,38 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
     def run(self):
         self.env.ui_manager.init_tty()
-        self.check_settings()
 
-        if self.env.project_manager.get_build_api_key() is None:
-            log_debug("The build API file is missing, please check the settings")
-            return
+        def check_settings_callback():
+            if self.env.project_manager.get_build_api_key() is None:
+                log_debug("The build API file is missing, please check the settings")
+                return
 
-        # Save all the views first
-        self.save_all_current_window_views()
+            # Save all the views first
+            self.save_all_current_window_views()
 
-        # Preprocess the sources
-        agent_filename, device_filename = self.env.code_processor.preprocess()
+            # Preprocess the sources
+            agent_filename, device_filename = self.env.code_processor.preprocess()
 
-        if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
-            log_debug("Can't find code files")
-            sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
+            if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
+                log_debug("Can't find code files")
+                sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
 
-        agent_code  = self.read_file(agent_filename)
-        device_code = self.read_file(device_filename)
+            agent_code = self.read_file(agent_filename)
+            device_code = self.read_file(device_filename)
 
-        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
-        url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
-        data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-        response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
+            settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+            url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
+            data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
+            response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
 
-        # Update the logs first
-        update_log_windows(False)
+            # Update the logs first
+            update_log_windows(False)
 
-        # Process response and handle errors appropriately
-        self.process_response(response, settings)
+            # Process response and handle errors appropriately
+            self.process_response(response, settings)
+
+        self.check_settings(callback=check_settings_callback)
+
 
     def process_response(self, response, settings):
         if HTTPConnection.is_response_valid(response):
@@ -607,22 +624,23 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
     def run(self):
-        self.check_settings()
-        self.select_or_register_device()
+        self.check_settings(callback=self.select_or_register_device)
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
-        self.check_settings()
-        settings = self.load_settings(PR_SETTINGS_FILE)
-        if EI_DEVICE_ID in settings:
-            device_id = settings.get(EI_DEVICE_ID)
-            response  = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL + "devices/" + device_id).json()
-            agent_id  = response.get("device").get("agent_id")
-            agent_url = PL_AGENT_URL.format(agent_id)
-            sublime.set_clipboard(agent_url)
-            sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
+        def check_settings_callback():
+            settings = self.load_settings(PR_SETTINGS_FILE)
+            if EI_DEVICE_ID in settings:
+                device_id = settings.get(EI_DEVICE_ID)
+                response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                              PL_BUILD_API_URL + "devices/" + device_id).json()
+                agent_id = response.get("device").get("agent_id")
+                agent_url = PL_AGENT_URL.format(agent_id)
+                sublime.set_clipboard(agent_url)
+                sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
+
+        self.check_settings(callback=check_settings_callback)
 
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
@@ -770,15 +788,16 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 class ImpAddDeviceToModel(BaseElectricImpCommand):
 
     def run(self):
-        self.check_settings()
-        self.select_or_register_device(need_to_confirm=False, force_register=True)
+        def check_settings_callback():
+            self.select_or_register_device(need_to_confirm=False, force_register=True)
+        self.check_settings(callback=check_settings_callback)
 
 
 class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
     def run(self):
-        self.check_settings()
-        self.prompt_model_to_remove_device()
+        self.check_settings(callback=self.prompt_model_to_remove_device)
+
 
 def log_debug(text):
     global plugin_settings
