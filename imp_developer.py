@@ -106,18 +106,19 @@ class Env:
     """Window (project) specific environment object"""
 
     def __init__(self, window):
-        # Check settings callback
-        self.__check_settings_callback = None
-        # Temp variables
-        self.__tmp_model = None
-        self.__tmp_device_ids = None
-
         # UI Manager
         self.ui_manager = UIManager(window)
         # Electric Imp Project manager
         self.project_manager = ProjectManager(window)
         # Preprocessor
         self.code_processor = Preprocessor(window, self.project_manager)
+
+        # Check settings callback
+        self.tmp_check_settings_callback = None
+
+        # Temp variables
+        self.tmp_model = None
+        self.tmp_device_ids = None
 
     @staticmethod
     def For(window):
@@ -344,9 +345,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def check_settings(self, callback=None):
         # Setup pending callback
         if callback:
-            self.env.__check_settings_callback = callback
+            self.env.tmp_check_settings_callback = callback
         else:
-            callback = self.env.__check_settings_callback
+            callback = self.env.tmp_check_settings_callback
 
         # Perform the checks and prompts for appropriate settings
         if self.is_missing_build_api_key():
@@ -359,7 +360,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             # All the checks passed, invoke the callback now
             if callback:
                 callback()
-            self.env.__check_settings_callback = None
+            self.env.tmp_check_settings_callback = None
 
     def is_missing_build_api_key(self):
         return not self.env.project_manager.get_build_api_key()
@@ -432,14 +433,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REGISTER_DEVICE): return
 
-        self.env.__tmp_model = model
-        self.env.__tmp_device_ids = device_ids
+        self.env.tmp_model = model
+        self.env.tmp_device_ids = device_ids
 
         self.window.show_quick_panel(device_names, self.on_device_to_register_selected)
 
     def on_device_to_register_selected(self, index):
-        model = self.env.__tmp_model
-        device_id = self.env.__tmp_device_ids[index]
+        model = self.env.tmp_model
+        device_id = self.env.tmp_device_ids[index]
 
         response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
                                       PL_BUILD_API_URL + "devices/" + device_id,
@@ -451,8 +452,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Once the device is registered, select this device
         self.on_device_selected(index)
 
-        self.env.__tmp_model = None
-        self.env.__tmp_device_ids = None
+        self.env.tmp_model = None
+        self.env.tmp_device_ids = None
 
     def select_or_register_device(self, need_to_confirm=True, force_register=False):
 
@@ -471,17 +472,17 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             return
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
-        (Env.For(self.window).__tmp_device_ids, device_names) = self.load_devices(devices_ids)
+        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(devices_ids)
         self.window.show_quick_panel(device_names, self.on_device_selected)
 
     def on_device_selected(self, index):
         settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
-        new_device_id = Env.For(self.window).__tmp_device_ids[index]
+        new_device_id = Env.For(self.window).tmp_device_ids[index]
         old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
         if new_device_id != old_device_id:
             log_debug("New device selected: saving new settings file and restarting the console...")
             # Update the device id
-            settings[EI_DEVICE_ID] = Env.For(self.window).__tmp_device_ids[index]
+            settings[EI_DEVICE_ID] = Env.For(self.window).tmp_device_ids[index]
             self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
             # Clean up the terminal window
             self.env.ui_manager.create_new_console()
@@ -489,7 +490,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         else:
             log_debug("Newly selected device is the same as the old one. Nothing to do.")
         # Clean up temporary variables
-        self.env.__tmp_device_ids = None
+        self.env.tmp_device_ids = None
         # Loop back to the main settings check
         self.check_settings()
 
@@ -648,11 +649,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def __init__(self, window):
         super(ImpCreateProjectCommand, self).__init__(window)
 
-        # Define all the temporary variables
-        self.__tmp_model_id = None
-        self.__tmp_project_path = None
-        self.__tmp_build_api_key = None
-
     def run(self):
         self.env.ui_manager.show_path_selector(STR_NEW_PROJECT_LOCATION, self.get_default_project_path(),
                                                self.on_project_path_entered)
@@ -721,17 +717,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
             # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
             sublime.set_timeout_async(open_sources, 10)
-
-
-    def on_build_api_key_provided(self, key):
-        log_debug("build api key provided: " + key)
-        if HTTPConnection.is_build_api_key_valid(key):
-            log_debug("build API key is valid")
-            self.__tmp_build_api_key = key
-            self.create_new_model()
-        else:
-            if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
-                self.prompt_for_build_api_key()
 
     @staticmethod
     def get_sublime_path():
