@@ -343,9 +343,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         if self.is_missing_build_api_key():
             self.prompt_for_build_api_key()
         elif self.is_missing_model():
-            self.prompt_for_model()
+            self.create_new_model()
         elif self.is_missing_device():
-            self.prompt_for_device()
+            self.select_or_register_device()
 
     def is_missing_build_api_key(self):
         return not self.env.project_manager.get_build_api_key()
@@ -358,7 +358,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
         return EI_MODEL_ID not in settings or settings.get(EI_MODEL_ID) is None
 
-    def prompt_for_model(self, need_to_confirm=True):
+    def create_new_model(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_PROVIDE_NAME): return
         self.window.show_input_panel(STR_MODEL_NAME, "", self.on_model_name_provided, None, None)
 
@@ -368,7 +368,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         if response.status_code == requests.codes.bad_request \
                 and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
-            self.prompt_for_model(False)
+            self.create_new_model(False)
         elif not HTTPConnection.is_response_valid(response):
             sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
 
@@ -384,27 +384,33 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
         return EI_DEVICE_ID not in settings or settings.get(EI_DEVICE_ID) is None
 
-    def load_devices(self, input_device_ids=None):
+    def load_devices(self, input_device_ids=None, exclude_device_ids=None):
         device_ids = input_device_ids if input_device_ids else []
         device_names = []
+
         response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                       PL_BUILD_API_URL + "devices/")
         all_devices = response.json().get("devices")
+
+        if exclude_device_ids is None:
+            exclude_device_ids = []
+
         if input_device_ids:
             for d_id in input_device_ids:
                 for d in all_devices:
-                    if d.get("id") == d_id:
+                    if d.get("id") == d_id and d_id not in exclude_device_ids:
                         device_names.append(d.get("name"))
                         break
         else:
             for d in all_devices:
-                device_ids.append(d.get("id"))
-                device_names.append(d.get("name"))
+                if d.get("id") not in exclude_device_ids:
+                    device_ids.append(d.get("id"))
+                    device_names.append(d.get("name"))
 
         return device_ids, device_names
 
-    def prompt_to_register_model_device(self, model, need_to_confirm=True):
-        (device_ids, device_names) = self.load_devices()
+    def prompt_add_device_to_model(self, model, exclude_ids, need_to_confirm=True):
+        (device_ids, device_names) = self.load_devices(exclude_ids)
 
         if len(device_ids) == 0:
             sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
@@ -412,14 +418,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REGISTER_DEVICE): return
 
-        Env.For(self.window).__tmp_model = model
-        Env.For(self.window).__tmp_device_ids = device_ids
+        self.env.__tmp_model = model
+        self.env.__tmp_device_ids = device_ids
 
         self.window.show_quick_panel(device_names, self.on_device_to_register_selected)
 
     def on_device_to_register_selected(self, index):
-        model = Env.For(self.window).__tmp_model
-        device_id = Env.For(self.window).__tmp_device_ids[index]
+        model = self.env.__tmp_model
+        device_id = self.env.__tmp_device_ids[index]
 
         response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
                                       PL_BUILD_API_URL + "devices/" + device_id,
@@ -431,10 +437,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Once the device is registered, select this device
         self.on_device_selected(index)
 
-        Env.For(self.window).__tmp_model = None
-        Env.For(self.window).__tmp_device_ids = None
+        self.env.__tmp_model = None
+        self.env.__tmp_device_ids = None
 
-    def prompt_for_device(self, need_to_confirm=True):
+    def select_or_register_device(self, need_to_confirm=True, force_register=False):
 
         # We assume the model is set up already
         model_id = self.env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
@@ -445,9 +451,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             model = response.json()
             devices_ids = model.get("model").get("devices")
 
-        if (model is None or devices_ids is None or len(devices_ids) == 0) \
-                and sublime.ok_cancel_dialog(STR_MODEL_HAS_NO_DEVICES):
-            self.prompt_to_register_model_device(model.get("model"), False)
+        if (force_register or not model or not devices_ids or len(devices_ids) == 0) and \
+                (not need_to_confirm or sublime.ok_cancel_dialog(STR_MODEL_HAS_NO_DEVICES)):
+            self.prompt_add_device_to_model(model.get("model"), exclude_ids=devices_ids, need_to_confirm=False)
             return
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
@@ -469,7 +475,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         else:
             log_debug("Newly selected device is the same as the old one. Nothing to do.")
         # Clean up temporary variables
-        Env.For(self.window).__tmp_device_ids = None
+        self.env.__tmp_device_ids = None
         # Loop back to the main settings check
         self.check_settings()
 
@@ -601,7 +607,8 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
     def run(self):
-        self.prompt_for_device()
+        self.check_settings()
+        self.select_or_register_device()
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
@@ -703,7 +710,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         if HTTPConnection.is_build_api_key_valid(key):
             log_debug("build API key is valid")
             self.__tmp_build_api_key = key
-            self.prompt_for_model()
+            self.create_new_model()
         else:
             if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
                 self.prompt_for_build_api_key()
@@ -759,6 +766,19 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def is_enabled(self):
         return True
 
+
+class ImpAddDeviceToModel(BaseElectricImpCommand):
+
+    def run(self):
+        self.check_settings()
+        self.select_or_register_device(need_to_confirm=False, force_register=True)
+
+
+class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
+
+    def run(self):
+        self.check_settings()
+        self.prompt_model_to_remove_device()
 
 def log_debug(text):
     global plugin_settings

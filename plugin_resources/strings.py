@@ -16,7 +16,7 @@ STR_NO_DEVICES_AVAILABLE  = "There are no Imp devices registered in the system. 
 STR_FAILED_TO_GET_LOGS    = "An error occurred while retrieving logs for the specified model/device. Please check the settings"
 STR_PROVIDE_BUILD_API_KEY = "Please provide your Electric Imp Build API key. It can be found in the Developer Console (login into your account and click on the top right link with you user name and select \"Build API Keys\")"
 
-STR_MODEL_PROVIDE_NAME    = "Please provide the new Model name"
+STR_MODEL_PROVIDE_NAME    = "Please provide Model name for the project"
 STR_MODEL_NAME            = "New Model name:"
 STR_MODEL_DOES_NOT_EXIST  = "The model {}, the project is associated with, doesn't exist. Please check the project settings"
 STR_MODEL_NAME_EXISTS     = "The Model name already exists. Please try another one"
