@@ -342,6 +342,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.window = window
         self.env = Env.create_env_if_does_not_exist_for(window)
 
+    def load_settings(self):
+        return self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+
     def check_settings(self, callback=None):
         # Setup pending callback
         if callback:
@@ -370,7 +373,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_provided, None, None)
 
     def is_missing_model(self):
-        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = self.load_settings()
         return EI_MODEL_ID not in settings or settings.get(EI_MODEL_ID) is None
 
     def create_new_model(self, need_to_confirm=True):
@@ -388,7 +391,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
 
         # Save newly created model to the project settings
-        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = self.load_settings()
         settings[EI_MODEL_ID] = response.json().get("model").get("id")
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
@@ -396,7 +399,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.check_settings()
 
     def is_missing_device(self):
-        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = self.load_settings()
         return EI_DEVICE_ID not in settings or settings.get(EI_DEVICE_ID) is None
 
     def load_devices(self, input_device_ids=None, exclude_device_ids=None):
@@ -446,7 +449,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
                                       PL_BUILD_API_URL + "devices/" + device_id,
                                       '{"model_id": "' + model.get("id") + '"}')
         if not HTTPConnection.is_response_valid(response):
-            print(response.json())
             sublime.message_dialog(STR_MODEL_REGISTER_FAILED)
 
         # Once the device is registered, select this device
@@ -457,28 +459,30 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.env.tmp_model = None
         self.env.tmp_device_ids = None
 
-    def select_or_register_device(self, need_to_confirm=True, force_register=False):
-
+    def load_this_model(self):
         # We assume the model is set up already
-        model_id = self.env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_MODEL_ID)
+        model_id = self.load_settings().get(EI_MODEL_ID)
         response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                       PL_BUILD_API_URL + "models/" + str(model_id))
-        model = devices_ids = None
         if HTTPConnection.is_response_valid(response):
-            model = response.json()
-            devices_ids = model.get("model").get("devices")
+            return response.json()
 
-        if (force_register or not model or not devices_ids or len(devices_ids) == 0) and \
+    def select_or_register_device(self, need_to_confirm=True, force_register=False):
+
+        model = self.load_this_model()
+        device_ids = model.get("model").get("devices") if model else None
+
+        if (force_register or not model or not device_ids or len(device_ids) == 0) and \
                 (not need_to_confirm or sublime.ok_cancel_dialog(STR_MODEL_HAS_NO_DEVICES)):
-            self.prompt_add_device_to_model(model.get("model"), exclude_ids=devices_ids, need_to_confirm=False)
+            self.prompt_add_device_to_model(model.get("model"), exclude_ids=device_ids, need_to_confirm=False)
             return
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
-        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=devices_ids)
+        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
         self.window.show_quick_panel(device_names, self.on_device_selected)
 
     def on_device_selected(self, index):
-        settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = self.load_settings()
         new_device_id = Env.For(self.window).tmp_device_ids[index]
         old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
         if new_device_id != old_device_id:
@@ -548,7 +552,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             agent_code = self.read_file(agent_filename)
             device_code = self.read_file(device_filename)
 
-            settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+            settings = self.load_settings()
             url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
             data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
             response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
@@ -633,7 +637,7 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
         def check_settings_callback():
-            settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+            settings = self.load_settings()
             if EI_DEVICE_ID in settings:
                 device_id = settings.get(EI_DEVICE_ID)
                 response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
@@ -782,6 +786,39 @@ class ImpAddDeviceToModel(BaseElectricImpCommand):
 
 class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
+    def prompt_model_to_remove_device(self, need_to_confirm=True):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REMOVE_DEVICE): return
+
+        model = self.load_this_model()
+        device_ids = model.get("model").get("devices") if model else None
+
+        if not device_ids or len(device_ids) == 0:
+            sublime.message_dialog(STR_MODEL_NO_DEVICES_TO_REMOVE)
+            return
+
+        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
+        self.window.show_quick_panel(device_names, self.on_remove_device_selected)
+
+    def on_remove_device_selected(self, index):
+        device_id = self.env.tmp_device_ids[index]
+        active_device_id = self.load_settings().get(EI_DEVICE_ID)
+
+        if device_id == active_device_id:
+            sublime.message_dialog(STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE)
+            return
+
+        response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL + "devices/" + device_id,
+                                      '{"model_id": ""}')
+        if not HTTPConnection.is_response_valid(response):
+            sublime.message_dialog(STR_MODEL_REMOVE_DEVICE_FAILED)
+            return
+
+        sublime.message_dialog(STR_MODEL_DEVICE_REMOVED)
+
+        self.env.tmp_model = None
+        self.env.tmp_device_ids = None
+
     def run(self):
         self.check_settings(callback=self.prompt_model_to_remove_device)
 
@@ -809,7 +846,7 @@ def update_log_windows(restart_timer=True):
                 env.unregister_env_for(window)
                 log_debug("Removing project window: " + str(window) + ", total #: " + str(len(project_windows)))
                 continue
-            device_id = env.project_manager.load_settings(PR_SETTINGS_FILE).get(EI_DEVICE_ID)
+            device_id = eiCommand.load_settings().get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
             if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
                 # Device is not selected yet and the console is not setup for the project, nothing we can do here
