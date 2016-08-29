@@ -30,3 +30,11 @@ STR_MODEL_NO_DEVICES_TO_REMOVE       = "The Model has no devices to remove"
 STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE  = "This device is currently selected as active. Can't remove it from the Model"
 STR_MODEL_REMOVE_DEVICE_FAILED       = "Failed removing device from the Model"
 STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from the Model"
+
+STR_ERR_SOURCE_AGENT                 = "Agent"
+STR_ERR_SOURCE_DEVICE                = "Device"
+STR_ERR_SOURCE_CODE_TYPE             = "		{} code:\n"
+STR_ERR_MESSAGE_LINE                 = "				Line: {}, Column: {}, Message: {}\n"
+STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "Deploy failed because of the compilation errors:\n"
+
+STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"

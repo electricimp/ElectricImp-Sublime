@@ -209,17 +209,18 @@ class HTTPConnection:
         ]
 
 
+class SourceType():
+    AGENT = 0
+    DEVICE = 1
+
+
 class Preprocessor:
     """Preprocessor and Builder specific implementation"""
-
-    class SourceType():
-        AGENT  = 0
-        DEVICE = 1
 
     def __init__(self, window, project_manager):
         self.window = window
         self.project_manager = project_manager
-        self.line_table = {Preprocessor.SourceType.AGENT: None, Preprocessor.SourceType.DEVICE: None}
+        self.line_table = {SourceType.AGENT: None, SourceType.DEVICE: None}
 
     @staticmethod
     def get_root_nodejs_dir_path():
@@ -289,18 +290,18 @@ class Preprocessor:
             except subprocess.CalledProcessError as error:
                 log_debug("Error running preprocessor. The process returned code: " + error.returncode)
 
-        # for source_type in self.line_table:
-        #     self.line_table[source_type] = self.__build_line_table(source_type)
+        for source_type in self.line_table:
+            self.line_table[source_type] = self.__build_line_table(source_type)
 
         return result_agent_filename, result_device_filename
 
     def __build_line_table(self, source_type):
         # Setup the preprocessed file name based on the source type
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
-        if source_type == self.SourceType.AGENT:
+        if source_type == SourceType.AGENT:
             preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
             orig_file = PR_AGENT_FILE_NAME
-        elif source_type == self.SourceType.DEVICE:
+        elif source_type == SourceType.DEVICE:
             preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
             orig_file = PR_DEVICE_FILE_NAME
         else:
@@ -310,7 +311,8 @@ class Preprocessor:
         # Parse the target file and build the code line table
         line_table = {}
         pattern = re.compile(r"#line (\d+) \"(.+)\"")
-        curr_line = orig_line = 0
+        curr_line = 0
+        orig_line = 0
         with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
             while 1:
                 line = f.readline()
@@ -319,11 +321,11 @@ class Preprocessor:
                 match = pattern.match(line)
                 if match:
                     print(line)
-                    orig_line = match.group(1)
+                    orig_line = int(match.group(1))
                     print(orig_line)
                     orig_file = match.group(2)
                     print(orig_file)
-                line_table[curr_line] = (orig_file, orig_line)
+                line_table[str(curr_line)] = (orig_file, orig_line)
                 orig_line += 1
                 curr_line += 1
 
@@ -561,15 +563,14 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             update_log_windows(False)
 
             # Process response and handle errors appropriately
-            self.process_response(response, settings)
+            self.handle_response(response, settings)
 
         self.check_settings(callback=check_settings_callback)
 
-
-    def process_response(self, response, settings):
+    def handle_response(self, response, settings):
         if HTTPConnection.is_response_valid(response):
             response_json = response.json()
-            self.print_to_tty("Revision uploaded: " + str(response_json["revision"]["version"]))
+            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response_json["revision"]["version"])))
 
             # Not it's time to restart the Model
             url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
@@ -593,24 +594,24 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             # 	},
             # 	'success': False
             # }
-            def build_error_list(errors, errorLocation):
+            def build_error_messages(errors, source_type):
                 report = ""
+                source_name = STR_ERR_SOURCE_AGENT if source_type == SourceType.AGENT else STR_ERR_SOURCE_DEVICE
                 if errors is not None:
-                    report = "		{} code:\n".format(errorLocation)
+                    report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
-                        report += "				Line: {}, Column: {}, Message: {}\n".format(e["row"], e["column"],
-                                                                                               e["error"])
+                        report += STR_ERR_MESSAGE_LINE.format(e["row"], e["column"], e["error"])
                 return report
 
             response_json = response.json()
             error = response_json["error"]
             if error and error["code"] == "CompileFailed":
-                error_message = "Deploy failed because of the compilation errors:\n"
-                error_message += build_error_list(error["details"]["agent_errors"], "Agent")
-                error_message += build_error_list(error["details"]["device_errors"], "Device")
+                error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
+                error_message += build_error_messages(error["details"]["agent_errors"],  SourceType.AGENT)
+                error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE)
                 self.print_to_tty(error_message)
             else:
-                log_debug("Code deply failed because of unknown error: {}".format(str(response_json["error"]["code"])))
+                log_debug("Code deploy failed because of the error: {}".format(str(response_json["error"]["code"])))
 
     def save_all_current_window_views(self):
         log_debug("Saving all views...")
