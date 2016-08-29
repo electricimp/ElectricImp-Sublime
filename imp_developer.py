@@ -425,7 +425,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         return device_ids, device_names
 
     def prompt_add_device_to_model(self, model, exclude_ids, need_to_confirm=True):
-        (device_ids, device_names) = self.load_devices(exclude_ids)
+        (device_ids, device_names) = self.load_devices(exclude_device_ids=exclude_ids)
 
         if len(device_ids) == 0:
             sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
@@ -452,6 +452,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Once the device is registered, select this device
         self.on_device_selected(index)
 
+        sublime.message_dialog(STR_MODEL_IMP_REGISTERED)
+
         self.env.tmp_model = None
         self.env.tmp_device_ids = None
 
@@ -472,7 +474,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             return
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
-        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(devices_ids)
+        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=devices_ids)
         self.window.show_quick_panel(device_names, self.on_device_selected)
 
     def on_device_selected(self, index):
@@ -631,7 +633,7 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
         def check_settings_callback():
-            settings = self.load_settings(PR_SETTINGS_FILE)
+            settings = self.env.project_manager.load_settings(PR_SETTINGS_FILE)
             if EI_DEVICE_ID in settings:
                 device_id = settings.get(EI_DEVICE_ID)
                 response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
