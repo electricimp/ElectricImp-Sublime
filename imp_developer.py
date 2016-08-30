@@ -316,7 +316,7 @@ class Preprocessor:
 
         # Parse the target file and build the code line table
         line_table = {}
-        pattern = re.compile(r"#line (\d+) \"(.+)\"")
+        pattern = re.compile(r".*#line (\d+) \"(.+)\"")
         curr_line = 0
         orig_line = 0
         with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
@@ -326,12 +326,10 @@ class Preprocessor:
                     break
                 match = pattern.match(line)
                 if match:
-                    print(line)
                     orig_line = int(match.group(1))
-                    print(orig_line)
                     orig_file = match.group(2)
-                    print(orig_file)
                 line_table[str(curr_line)] = (orig_file, orig_line)
+                print("line_table[{}]: ({}, {})".format(curr_line, orig_file, orig_line))
                 orig_line += 1
                 curr_line += 1
 
@@ -607,6 +605,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                 if errors is not None:
                     report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
+                        log_debug("Original compilation error: " + str(e))
                         orig_file, orig_line = preprocessor.get_error_location(source_type=source_type, line=e["row"])
                         report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line - 1, e["column"], e["error"])
                 return report
@@ -873,7 +872,7 @@ class ImpEventListener(sublime_plugin.EventListener):
                 orig_line = int(rt_match.group(2)) - 1
 
         print("Selected line: " + selected_line + ", original file name: " + str(orig_file) + " orig_line: " + str(orig_line))
-        if orig_file and orig_line:
+        if orig_file is not None and orig_line is not None:
             src_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
             file_name = os.path.join(src_dir, orig_file)
             file_view = window.open_file(file_name)
@@ -887,6 +886,7 @@ class ImpEventListener(sublime_plugin.EventListener):
                 file_view.add_regions("error_region", [error_region], scope="keyword", icon="circle", flags=sublime.DRAW_SOLID_UNDERLINE)
 
             select_region()
+
 
 def log_debug(text):
     global plugin_settings
@@ -935,6 +935,7 @@ def update_log_windows(restart_timer=True):
                         # agent/devie compilation errors
                         preprocessor = env.code_processor
                         pattern = re.compile(r"ERROR:\s*at main:(\d+)")
+                        log_debug("  [ ] Original runtime error: " + log["message"])
                         match = pattern.match(log["message"])
                         if match:
                             (orig_file, orig_line) = preprocessor.get_error_location(
