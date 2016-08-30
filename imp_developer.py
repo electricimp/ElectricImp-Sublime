@@ -876,22 +876,17 @@ class ImpEventListener(sublime_plugin.EventListener):
         if orig_file and orig_line:
             src_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
             file_name = os.path.join(src_dir, orig_file)
-
             file_view = window.open_file(file_name)
 
             def select_region():
-                print("select_region called")
                 if file_view.is_loading():
                     sublime.set_timeout_async(select_region, 0)
                     return
                 pt = file_view.text_point(orig_line, 0)
-                print("file_name: " + file_name + " pt: " + str(pt))
                 error_region = sublime.Region(pt)
-                file_view.sel().add(error_region)
                 file_view.add_regions("error_region", [error_region], scope="keyword", icon="circle", flags=sublime.DRAW_SOLID_UNDERLINE)
 
             sublime.set_timeout_async(select_region, 0)
-
 
 def log_debug(text):
     global plugin_settings
