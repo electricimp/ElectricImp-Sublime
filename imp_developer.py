@@ -106,6 +106,11 @@ class Env:
     """Window (project) specific environment object"""
 
     def __init__(self, window):
+        # Plugin text area
+        self.terminal = None
+        # Timestamp for the last log shown in the Plugin text area
+        self.logs_timestamp = PL_LOG_START_TIME
+
         # UI Manager
         self.ui_manager = UIManager(window)
         # Electric Imp Project manager
@@ -113,27 +118,31 @@ class Env:
         # Preprocessor
         self.code_processor = Preprocessor(window, self.project_manager)
 
-        # Check settings callback
-        self.tmp_check_settings_callback = None
-
         # Temp variables
         self.tmp_model = None
         self.tmp_device_ids = None
 
+        # Check settings callback
+        self.tmp_check_settings_callback = None
+
     @staticmethod
     def For(window):
-        return window.__ei_env__
+        return window.ei_env
 
     @staticmethod
     def create_env_if_does_not_exist_for(window):
-        if not hasattr(window, "__ei_env__"):
-            window.__ei_env__ = Env(window)
+        global project_windows
+        if not hasattr(window, "ei_env"):
+            window.ei_env = Env(window)
+            project_windows.append(window)
+            log_debug(
+                "adding new project window: " + str(window) + ", total windows now: " + str(len(project_windows)))
         # There is nothing to do if the window has an environment registered already
-        return window.__ei_env__
+        return window.ei_env
 
     @staticmethod
     def unregister_env_for(window):
-        window.__ei_env__ = None
+        window.ei_env = None
 
 
 class UIManager:
@@ -154,12 +163,9 @@ class UIManager:
         terminal.set_read_only(True)
 
     def init_tty(self):
-        global project_windows
-        if self.window not in project_windows:
+        env = Env.For(self.window)
+        if not env.terminal:
             self.create_new_console()
-            project_windows.append(self.window)
-            log_debug(
-                "adding new project window: " + str(self.window) + ", total windows now: " + str(len(project_windows)))
         self.show_console()
 
     def show_console(self):
@@ -334,15 +340,15 @@ class Preprocessor:
     # Converts error location in the preprocessed code into the original filename and line number
     def get_error_location(self, source_type, line):
         code_table = self.line_table[source_type]
-        return None if code_table is None else code_table[line]
+        return None if code_table is None else code_table[str(line)]
 
 
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
-
     def __init__(self, window):
-        self.window = window
-        self.env = Env.create_env_if_does_not_exist_for(window)
+        if window:
+            self.window = window
+        self.env = Env.create_env_if_does_not_exist_for(self.window)
 
     def load_settings(self):
         return self.env.project_manager.load_settings(PR_SETTINGS_FILE)
@@ -529,7 +535,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Code push command implementation"""
-
+    
     def __init__(self, window):
         super(ImpBuildAndRunCommand, self).__init__(window)
 
@@ -596,11 +602,13 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             # }
             def build_error_messages(errors, source_type):
                 report = ""
+                preprocessor = self.env.code_processor
                 source_name = STR_ERR_SOURCE_AGENT if source_type == SourceType.AGENT else STR_ERR_SOURCE_DEVICE
                 if errors is not None:
                     report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
-                        report += STR_ERR_MESSAGE_LINE.format(e["row"], e["column"], e["error"])
+                        orig_file, orig_line = preprocessor.get_error_location(source_type=source_type, line=e["row"])
+                        report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line, e["column"], e["error"])
                 return report
 
             response_json = response.json()
@@ -625,9 +633,14 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
+
+    def __init__(self, window):
+        super(ImpShowConsoleCommand, self).__init__(window)
+
     def run(self):
         self.env.ui_manager.init_tty()
         self.check_settings()
+        update_log_windows(False)
 
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
@@ -824,6 +837,62 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
         self.check_settings(callback=self.prompt_model_to_remove_device)
 
 
+class ImpEventListener(sublime_plugin.EventListener):
+
+    def on_post_text_command(self, view, command_name, args):
+        global project_windows
+
+        window = view.window()
+        if window in project_windows:
+            for w in project_windows:
+                if w == window:
+                    window = w
+        else:
+            return
+
+        env = Env.For(window)
+        if not view == env.terminal:
+            # Not a console window - nothing to do
+            return
+        selected_line = view.substr(view.line(view.sel()[0]))
+
+        cp_error_pattern = re.compile(r"\s*File: (.+), Line: (\d+), Column: (\d+), Message: (.*)")
+        rt_error_pattern = re.compile(r".*\sERROR:\s*at\s*(.*):(\d+)\s*")
+
+        orig_file = None
+        orig_line = None
+
+        cp_match = cp_error_pattern.match(selected_line)
+        if cp_match: # Compilation error message
+            orig_file = cp_match.group(1)
+            orig_line = int(cp_match.group(2)) - 1
+        else:
+            rt_match = rt_error_pattern.match(selected_line)
+            if rt_match: # Runtime error message
+                orig_file = rt_match.group(1)
+                orig_line = int(rt_match.group(2)) - 1
+
+        print("Selected line: " + selected_line + ", original file name: " + str(orig_file) + " orig_line: " + str(orig_line))
+        if orig_file and orig_line:
+            src_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
+            file_name = os.path.join(src_dir, orig_file)
+
+            file_view = window.open_file(file_name)
+
+            def select_region():
+                print("select_region called")
+                if file_view.is_loading():
+                    sublime.set_timeout_async(select_region, 0)
+                    return
+                pt = file_view.text_point(orig_line, 0)
+                print("file_name: " + file_name + " pt: " + str(pt))
+                error_region = sublime.Region(pt)
+                file_view.sel().add(error_region)
+                file_view.add_regions("error_region", [error_region], scope="keyword", icon="circle", flags=sublime.DRAW_SOLID_UNDERLINE)
+
+            sublime.set_timeout_async(select_region, 0)
+
+
 def log_debug(text):
     global plugin_settings
     if plugin_settings.get(PL_DEBUG_FLAG):
@@ -840,14 +909,14 @@ def update_log_windows(restart_timer=True):
     try:
         for window in project_windows:
             env = Env.For(window)
-            eiCommand = BaseElectricImpCommand(window)
+            ei_command = BaseElectricImpCommand(window)
             if not env.project_manager.is_electric_imp_project():
                 # It's not a windows that corresponds to an EI project, remove it from the list
                 project_windows.remove(window)
                 env.unregister_env_for(window)
                 log_debug("Removing project window: " + str(window) + ", total #: " + str(len(project_windows)))
                 continue
-            device_id = eiCommand.load_settings().get(EI_DEVICE_ID)
+            device_id = ei_command.load_settings().get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
             if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
                 # Device is not selected yet and the console is not setup for the project, nothing we can do here
@@ -866,6 +935,17 @@ def update_log_windows(restart_timer=True):
                 timestamp = response_json["logs"][log_size - 1]["timestamp"]
                 env.logs_timestamp = timestamp
                 for log in response_json["logs"]:
+                    message = log["message"]
+                    if log["type"] in ["server.error", "agent.error"]:
+                        # agent/devie compilation errors
+                        preprocessor = env.code_processor
+                        pattern = re.compile(r"ERROR:\s*at main:(\d+)")
+                        match = pattern.match(log["message"])
+                        if match:
+                            (orig_file, orig_line) = preprocessor.get_error_location(
+                                SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE,
+                                match.group(1))
+                            message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line)
                     type = {
                         "status"       : "[Server]",
                         "server.log"   : "[Device]",
@@ -880,7 +960,7 @@ def update_log_windows(restart_timer=True):
                         log_debug("Unrecognized log type: " + log["type"])
                         type = "[Unrecognized]"
                     dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
-                    eiCommand.print_to_tty(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + log["message"])
+                    ei_command.print_to_tty(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + message)
     finally:
         if restart_timer:
             sublime.set_timeout_async(update_log_windows, PR_LOGS_UPDATE_PERIOD)

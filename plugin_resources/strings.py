@@ -34,7 +34,8 @@ STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from 
 STR_ERR_SOURCE_AGENT                 = "Agent"
 STR_ERR_SOURCE_DEVICE                = "Device"
 STR_ERR_SOURCE_CODE_TYPE             = "		{} code:\n"
-STR_ERR_MESSAGE_LINE                 = "				Line: {}, Column: {}, Message: {}\n"
+STR_ERR_MESSAGE_LINE                 = "				File: {}, Line: {}, Column: {}, Message: {}\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "Deploy failed because of the compilation errors:\n"
+STR_ERR_RUNTIME_ERROR                = "ERROR:  at {}:{} "
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
