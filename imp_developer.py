@@ -293,6 +293,19 @@ class Preprocessor:
                 ]
                 with open(code_files[1], "w") as output:
                     subprocess.check_call(args, stdout=output)
+
+                def inplace_change(filename, old_string, new_string):
+                    with open(filename) as f:
+                        s = f.read()
+                        if old_string not in s:
+                            return
+                    with open(filename, 'w') as f:
+                        s = s.replace(old_string, new_string)
+                        f.write(s)
+
+                # Change line number anchors format
+                inplace_change(code_files[1], "#line", "//line")
+
             except subprocess.CalledProcessError as error:
                 log_debug("Error running preprocessor. The process returned code: " + error.returncode)
 
@@ -316,7 +329,7 @@ class Preprocessor:
 
         # Parse the target file and build the code line table
         line_table = {}
-        pattern = re.compile(r".*#line (\d+) \"(.+)\"")
+        pattern = re.compile(r".*//line (\d+) \"(.+)\"")
         curr_line = 0
         orig_line = 0
         with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
@@ -326,7 +339,7 @@ class Preprocessor:
                     break
                 match = pattern.match(line)
                 if match:
-                    orig_line = int(match.group(1))
+                    orig_line = int(match.group(1)) - 1
                     orig_file = match.group(2)
                 line_table[str(curr_line)] = (orig_file, orig_line)
                 print("line_table[{}]: ({}, {})".format(curr_line, orig_file, orig_line))
@@ -606,8 +619,9 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                     report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
                         log_debug("Original compilation error: " + str(e))
-                        orig_file, orig_line = preprocessor.get_error_location(source_type=source_type, line=e["row"])
-                        report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line - 1, e["column"], e["error"])
+                        orig_file, orig_line = \
+                            preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1))
+                        report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line, e["column"], e["error"])
                 return report
 
             response_json = response.json()
@@ -932,27 +946,26 @@ def update_log_windows(restart_timer=True):
                 for log in response_json["logs"]:
                     message = log["message"]
                     if log["type"] in ["server.error", "agent.error"]:
-                        # agent/devie compilation errors
+                        # agent/device compilation errors
                         preprocessor = env.code_processor
-                        pattern = re.compile(r"ERROR:\s*at main:(\d+)")
+                        pattern = re.compile(r"ERROR:\s*at\s*(.*):(\d+)")
                         log_debug("  [ ] Original runtime error: " + log["message"])
                         match = pattern.match(log["message"])
                         if match:
                             (orig_file, orig_line) = preprocessor.get_error_location(
                                 SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE,
-                                match.group(1))
+                                match.group(2))
                             message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line - 1)
-                    type = {
-                        "status"       : "[Server]",
-                        "server.log"   : "[Device]",
-                        "server.error" : "[Device]",
-                        "lastexitcode" : "[Device]",
-                        "agent.log"    : "[Agent] ",
-                        "agent.error"  : "[Agent] "
-                    }[log["type"]]
                     try:
-                        pass
-                    except:
+                        type = {
+                            "status"       : "[Server]",
+                            "server.log"   : "[Device]",
+                            "server.error" : "[Device]",
+                            "lastexitcode" : "[Device]",
+                            "agent.log"    : "[Agent] ",
+                            "agent.error"  : "[Agent] "
+                        }[log["type"]]
+                    except KeyError:
                         log_debug("Unrecognized log type: " + log["type"])
                         type = "[Unrecognized]"
                     dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
@@ -960,5 +973,6 @@ def update_log_windows(restart_timer=True):
     finally:
         if restart_timer:
             sublime.set_timeout_async(update_log_windows, PR_LOGS_UPDATE_PERIOD)
+
 
 update_log_windows()
