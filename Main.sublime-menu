@@ -17,14 +17,11 @@
 		    	"caption" : "Show Console",
 		    	"command" : "imp_show_console"
 		    },
+            { "caption": "-" },
             {
                 "caption" : "Select Device",
                 "command" : "imp_select_device"
             },
-	    	{
-		    	"caption" : "Get Agent URL",
-		    	"command" : "imp_get_agent_url"
-		    },
 		    {
 		        "caption" : "Model",
 		        "children": [
@@ -37,6 +34,11 @@
                         "command" : "imp_remove_device_from_model"
                     },
 		        ]
+		    },
+		    { "caption": "-" },
+	    	{
+		    	"caption" : "Get Agent URL",
+		    	"command" : "imp_get_agent_url"
 		    }
 	    ]
 	}

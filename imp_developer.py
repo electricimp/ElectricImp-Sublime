@@ -608,7 +608,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                     report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
                         orig_file, orig_line = preprocessor.get_error_location(source_type=source_type, line=e["row"])
-                        report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line, e["column"], e["error"])
+                        report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line - 1, e["column"], e["error"])
                 return report
 
             response_json = response.json()
@@ -886,7 +886,7 @@ class ImpEventListener(sublime_plugin.EventListener):
                 error_region = sublime.Region(pt)
                 file_view.add_regions("error_region", [error_region], scope="keyword", icon="circle", flags=sublime.DRAW_SOLID_UNDERLINE)
 
-            sublime.set_timeout_async(select_region, 0)
+            select_region()
 
 def log_debug(text):
     global plugin_settings
@@ -940,7 +940,7 @@ def update_log_windows(restart_timer=True):
                             (orig_file, orig_line) = preprocessor.get_error_location(
                                 SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE,
                                 match.group(1))
-                            message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line)
+                            message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line - 1)
                     type = {
                         "status"       : "[Server]",
                         "server.log"   : "[Device]",
