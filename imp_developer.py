@@ -878,10 +878,12 @@ class AdvancedNewProject(AdvancedNewFileNew):
     def entered_file_action(self, path):
         if self.on_path_provided:
             self.on_path_provided(path)
-        self.window.active_view().set_status(key="ElectricImp", value="")
 
     def update_status_message(self, creation_path):
             self.window.active_view().set_status("ElectricImp", STR_STATUS_CREATING_PROJECT.format(creation_path))
+
+    def clear(self):
+        self.window.active_view().set_status(key="ElectricImp", value="")
 
 class ImpEventListener(sublime_plugin.EventListener):
 
