@@ -342,6 +342,7 @@ class Preprocessor:
         if os.path.exists(preprocessed_file_path):
             with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
                 while 1:
+                    line_table[str(curr_line)] = (orig_file, orig_line)
                     line = f.readline()
                     if not line:
                         break
@@ -349,7 +350,6 @@ class Preprocessor:
                     if match:
                         orig_line = int(match.group(1)) - 1
                         orig_file = match.group(2)
-                    line_table[str(curr_line)] = (orig_file, orig_line)
                     orig_line += 1
                     curr_line += 1
 
@@ -920,7 +920,8 @@ class ImpEventListener(sublime_plugin.EventListener):
                 orig_file = rt_match.group(1)
                 orig_line = int(rt_match.group(2)) - 1
 
-        print("Selected line: " + selected_line + ", original file name: " + str(orig_file) + " orig_line: " + str(orig_line))
+        # log_debug("Selected line: " + selected_line + ", original file name: " +
+        #           str(orig_file) + " orig_line: " + str(orig_line))
         if orig_file is not None and orig_line is not None:
 
             source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
@@ -993,11 +994,11 @@ def update_log_windows(restart_timer=True):
                         match = pattern.match(log["message"])
                         if match:
                             file_read = match.group(1)
-                            line_read = match.group(2)
+                            line_read = int(match.group(2)) - 1
                             try:
                                 (orig_file, orig_line) = preprocessor.get_error_location(
                                     SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read)
-                                message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line - 1)
+                                message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line)
                             except:
                                 pass  # Use original message if failed to translate the error location
                     try:
