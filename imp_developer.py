@@ -39,6 +39,8 @@ PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
 PL_LOG_START_TIME        = "2000-01-01T00:00:00.000+00:00"
 PR_LOGS_UPDATE_PERIOD    = 5000 # ms
+PR_ERROR_REGION_KEY      = "electric-imp-error-region-key"
+PR_VIEW_STATUS_KEY       = "electric-imp-view-status-key"
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -563,6 +565,9 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
     def run(self):
         self.env.ui_manager.init_tty()
+        # Clean up all the error marks first
+        for view in self.window.views():
+            view.erase_regions(PR_ERROR_REGION_KEY)
 
         def check_settings_callback():
             if self.env.project_manager.get_build_api_key() is None:
@@ -880,10 +885,10 @@ class AdvancedNewProject(AdvancedNewFileNew):
             self.on_path_provided(path)
 
     def update_status_message(self, creation_path):
-            self.window.active_view().set_status("ElectricImp", STR_STATUS_CREATING_PROJECT.format(creation_path))
+            self.window.active_view().set_status(PR_VIEW_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
 
     def clear(self):
-        self.window.active_view().set_status(key="ElectricImp", value="")
+        self.window.active_view().set_status(key=PR_VIEW_STATUS_KEY, value="")
 
 
 class ImpEventListener(sublime_plugin.EventListener):
@@ -937,9 +942,16 @@ class ImpEventListener(sublime_plugin.EventListener):
                 if file_view.is_loading():
                     sublime.set_timeout_async(select_region, 0)
                     return
+                # First, erase all previous error marks
+                file_view.erase_regions(PR_ERROR_REGION_KEY)
+                # Create a new error mark
                 pt = file_view.text_point(orig_line, 0)
                 error_region = sublime.Region(pt)
-                file_view.add_regions("error_region", [error_region], scope="keyword", icon="circle", flags=sublime.DRAW_SOLID_UNDERLINE)
+                file_view.add_regions(PR_ERROR_REGION_KEY,
+                                      [error_region],
+                                      scope="keyword",
+                                      icon="circle",
+                                      flags=sublime.DRAW_SOLID_UNDERLINE)
 
             select_region()
 
