@@ -885,6 +885,7 @@ class AdvancedNewProject(AdvancedNewFileNew):
     def clear(self):
         self.window.active_view().set_status(key="ElectricImp", value="")
 
+
 class ImpEventListener(sublime_plugin.EventListener):
 
     def on_post_text_command(self, view, command_name, args):
