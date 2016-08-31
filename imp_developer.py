@@ -309,12 +309,14 @@ class Preprocessor:
             except subprocess.CalledProcessError as error:
                 log_debug("Error running preprocessor. The process returned code: " + error.returncode)
 
-        for source_type in self.line_table:
-            self.line_table[source_type] = self.__build_line_table(source_type)
-
+        self.__build_line_table()
         return result_agent_filename, result_device_filename
 
-    def __build_line_table(self, source_type):
+    def __build_line_table(self):
+        for source_type in self.line_table:
+            self.line_table[source_type] = self.__build_line_table_for(source_type)
+
+    def __build_line_table_for(self, source_type):
         # Setup the preprocessed file name based on the source type
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
         if source_type == SourceType.AGENT:
@@ -342,7 +344,6 @@ class Preprocessor:
                     orig_line = int(match.group(1)) - 1
                     orig_file = match.group(2)
                 line_table[str(curr_line)] = (orig_file, orig_line)
-                print("line_table[{}]: ({}, {})".format(curr_line, orig_file, orig_line))
                 orig_line += 1
                 curr_line += 1
 
@@ -350,6 +351,8 @@ class Preprocessor:
 
     # Converts error location in the preprocessed code into the original filename and line number
     def get_error_location(self, source_type, line):
+        if not self.line_table[source_type]:
+            self.__build_line_table()
         code_table = self.line_table[source_type]
         return None if code_table is None else code_table[str(line)]
 
@@ -952,9 +955,10 @@ def update_log_windows(restart_timer=True):
                         log_debug("  [ ] Original runtime error: " + log["message"])
                         match = pattern.match(log["message"])
                         if match:
+                            file_read = match.group(1)
+                            line_read = match.group(2)
                             (orig_file, orig_line) = preprocessor.get_error_location(
-                                SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE,
-                                match.group(2))
+                                SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read)
                             message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line - 1)
                     try:
                         type = {
