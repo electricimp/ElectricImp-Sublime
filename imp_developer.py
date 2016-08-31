@@ -158,9 +158,10 @@ class UIManager:
 
     def write_to_console(self, text):
         terminal = Env.For(self.window).terminal
-        terminal.set_read_only(False)
-        terminal.run_command("append", {"characters": text + "\n"})
-        terminal.set_read_only(True)
+        if terminal:
+            terminal.set_read_only(False)
+            terminal.run_command("append", {"characters": text + "\n"})
+            terminal.set_read_only(True)
 
     def init_tty(self):
         env = Env.For(self.window)
@@ -884,14 +885,19 @@ class ImpEventListener(sublime_plugin.EventListener):
             orig_line = int(cp_match.group(2)) - 1
         else:
             rt_match = rt_error_pattern.match(selected_line)
-            if rt_match: # Runtime error message
+            if rt_match:  # Runtime error message
                 orig_file = rt_match.group(1)
                 orig_line = int(rt_match.group(2)) - 1
 
         print("Selected line: " + selected_line + ", original file name: " + str(orig_file) + " orig_line: " + str(orig_line))
         if orig_file is not None and orig_line is not None:
-            src_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
-            file_name = os.path.join(src_dir, orig_file)
+
+            source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
+            file_name  = os.path.join(source_dir, orig_file)
+
+            if not os.path.exists(file_name):
+                return
+
             file_view = window.open_file(file_name)
 
             def select_region():
