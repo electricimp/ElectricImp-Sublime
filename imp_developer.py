@@ -16,6 +16,10 @@ import imp
 import sublime
 import sublime_plugin
 
+# Import AdvancedNewFile resources
+sys.path.append(os.path.join(os.path.dirname(__file__), "anf"))
+from advanced_new_file.commands import AdvancedNewFileNew
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 # Import resources
 if 'plugin_resources' in sys.modules:
@@ -687,8 +691,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         super(ImpCreateProjectCommand, self).__init__(window)
 
     def run(self):
-        self.env.ui_manager.show_path_selector(STR_NEW_PROJECT_LOCATION, self.get_default_project_path(),
-                                               self.on_project_path_entered)
+        AdvancedNewProject(self.window, self.on_project_path_entered).run()
 
     @staticmethod
     def get_default_project_path():
@@ -852,6 +855,26 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
     def run(self):
         self.check_settings(callback=self.prompt_model_to_remove_device)
+
+
+class AdvancedNewProject(AdvancedNewFileNew):
+
+    def __init__(self, window, on_path_provided=None):
+        super(AdvancedNewProject, self).__init__(window)
+        self.on_path_provided = on_path_provided
+
+    def input_panel_caption(self):
+        return STR_NEW_PROJECT_LOCATION
+
+    def entered_file_action(self, path):
+        if self.on_path_provided:
+            self.on_path_provided(path)
+
+    def update_status_message(self, creation_path):
+        if self.view is not None:
+            self.view.set_status("ElectricImp", "Creating project at %s " % creation_path)
+        else:
+            sublime.status_message("Creating file at %s" % creation_path)
 
 
 class ImpEventListener(sublime_plugin.EventListener):
