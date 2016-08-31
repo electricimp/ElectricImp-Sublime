@@ -339,18 +339,19 @@ class Preprocessor:
         pattern = re.compile(r".*//line (\d+) \"(.+)\"")
         curr_line = 0
         orig_line = 0
-        with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
-            while 1:
-                line = f.readline()
-                if not line:
-                    break
-                match = pattern.match(line)
-                if match:
-                    orig_line = int(match.group(1)) - 1
-                    orig_file = match.group(2)
-                line_table[str(curr_line)] = (orig_file, orig_line)
-                orig_line += 1
-                curr_line += 1
+        if os.path.exists(preprocessed_file_path):
+            with open(preprocessed_file_path, 'r', encoding="utf-8") as f:
+                while 1:
+                    line = f.readline()
+                    if not line:
+                        break
+                    match = pattern.match(line)
+                    if match:
+                        orig_line = int(match.group(1)) - 1
+                        orig_file = match.group(2)
+                    line_table[str(curr_line)] = (orig_file, orig_line)
+                    orig_line += 1
+                    curr_line += 1
 
         return line_table
 
@@ -414,8 +415,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         if response.status_code == requests.codes.bad_request \
                 and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
             self.create_new_model(False)
+            return
         elif not HTTPConnection.is_response_valid(response):
             sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
+            return
 
         # Save newly created model to the project settings
         settings = self.load_settings()
@@ -627,8 +630,13 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                     report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
                         log_debug("Original compilation error: " + str(e))
-                        orig_file, orig_line = \
-                            preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1))
+                        orig_file = "main"
+                        orig_line = int(e["row"])
+                        try:
+                            orig_file, orig_line = \
+                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1))
+                        except:
+                            pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line, e["column"], e["error"])
                 return report
 
@@ -862,6 +870,7 @@ class AdvancedNewProject(AdvancedNewFileNew):
     def __init__(self, window, on_path_provided=None):
         super(AdvancedNewProject, self).__init__(window)
         self.on_path_provided = on_path_provided
+        self.window = window
 
     def input_panel_caption(self):
         return STR_NEW_PROJECT_LOCATION
@@ -869,13 +878,10 @@ class AdvancedNewProject(AdvancedNewFileNew):
     def entered_file_action(self, path):
         if self.on_path_provided:
             self.on_path_provided(path)
+        self.window.active_view().set_status(key="ElectricImp", value="")
 
     def update_status_message(self, creation_path):
-        if self.view is not None:
-            self.view.set_status("ElectricImp", "Creating project at %s " % creation_path)
-        else:
-            sublime.status_message("Creating file at %s" % creation_path)
-
+            self.window.active_view().set_status("ElectricImp", STR_STATUS_CREATING_PROJECT.format(creation_path))
 
 class ImpEventListener(sublime_plugin.EventListener):
 
@@ -986,9 +992,12 @@ def update_log_windows(restart_timer=True):
                         if match:
                             file_read = match.group(1)
                             line_read = match.group(2)
-                            (orig_file, orig_line) = preprocessor.get_error_location(
-                                SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read)
-                            message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line - 1)
+                            try:
+                                (orig_file, orig_line) = preprocessor.get_error_location(
+                                    SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read)
+                                message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line - 1)
+                            except:
+                                pass  # Use original message if failed to translate the error location
                     try:
                         type = {
                             "status"       : "[Server]",

@@ -39,3 +39,4 @@ STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "Deploy failed because of the compilation
 STR_ERR_RUNTIME_ERROR                = "ERROR:  at {}:{} "
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
+STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
