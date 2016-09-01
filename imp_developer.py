@@ -138,6 +138,9 @@ class Env:
     @staticmethod
     def create_env_if_does_not_exist_for(window):
         global project_windows
+        if not window:
+            # There is nothing to do for empty window
+            return
         if not hasattr(window, "ei_env"):
             window.ei_env = Env(window)
             project_windows.append(window)
@@ -367,10 +370,13 @@ class Preprocessor:
 
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
-    def __init__(self, window):
-        if window:
-            self.window = window
-        self.env = Env.create_env_if_does_not_exist_for(self.window)
+
+    def __init__(self):
+        self.env = None
+
+    def init_env(self):
+        if not self.env:
+            self.env = Env.create_env_if_does_not_exist_for(self.window)
 
     def load_settings(self):
         return self.env.project_manager.load_settings(PR_SETTINGS_FILE)
@@ -560,10 +566,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Code push command implementation"""
     
-    def __init__(self, window):
-        super(ImpBuildAndRunCommand, self).__init__(window)
-
     def run(self):
+        self.init_env()
         self.env.ui_manager.init_tty()
         # Clean up all the error marks first
         for view in self.window.views():
@@ -668,10 +672,8 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
 
-    def __init__(self, window):
-        super(ImpShowConsoleCommand, self).__init__(window)
-
     def run(self):
+        self.init_env()
         self.env.ui_manager.init_tty()
         self.check_settings()
         update_log_windows(False)
@@ -679,11 +681,14 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
     def run(self):
+        self.init_env()
         self.check_settings(callback=self.select_or_register_device)
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
+        self.init_env()
+
         def check_settings_callback():
             settings = self.load_settings()
             if EI_DEVICE_ID in settings:
@@ -700,10 +705,8 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
 
-    def __init__(self, window):
-        super(ImpCreateProjectCommand, self).__init__(window)
-
     def run(self):
+        self.init_env()
         AdvancedNewProject(self.window, self.on_project_path_entered).run()
 
     @staticmethod
@@ -826,6 +829,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 class ImpAddDeviceToModel(BaseElectricImpCommand):
 
     def run(self):
+        self.init_env()
+
         def check_settings_callback():
             self.select_or_register_device(need_to_confirm=False, force_register=True)
         self.check_settings(callback=check_settings_callback)
@@ -867,6 +872,7 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
         self.env.tmp_device_ids = None
 
     def run(self):
+        self.init_env()
         self.check_settings(callback=self.prompt_model_to_remove_device)
 
 
@@ -972,7 +978,8 @@ def update_log_windows(restart_timer=True):
     try:
         for window in project_windows:
             env = Env.For(window)
-            ei_command = BaseElectricImpCommand(window)
+            ei_command = BaseElectricImpCommand()
+            ei_command.window = window
             if not env.project_manager.is_electric_imp_project():
                 # It's not a windows that corresponds to an EI project, remove it from the list
                 project_windows.remove(window)
