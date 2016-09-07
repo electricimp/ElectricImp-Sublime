@@ -117,6 +117,12 @@ class ProjectManager:
         if api_key_map:
             return api_key_map.get(EI_BUILD_API_KEY)
 
+    def get_source_directory_path(self):
+        return os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
+
+    def get_build_directory_path(self):
+        return os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
+
 
 class Env:
     """Window (project) specific environment object"""
@@ -135,7 +141,7 @@ class Env:
         # Electric Imp Project manager
         self.project_manager = ProjectManager(window)
         # Preprocessor
-        self.code_processor = Preprocessor(window, self.project_manager)
+        self.code_processor = Preprocessor(self.project_manager)
 
         # Temp variables
         self.tmp_model = None
@@ -242,9 +248,7 @@ class SourceType():
 class Preprocessor:
     """Preprocessor and Builder specific implementation"""
 
-    def __init__(self, window, project_manager):
-        self.window = window
-        self.project_manager = project_manager
+    def __init__(self, project_manager):
         self.line_table = {SourceType.AGENT: None, SourceType.DEVICE: None}
 
     @staticmethod
@@ -282,14 +286,14 @@ class Preprocessor:
         elif platform in ["linux", "osx"]:
             return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
 
-    def preprocess(self):
-        settings = Env.For(self.window).project_manager.load_settings()
+    def preprocess(self, env):
 
-        src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
-        bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
+        settings = env.project_manager.load_settings()
+        bld_dir  = env.project_manager.get_build_directory_path()
+        src_dir  = env.project_manager.get_source_directory_path()
 
-        source_agent_filename = os.path.join(src_dir, settings.get(EI_AGENT_FILE))
-        result_agent_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
+        source_agent_filename  = os.path.join(src_dir, settings.get(EI_AGENT_FILE))
+        result_agent_filename  = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
         source_device_filename = os.path.join(src_dir, settings.get(EI_DEVICE_FILE))
         result_device_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
 
@@ -310,10 +314,25 @@ class Preprocessor:
                     "-l",
                     code_files[0]
                 ]
-                with open(code_files[1], "w") as output:
-                    subprocess.check_call(args, stdout=output)
+                pipes = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                prep_out, prep_err = pipes.communicate()
 
-                def inplace_change(filename, old_string, new_string):
+                def strip_off_color_control(str):
+                    return str.replace("\x1B[31m", "").replace("\x1B[39m", "")
+
+                if pipes.returncode != 0:
+                    reported_error = strip_off_color_control(prep_err.strip().decode("utf-8"))
+                    env.ui_manager.write_to_console(STR_ERR_PREPROCESSING_ERROR.format(reported_error, pipes.returncode))
+                    # Return on error
+                    return None, None
+                elif len(prep_err):
+                    reported_error = strip_off_color_control(prep_err.strip().decode("utf-8"))
+                    env.ui_manager.write_to_console(STR_ERR_PREPROCESSING_WARNING.format(reported_error))
+
+                with open(code_files[1], "w") as output:
+                    output.write(str(prep_out.decode("utf-8")))
+
+                def substitute_string_in_file(filename, old_string, new_string):
                     with open(filename) as f:
                         s = f.read()
                         if old_string not in s:
@@ -323,21 +342,21 @@ class Preprocessor:
                         f.write(s)
 
                 # Change line number anchors format
-                inplace_change(code_files[1], "#line", "//line")
+                substitute_string_in_file(code_files[1], "#line", "//line")
 
             except subprocess.CalledProcessError as error:
-                log_debug("Error running preprocessor. The process returned code: " + error.returncode)
+                log_debug("Error running preprocessor. The process returned code: " + str(error.returncode))
 
-        self.__build_line_table()
+        self.__build_line_table(env)
         return result_agent_filename, result_device_filename
 
-    def __build_line_table(self):
+    def __build_line_table(self, env):
         for source_type in self.line_table:
-            self.line_table[source_type] = self.__build_line_table_for(source_type)
+            self.line_table[source_type] = self.__build_line_table_for(source_type, env)
 
-    def __build_line_table_for(self, source_type):
+    def __build_line_table_for(self, source_type, env):
         # Setup the preprocessed file name based on the source type
-        bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
+        bld_dir = env.project_manager.get_build_directory_path()
         if source_type == SourceType.AGENT:
             preprocessed_file_path = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
             orig_file = PR_AGENT_FILE_NAME
@@ -370,9 +389,9 @@ class Preprocessor:
         return line_table
 
     # Converts error location in the preprocessed code into the original filename and line number
-    def get_error_location(self, source_type, line):
+    def get_error_location(self, source_type, line, env):
         if not self.line_table[source_type]:
-            self.__build_line_table()
+            self.__build_line_table(env)
         code_table = self.line_table[source_type]
         return None if code_table is None else code_table[str(line)]
 
@@ -589,7 +608,11 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             self.save_all_current_window_views()
 
             # Preprocess the sources
-            agent_filename, device_filename = self.env.code_processor.preprocess()
+            agent_filename, device_filename = self.env.code_processor.preprocess(self.env)
+
+            if not agent_filename and not device_filename:
+                # Error happened during preprocessing, nothing to do.
+                return
 
             if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
                 log_debug("Can't find code files")
@@ -1001,7 +1024,7 @@ def update_log_windows(restart_timer=True):
                         preprocessor = env.code_processor
                         pattern = re.compile(r"ERROR:\s*at\s*(.*):(\d+)")
                         match = pattern.match(log["message"])
-                        log_debug("  [ ] Original runtime error: " + log["message"] + " was " + ("recognized" if match else "unrecognized"))
+                        # log_debug("  [ ] Original runtime error: " + log["message"] + " was " + ("recognized" if match else "unrecognized"))
                         if match:
                             file_read = match.group(1)
                             line_read = int(match.group(2)) - 1
