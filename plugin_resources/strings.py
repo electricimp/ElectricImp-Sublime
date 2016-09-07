@@ -37,6 +37,7 @@ STR_ERR_SOURCE_CODE_TYPE             = "		{} code:\n"
 STR_ERR_MESSAGE_LINE                 = "				File: {}, Line: {}, Column: {}, Message: {}\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "Deploy failed because of the compilation errors:\n"
 STR_ERR_RUNTIME_ERROR                = "ERROR:  at {}:{} "
+STR_ERR_CONSOLE_NOT_FOUND            = "Couldn't find console to print: {}"
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
 STR_STATUS_CREATING_PROJECT          = "Creating project at {}"

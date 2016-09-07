@@ -69,8 +69,7 @@ EI_DEVICE_ID             = "device-id"
 
 # Global variables
 plugin_settings = None
-project_windows = []
-
+project_env_map = {}
 
 class ProjectManager:
     """Electric Imp project specific fuctionality"""
@@ -78,37 +77,43 @@ class ProjectManager:
     def __init__(self, window):
         self.window = window
 
-    def get_settings_dir(self):
-        project_file_name = self.window.project_file_name()
+    @staticmethod
+    def get_settings_dir(window):
+        project_file_name = window.project_file_name()
         if project_file_name:
             project_dir = os.path.dirname(project_file_name)
             return os.path.join(project_dir, PR_SETTINGS_DIRECTORY)
 
     @staticmethod
     def dump_map_to_json_file(filename, map):
-        with open(filename, "w") as file:
-            json.dump(map, file)
+        with open(filename, "w") as f:
+            json.dump(map, f)
 
-    def save_settings(self, filename, settings):
-        self.dump_map_to_json_file(self.get_settings_file_path(filename), settings)
-
-    def load_settings(self, filename):
-        path = self.get_settings_file_path(filename)
-        if path and os.path.exists(path):
-            with open(path) as file:
-                return json.load(file)
-
-    def get_settings_file_path(self, filename):
-        settings_dir = self.get_settings_dir()
+    @staticmethod
+    def get_settings_file_path(window, filename):
+        settings_dir = ProjectManager.get_settings_dir(window)
         if settings_dir and filename:
             return os.path.join(settings_dir, filename)
 
-    def is_electric_imp_project(self):
-        settings_filename = self.get_settings_file_path(PR_SETTINGS_FILE)
+    @staticmethod
+    def is_electric_imp_project_window(window):
+        settings_filename = ProjectManager.get_settings_file_path(window, PR_SETTINGS_FILE)
         return settings_filename is not None and os.path.exists(settings_filename)
 
+    def save_settings(self, filename, settings):
+        self.dump_map_to_json_file(ProjectManager.get_settings_file_path(self.window, filename), settings)
+
+    def load_settings_file(self, filename):
+        path = ProjectManager.get_settings_file_path(self.window, filename)
+        if path and os.path.exists(path):
+            with open(path) as f:
+                return json.load(f)
+
+    def load_settings(self):
+        return self.load_settings_file(PR_SETTINGS_FILE)
+
     def get_build_api_key(self):
-        api_key_map = self.load_settings(PR_BUILD_API_KEY_FILE)
+        api_key_map = self.load_settings_file(PR_BUILD_API_KEY_FILE)
         if api_key_map:
             return api_key_map.get(EI_BUILD_API_KEY)
 
@@ -117,6 +122,9 @@ class Env:
     """Window (project) specific environment object"""
 
     def __init__(self, window):
+        # Link back to the window
+        self.window = window
+
         # Plugin text area
         self.terminal = None
         # Timestamp for the last log shown in the Plugin text area
@@ -138,25 +146,21 @@ class Env:
 
     @staticmethod
     def For(window):
-        return window.ei_env
+        global project_env_map
+        return project_env_map.get(window.project_file_name())
 
     @staticmethod
-    def create_env_if_does_not_exist_for(window):
-        global project_windows
-        if not window:
-            # There is nothing to do for empty window
-            return
-        if not hasattr(window, "ei_env"):
-            window.ei_env = Env(window)
-            project_windows.append(window)
+    def get_existing_or_create_env_for(window):
+        global project_env_map
+
+        env = Env.For(window)
+        if not env:
+            env = Env(window)
+            project_env_map[window.project_file_name()] = env
             log_debug(
-                "adding new project window: " + str(window) + ", total windows now: " + str(len(project_windows)))
-        # There is nothing to do if the window has an environment registered already
-        return window.ei_env
-
-    @staticmethod
-    def unregister_env_for(window):
-        window.ei_env = None
+                "  [ ] Adding new project window: " + str(window) +
+                ", total windows now: " + str(len(project_env_map)))
+        return env
 
 
 class UIManager:
@@ -279,7 +283,7 @@ class Preprocessor:
             return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
 
     def preprocess(self):
-        settings = Env.For(self.window).project_manager.load_settings(PR_SETTINGS_FILE)
+        settings = Env.For(self.window).project_manager.load_settings()
 
         src_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
         bld_dir = os.path.join(os.path.dirname(self.window.project_file_name()), PR_BUILD_DIRECTORY)
@@ -378,10 +382,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def __init__(self, window):
         self.window = window
-        self.env = Env.create_env_if_does_not_exist_for(window)
+
+        if ProjectManager.is_electric_imp_project_window(window):
+            self.env = Env.get_existing_or_create_env_for(window)
 
     def load_settings(self):
-        return self.env.project_manager.load_settings(PR_SETTINGS_FILE)
+        return self.env.project_manager.load_settings()
 
     def check_settings(self, callback=None):
         # Setup pending callback
@@ -555,14 +561,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.check_settings()
 
     def print_to_tty(self, text):
-        global project_windows
-        if self.window in project_windows:
+        env = Env.For(self.window)
+        if env:
             self.env.ui_manager.write_to_console(text)
         else:
-            print(text)
+            print(STR_ERR_CONSOLE_NOT_FOUND.format(text))
 
     def is_enabled(self):
-        return self.env.project_manager.is_electric_imp_project()
+        return ProjectManager.is_electric_imp_project_window(self.window)
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
@@ -740,7 +746,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         self.copy_gitignore(path)
 
         # Create Electric Imp project settings file
-        self.env.project_manager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
+        ProjectManager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
             EI_AGENT_FILE:  PR_AGENT_FILE_NAME,
             EI_DEVICE_FILE: PR_DEVICE_FILE_NAME
         })
@@ -762,7 +768,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             def open_sources():
                 # TODO: Redo: this code assumes that the last open window was appended to the window list
                 last_window = sublime.windows()[-1]
-                if ProjectManager(last_window).is_electric_imp_project():
+                if ProjectManager.is_electric_imp_project_window(last_window):
                     last_window.open_file(agent_file)
                     last_window.open_file(device_file)
 
@@ -897,18 +903,9 @@ class AdvancedNewProject(AdvancedNewFileNew):
 class ImpEventListener(sublime_plugin.EventListener):
 
     def on_post_text_command(self, view, command_name, args):
-        global project_windows
-
         window = view.window()
-        if window in project_windows:
-            for w in project_windows:
-                if w == window:
-                    window = w
-        else:
-            return
-
         env = Env.For(window)
-        if not view == env.terminal:
+        if not env or view != env.terminal:
             # Not a console window - nothing to do
             return
         selected_line = view.substr(view.line(view.sel()[0]))
@@ -971,18 +968,15 @@ def plugin_loaded():
 
 
 def update_log_windows(restart_timer=True):
-    global project_windows
+    global project_env_map
     try:
-        for window in project_windows:
-            env = Env.For(window)
-            ei_command = BaseElectricImpCommand(window)
-            if not env.project_manager.is_electric_imp_project():
+        for (project_path, env) in list(project_env_map.items()):
+            if not ProjectManager.is_electric_imp_project_window(env.window):
                 # It's not a windows that corresponds to an EI project, remove it from the list
-                project_windows.remove(window)
-                env.unregister_env_for(window)
-                log_debug("Removing project window: " + str(window) + ", total #: " + str(len(project_windows)))
+                del project_env_map[project_path]
+                log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
                 continue
-            device_id = ei_command.load_settings().get(EI_DEVICE_ID)
+            device_id = env.project_manager.load_settings().get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
             if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
                 # Device is not selected yet and the console is not setup for the project, nothing we can do here
@@ -1006,8 +1000,8 @@ def update_log_windows(restart_timer=True):
                         # agent/device compilation errors
                         preprocessor = env.code_processor
                         pattern = re.compile(r"ERROR:\s*at\s*(.*):(\d+)")
-                        log_debug("  [ ] Original runtime error: " + log["message"])
                         match = pattern.match(log["message"])
+                        log_debug("  [ ] Original runtime error: " + log["message"] + " was " + ("recognized" if match else "unrecognized"))
                         if match:
                             file_read = match.group(1)
                             line_read = int(match.group(2)) - 1
@@ -1030,7 +1024,7 @@ def update_log_windows(restart_timer=True):
                         log_debug("Unrecognized log type: " + log["type"])
                         type = "[Unrecognized]"
                     dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
-                    ei_command.print_to_tty(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + message)
+                    env.ui_manager.write_to_console(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + message)
     finally:
         if restart_timer:
             sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)
