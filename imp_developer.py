@@ -591,7 +591,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
-    """Code push command implementation"""
+    """Build and Run command implementation"""
 
     def run(self):
         self.env.ui_manager.init_tty()
