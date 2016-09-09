@@ -478,17 +478,21 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         if exclude_device_ids is None:
             exclude_device_ids = []
 
+        def get_device_display_name(device):
+            name = d.get("name")
+            return name if name else device.get("id")
+
         if input_device_ids:
             for d_id in input_device_ids:
                 for d in all_devices:
                     if d.get("id") == d_id and d_id not in exclude_device_ids:
-                        device_names.append(d.get("name"))
+                        device_names.append(get_device_display_name(d))
                         break
         else:
             for d in all_devices:
                 if d.get("id") not in exclude_device_ids:
                     device_ids.append(d.get("id"))
-                    device_names.append(d.get("name"))
+                    device_names.append(get_device_display_name(d))
 
         return device_ids, device_names
 
