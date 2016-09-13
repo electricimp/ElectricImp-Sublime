@@ -1034,7 +1034,7 @@ def update_log_windows(restart_timer=True):
                             line_read = int(match.group(2)) - 1
                             try:
                                 (orig_file, orig_line) = preprocessor.get_error_location(
-                                    SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read)
+                                    SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read, env)
                                 message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line)
                             except:
                                 pass  # Use original message if failed to translate the error location
