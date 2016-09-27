@@ -984,22 +984,22 @@ class ImpEventListener(sublime_plugin.EventListener):
         rt_error_pattern = re.compile(r".*\sERROR:\s*at\s*(.*):(\d+)\s*")
 
         orig_file = None
-        orit_line = None
+        orig_line = None
 
         cp_match = cp_error_pattern.match(selected_line)
         if cp_match: # Compilation error message
             orig_file = cp_match.group(1)
-            orit_line = int(cp_match.group(2)) - 1
+            orig_line = int(cp_match.group(2)) - 1
         else:
             rt_match = rt_error_pattern.match(selected_line)
             if rt_match:  # Runtime error message
                 orig_file = rt_match.group(1)
-                orit_line = int(rt_match.group(2)) - 1
+                orig_line = int(rt_match.group(2)) - 1
 
         log_debug("Selected line: " + selected_line + ", original file name: " +
-                  str(orig_file) + " orig_line: " + str(orit_line))
+                  str(orig_file) + " orig_line: " + str(orig_line))
 
-        if orig_file is not None and orit_line is not None:
+        if orig_file is not None and orig_line is not None:
 
             source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
             file_name  = os.path.join(source_dir, orig_file)
@@ -1016,14 +1016,14 @@ class ImpEventListener(sublime_plugin.EventListener):
                 # First, erase all previous error marks
                 file_view.erase_regions(PL_ERROR_REGION_KEY)
                 # Create a new error mark
-                pt = file_view.text_point(orit_line, 0)
+                pt = file_view.text_point(orig_line, 0)
                 error_region = sublime.Region(pt)
                 file_view.add_regions(PL_ERROR_REGION_KEY,
                                       [error_region],
                                       scope="keyword",
                                       icon="circle",
                                       flags=sublime.DRAW_SOLID_UNDERLINE)
-
+                file_view.show(error_region)
             select_region()
 
 
