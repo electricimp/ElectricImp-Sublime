@@ -665,20 +665,19 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             # 	},
             # 	'success': False
             # }
-            def build_error_messages(errors, source_type):
+            def build_error_messages(errors, source_type, env):
                 report = ""
                 preprocessor = self.env.code_processor
-                source_name = STR_ERR_SOURCE_AGENT if source_type == SourceType.AGENT else STR_ERR_SOURCE_DEVICE
                 if errors is not None:
-                    report = STR_ERR_SOURCE_CODE_TYPE.format(source_name)
                     for e in errors:
                         log_debug("Original compilation error: " + str(e))
                         orig_file = "main"
                         orig_line = int(e["row"])
                         try:
                             orig_file, orig_line = \
-                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1))
-                        except:
+                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1), env=env)
+                        except Exception as exc:
+                            log_debug("Error trying to find original error source: {}".format(exc))
                             pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line, e["column"], e["error"])
                 return report
@@ -687,8 +686,8 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             error = response_json["error"]
             if error and error["code"] == "CompileFailed":
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
-                error_message += build_error_messages(error["details"]["agent_errors"],  SourceType.AGENT)
-                error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE)
+                error_message += build_error_messages(error["details"]["agent_errors"],  SourceType.AGENT, self.env)
+                error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE, self.env)
                 self.print_to_tty(error_message)
             else:
                 log_debug("Code deploy failed because of the error: {}".format(str(response_json["error"]["code"])))
@@ -941,21 +940,22 @@ class ImpEventListener(sublime_plugin.EventListener):
         rt_error_pattern = re.compile(r".*\sERROR:\s*at\s*(.*):(\d+)\s*")
 
         orig_file = None
-        orig_line = None
+        orit_line = None
 
         cp_match = cp_error_pattern.match(selected_line)
         if cp_match: # Compilation error message
             orig_file = cp_match.group(1)
-            orig_line = int(cp_match.group(2)) - 1
+            orit_line = int(cp_match.group(2)) - 1
         else:
             rt_match = rt_error_pattern.match(selected_line)
             if rt_match:  # Runtime error message
                 orig_file = rt_match.group(1)
-                orig_line = int(rt_match.group(2)) - 1
+                orit_line = int(rt_match.group(2)) - 1
 
-        # log_debug("Selected line: " + selected_line + ", original file name: " +
-        #           str(orig_file) + " orig_line: " + str(orig_line))
-        if orig_file is not None and orig_line is not None:
+        log_debug("Selected line: " + selected_line + ", original file name: " +
+                  str(orig_file) + " orig_line: " + str(orit_line))
+
+        if orig_file is not None and orit_line is not None:
 
             source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
             file_name  = os.path.join(source_dir, orig_file)
@@ -972,7 +972,7 @@ class ImpEventListener(sublime_plugin.EventListener):
                 # First, erase all previous error marks
                 file_view.erase_regions(PL_ERROR_REGION_KEY)
                 # Create a new error mark
-                pt = file_view.text_point(orig_line, 0)
+                pt = file_view.text_point(orit_line, 0)
                 error_region = sublime.Region(pt)
                 file_view.add_regions(PL_ERROR_REGION_KEY,
                                       [error_region],
