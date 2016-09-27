@@ -40,3 +40,4 @@ STR_ERR_PREPROCESSING_WARNING        = "Preprocessing completed with warnings: {
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
 STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
+STR_STATUS_WAITING_FOR_RESPONSE      = "Waiting for Build API Response {}"

@@ -30,6 +30,10 @@ from plugin_resources.strings import *
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
 import requests
 
+# Append future (async) requests
+sys.path.append(os.path.join(os.path.dirname(__file__), "requests-futures"))
+from requests_futures.sessions import FuturesSession
+
 # Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
 PL_SETTINGS_FILE         = "ImpDeveloper.sublime-settings"
@@ -172,7 +176,10 @@ class Env:
 class UIManager:
     """Electric Imp plugin UI manager"""
 
+    STATUS_UPDATE_PERIOD_SEC = 0.5
+
     def __init__(self, window):
+        self.keep_updating_status = False
         self.window = window
 
     def create_new_console(self):
@@ -199,6 +206,38 @@ class UIManager:
     def show_path_selector(self, caption, default_path, on_path_selected):
         # TODO: Implement path selection autocomplete (CSE-70)
         self.window.show_input_panel(caption, default_path, on_path_selected, None, None)
+
+    def start_waiting_for_response_status_update(self):
+        self.keep_updating_status = True
+        self.update_wait_for_response_status()
+
+    def stop_updating_status(self):
+        self.keep_updating_status = False
+
+    def update_wait_for_response_status(self):
+        if not self.keep_updating_status:
+            self.clear_status_message()
+
+        if not hasattr(self.update_wait_for_response_status, "counter"):
+            self.update_wait_for_response_status.counter = 0
+
+        counter = self.update_wait_for_response_status.counter
+
+        suffix = " "
+        for i in range(counter):
+            suffix += "."
+
+        self.set_status_message(STR_STATUS_WAITING_FOR_RESPONSE.format(suffix))
+        self.update_wait_for_response_status.counter = (counter + 1) % 4
+
+        sublime.set_timeout_async(self.update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_SEC)
+
+    def set_status_message(self, message):
+        self.window.active_view().set_status(PL_VIEW_STATUS_KEY, message)
+
+    def clear_status_message(self):
+        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
+
 
 class HTTPConnection:
     """Implementation of all the Electric Imp connection functionality"""
@@ -447,7 +486,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         response = HTTPConnection.post(self.env.project_manager.get_build_api_key(),
                                        PL_BUILD_API_URL + "models/", '{"name" : "' + name + '" }')
 
-        if response.status_code == requests.codes.bad_request \
+        if not HTTPConnection.is_response_valid(response) \
                 and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
             self.create_new_model(False)
             return
