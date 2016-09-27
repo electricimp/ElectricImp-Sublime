@@ -438,11 +438,9 @@ class Preprocessor:
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
 
-    def __init__(self, window):
-        self.window = window
-
-        if ProjectManager.is_electric_imp_project_window(window):
-            self.env = Env.get_existing_or_create_env_for(window)
+    def init_env(self):
+        if not hasattr(self, "env") and ProjectManager.is_electric_imp_project_window(self.window):
+            self.env = Env.get_existing_or_create_env_for(self.window)
 
     def load_settings(self):
         return self.env.project_manager.load_settings()
@@ -637,6 +635,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
 
     def run(self):
+        self.init_env()
         self.env.ui_manager.init_tty()
         # Clean up all the error marks first
         for view in self.window.views():
@@ -745,18 +744,22 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 class ImpShowConsoleCommand(BaseElectricImpCommand):
 
     def run(self):
+        self.init_env()
         self.env.ui_manager.init_tty()
         self.check_settings()
         update_log_windows(False)
 
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
+
     def run(self):
+        self.init_env()
         self.check_settings(callback=self.select_or_register_device)
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
+        self.init_env()
         def check_settings_callback():
             settings = self.load_settings()
             if EI_DEVICE_ID in settings:
@@ -900,12 +903,17 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 class ImpAddDeviceToModel(BaseElectricImpCommand):
 
     def run(self):
+        self.init_env()
         def check_settings_callback():
             self.select_or_register_device(need_to_confirm=False, force_register=True)
         self.check_settings(callback=check_settings_callback)
 
 
 class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
+
+    def run(self):
+        self.init_env()
+        self.check_settings(callback=self.prompt_model_to_remove_device)
 
     def prompt_model_to_remove_device(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REMOVE_DEVICE): return
@@ -939,9 +947,6 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
         self.env.tmp_model = None
         self.env.tmp_device_ids = None
-
-    def run(self):
-        self.check_settings(callback=self.prompt_model_to_remove_device)
 
 
 class AdvancedNewProject(AdvancedNewFileNew):
