@@ -420,8 +420,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.prompt_for_build_api_key()
         elif self.is_missing_model():
             self.create_new_model()
-        elif self.is_missing_device():
-            self.select_or_register_device()
+        # elif self.is_missing_device():
+        #     self.select_or_register_device()
         else:
             # All the checks passed, invoke the callback now
             if callback:
