@@ -6,25 +6,21 @@
 	    "caption"  : "Electric Imp",
 	    "children" : [ 
 	    	{
-		    	"caption" : "Create Project",
-		    	"command" : "imp_create_project"
-		    },
-	    	{
 		    	"caption" : "Build and Run",
 		    	"command" : "imp_build_and_run"
 		    },
-	    	{
-		    	"caption" : "Show Console",
-		    	"command" : "imp_show_console"
-		    },
             { "caption": "-" },
-            {
-                "caption" : "Select Device",
-                "command" : "imp_select_device"
-            },
+	    	{
+		    	"caption" : "Create Project",
+		    	"command" : "imp_create_project"
+		    },
 		    {
-		        "caption" : "Model",
+		        "caption" : "Device",
 		        "children": [
+                    {
+                        "caption" : "Select Device",
+                        "command" : "imp_select_device"
+                    },
                     {
                         "caption" : "Add Device",
                         "command" : "imp_add_device_to_model"
@@ -36,6 +32,10 @@
 		        ]
 		    },
 		    { "caption": "-" },
+	    	{
+		    	"caption" : "Show Console",
+		    	"command" : "imp_show_console"
+		    },
 	    	{
 		    	"caption" : "Get Agent URL",
 		    	"command" : "imp_get_agent_url"

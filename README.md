@@ -5,11 +5,32 @@ Electric Imp Sublime Plugin
 
 ## Installation (manual)
 
-1. Download or checkout the plugin package from https://github.com/ElectricImp-CSE/ElectricImp-Sublime
+### Installing Node.js
 
+The plugin requires Node.js to be installed on the machine. Please follow [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
+  
+### Installing Builder Node.js module
+
+The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. To install the Builder module, please use npm command:
+
+```
+npm i -g Builder
+```
+
+### Installing the Plugin
+
+You can install the plugin script via the following command in the Sublime Text terminal (``ctrl+` ``) which utilizes `git clone`.
+
+```python
+import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path})
+```
+
+or follow the steps manually:
+
+1. Download or checkout the plugin package from https://github.com/ElectricImp-CSE/ElectricImp-Sublime
 2. Install the plugin by manally copying the package content into
-  - (OS X): /Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/
-  - (Windows): "%AppData%\Sublime Text 3\Packages\%"
+    - (OS X): /Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/
+    - (Windows): "%AppData%\Sublime Text 3\Packages\%"
 
 ## Usage
 
