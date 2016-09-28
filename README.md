@@ -1,17 +1,20 @@
 Electric Imp Sublime Plugin
 =================================
 
-**Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are supported (tested on OS X).**
+**Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are 
+supported. Tested on OS X only.**
 
 ## Installation (manual)
 
 ### Installing Node.js
 
-The plugin requires Node.js to be installed on the machine. Please follow [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
+The plugin requires Node.js to be installed on the machine. Please follow 
+[instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
-### Installing Builder Node.js module
+### Installing Builder Node.js Module
 
-The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. To install the Builder module, please use npm command:
+The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. 
+To install the Builder module, please use npm command:
 
 ```
 npm i -g Builder
@@ -19,7 +22,8 @@ npm i -g Builder
 
 ### Installing the Plugin
 
-You can install the plugin script via the following command in the Sublime Text terminal (``ctrl+` ``) which utilizes `git clone`.
+You can install the plugin script via the following command in the Sublime Text terminal (``ctrl+` ``) 
+which utilizes `git clone`.
 
 ```python
 import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path})
@@ -34,33 +38,29 @@ or follow the steps manually:
 
 ## Usage
 
-#### Project creation
+### Creating a new Project
 
-First step is creation of a project by selecting Electric Imp->Create Project menu item. On the new project creation the user is asked to:
+First step is creation of a project by selecting ``Electric Imp->Create Project`` menu item. On the new project creation 
+the user is asked to specify the project folder.
 
-- [X] Specify the project folder
-- [X] Enter the Build API Key
-- [X] Select Model the project will be associated with from the popup list
-
-As the result of these actions the project folder is created at the specified location:
+As the result project is created at the specified location:
 
 ```
 -- <Project Name>
-  |--> <Project Name>.sublime-project     (Sublime project file)
-  |--> src                                (Source folder) 
-  .   |--> <Model Name>.device.nut        (Device code)
-  .   |--> <Model Name>.agent.nut         (Agent code)
-  |--> settings                           (Electric Imp settings folder)
-  .   |--> build-api.key                  (SENSITIVE: Build API key stored for the project
-  .   |--> electric-imp.settings          (Generic Electric Imp settings)
-  |--> .gitignore                         (.gitignore file to exclude Build API key from git repository)
+  |--> settings                           - Electric Imp settings folder
+  .   |--> build-api.key                  - SENSITIVE: Build API key stored for the project
+  .   |--> electric-imp.settings          - Generic Electric Imp settings
+  |--> src                                - Source folder 
+  .   |--> <Model Name>.device.nut        - Device code
+  .   |--> <Model Name>.agent.nut         - Agent code
+  |--> .gitignore                         - .gitignore file to exclude Build API key from git repository
+  |--> <Project Name>.sublime-project     - Sublime project file
 ```
 
 **IMPORTANT: settings/build-api.key should not be put under a source control as it contains sensitive information!**
 
 <Project Name>.electric-imp-settings file contains:
 
-- The Build API key for the project
 - Imp Model ID for the project
 - Device and Agent code file names
 - Selected device id
@@ -68,35 +68,72 @@ As the result of these actions the project folder is created at the specified lo
 ```
 {
   "model-id"      : "my-model-id",
-  "device-file"   : "mymodel.device.nut",
-  "agent-file"    : "mymodel.agent.nut",
+  "device-file"   : "device.nut",
+  "agent-file"    : "agent.nut",
   "device-id"     : "my-selected-device-id"
 }
 ```
 
-On a new project creation the device and agent code (device.nut and agent.nut) is automatically downloaded for the specified Model and is stored in the appropriated files inside the project folder.
+### Opening an existing Project
+
+To open an existing Electric Imp project, select the ``Project->Open Project...`` menu option and choose the 
+<Project Name>.sublime-project file from your project directory.
+
+**The plugin won't properly detect Electric Imp project if it's not opened as described, i.e. if it's opened
+as a folder, not as a Text Sublime project!**
+
+### Building the Code
+
+To build and deploy the application code, please select ``Electric Imp->Build and Run`` menu item.
+
+When one builds the code (or does any other action, that requires access to the imp server) for the first time, the user 
+is asked to provide:
+
+- [ ] Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
+top right corner and selecting the Build API Keys menu item 
+- [ ] New Model name to be created for the project. Each Electric Imp project is associated with a particular Model, 
+i.e. application code.
+
+NOTE: to build and deploy your code it's not necessary to select a device for your project. Even if you don't have a 
+device selected, you still can work on the code and receive compilation errors from the server.
+
+If you want to have you code running on a specific device and see it's logs, you need to select a device 
+(``Electric Imp->Device->Select`` Device).
+
+When a project is created the empty device and agent code (device.nut and agent.nut) files are automatically created 
+and stored in the ``src`` project folder.
 
 If a project is created successfully, a new window with the project folder is opened. 
 
-**To start working with the Electric Imp project one should either click on the <Project Name>.sublime-project in the file browser (assuming the appropriate file association is set up in the system). You may also open the project by selecting Project->Open Project... menu option and choosing your <Project Name>.sublime-project file.**
+### Building and Running the Code
 
-The plugin doesn't identify the Electric Imp project if it's not properly opened as described.
+The code can be pushed to the Model by selecting ``Electric Imp->Build and Run`` menu item. 
+This action uploads the agent and the device code to the server and restarts the model with all the devices attached.
 
-#### Pushing the Code to the Server
+### Logs Console
 
-The code can be pushed to the server by selecting Electric Imp->Deploy menu item. This action uploads the agent and the device code to the server and restarts the model. When pushing the code the user may be asked to select a device to view the logs for.
+The Console can be popped up by selecting ``Electric Imp->Show Console`` menu item. The Console shows live logs
+from the Model and the selected device.
 
-#### The Server Logs Console
+### Selecting Device
 
-The console can be popped up by selecting Electric Imp->Console menu item. It shows the live logs for the selected device.
+Device can be selected through the ``Electric Imp->Device->Select Device`` menu item. The selected device is used as a 
+source of logs for the Server Logs Console.
 
-#### Device Selection
+### Adding Device to the Model
 
-Device can be selected through the Electric Imp->Select Device menu item. The selected device is used as a source of logs for the Server Logs Console.
+To add a device to the project model, select ``Electric Imp->Device->Add Device`` menu item. The newly added device
+is selected as the current one, which means the Console will show the logs for it.
 
-#### Retrieving Agent URL
+### Removing Device from the Model
 
-Agent URL can be retrieved by selecting Electric Imp->Get Agent URL menu item.
+Devices can be removed from the model by selecting ``Electric Imp->Device->Remove Device``.
+
+NOTE: one can't delete an active device (the one that is currently selected as current for the project).
+
+### Retrieving Agent URL
+
+Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu item. The URL is saved in the clipboard.
 
 ### Key Shortcuts
 
