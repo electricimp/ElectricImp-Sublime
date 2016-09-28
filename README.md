@@ -91,9 +91,9 @@ To build and deploy the application code, please select ``Electric Imp->Build an
 When one builds the code (or does any other action, that requires access to the imp server) for the first time, the user 
 is asked to provide:
 
-- [ ] Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
+- Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
 top right corner and selecting the Build API Keys menu item 
-- [ ] New Model name to be created for the project. Each Electric Imp project is associated with a particular Model, 
+- New Model name to be created for the project. Each Electric Imp project is associated with a particular Model, 
 i.e. application code.
 
 NOTE: to build and deploy your code it's not necessary to select a device for your project. Even if you don't have a 
