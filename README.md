@@ -8,6 +8,8 @@ supported. Tested on OS X only.**
 
 ### Installing Node.js
 
+**Please note that the Plugin requires Node.js 4.0 or above.**
+
 The plugin requires Node.js to be installed on the machine. Please follow 
 [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
