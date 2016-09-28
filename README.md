@@ -140,31 +140,27 @@ Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu ite
 **Electric Imp specific menu items are only available if an Electric Imp project is opened in the currently active window**
 
 - Create Project: Ctrl + Shift + L
-- Deploy project: Ctrl + Shift + D
+- Build and Run: Ctrl + Shift + D
 - Show Logs Console: Ctrl + Shift + C
 - Select Device: Ctrc + Shift + I
 
+## Preprocessor and Multi-File Support
+ 
+Please refer to the [Builder](https://github.com/electricimp/Builder) for more information on the preprocessor syntax
+that you can use in your Squirrel code.
 
 ## Features supported in the current Version
 
 - Push of the code to the server
 - Live logs view
 - Generating a URL to the agent associated with the device
-- An early version of the Squirrel language code highlighter (Alpha version, may not be accurate)
-- An early version of the API inline code suggestions (Alpha version, may not be accurate)
-
-## Existing restrictions
-
-- No inline code compilation errors or code lintering is provided
-- No multiple file support
-- No refactoring or sophistiated navigation features (except those available in the editor out of the box)
-- No way to change a model for the project
+- An early version of the Squirrel language code highlighter (to be improved)
+- An early version of the API inline code suggestions (to be improved)
+- Preprocessor [Builder](https://github.com/electricimp/Builder) support
 
 ## Future Development Plans
 
+- Improved Compilation/Runtime issues logs representation
 - Improved highlighting and API suggestions
-- Multiple files support
 - Squirrel code lintering and inline error highlighting
-- Advanced Squirrel preprocessor support
 - Squirrel refactoring or advanced navigation features
-- Simple administrative functionality (managing Models, devices, migration of devices, etc.)
