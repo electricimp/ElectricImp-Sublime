@@ -176,7 +176,8 @@ class Env:
 class UIManager:
     """Electric Imp plugin UI manager"""
 
-    STATUS_UPDATE_PERIOD_SEC = 0.5
+    STATUS_UPDATE_PERIOD_MS = 500
+    __status_counter = 0
 
     def __init__(self, window):
         self.keep_updating_status = False
@@ -217,23 +218,22 @@ class UIManager:
     def update_wait_for_response_status(self):
         if not self.keep_updating_status:
             self.clear_status_message()
+            return
 
-        if not hasattr(self.update_wait_for_response_status, "counter"):
-            self.update_wait_for_response_status.counter = 0
-
-        counter = self.update_wait_for_response_status.counter
-
-        suffix = " "
-        for i in range(counter):
-            suffix += "."
+        suffix = {
+            0: "[|]",
+            1: "[/]",
+            2: "[-]",
+            3: "[\]"
+        }[self.__status_counter]
 
         self.set_status_message(STR_STATUS_WAITING_FOR_RESPONSE.format(suffix))
-        self.update_wait_for_response_status.counter = (counter + 1) % 4
+        self.__status_counter = (self.__status_counter + 1) % 4
 
-        sublime.set_timeout_async(self.update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_SEC)
+        sublime.set_timeout(self.update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_MS)
 
     def set_status_message(self, message):
-        self.window.active_view().set_status(PL_VIEW_STATUS_KEY, message)
+        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value=message)
 
     def clear_status_message(self):
         self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
@@ -265,6 +265,13 @@ class HTTPConnection:
     @staticmethod
     def post(key, url, data=None):
         return requests.post(url, data=data, headers=HTTPConnection.__get_http_headers(key))
+
+    @staticmethod
+    def post_async(key, url, data=None, callback=None):
+        return FuturesSession().post(url,
+                                     data=data,
+                                     headers=HTTPConnection.__get_http_headers(key),
+                                     background_callback=callback)
 
     @staticmethod
     def put(key, url, data=None):
@@ -666,17 +673,20 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             settings = self.load_settings()
             url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
             data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-            response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
-
-            # Update the logs first
-            update_log_windows(False)
-
-            # Process response and handle errors appropriately
-            self.handle_response(response, settings)
+            HTTPConnection.post_async(self.env.project_manager.get_build_api_key(), url, data, self.handle_response)
+            self.env.ui_manager.start_waiting_for_response_status_update()
 
         self.check_settings(callback=check_settings_callback)
 
-    def handle_response(self, response, settings):
+    def handle_response(self, session, response):
+        print("handle_response called")
+        self.env.ui_manager.stop_updating_status()
+
+        settings = self.load_settings()
+
+        # Update the logs first
+        update_log_windows(False)
+
         if HTTPConnection.is_response_valid(response):
             response_json = response.json()
             self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response_json["revision"]["version"])))
