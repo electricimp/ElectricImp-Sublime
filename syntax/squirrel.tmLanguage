@@ -190,7 +190,7 @@
         </dict>
     </array>
     <key>scopeName</key>
-    <string>source.nut</string>
+    <string>source.squirrel</string>
     <key>uuid</key>
     <string>4ee8535f-9561-48bc-8858-00e2b837fdf3</string>
 </dict>
