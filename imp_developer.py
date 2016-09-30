@@ -979,8 +979,8 @@ class AdvancedNewProject(AdvancedNewFileNew):
 
 class ImpErrorProcessor(sublime_plugin.EventListener):
 
-    CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR: \(clickable\)\s.*\((.*)\:(\d+)\)"
-    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR: \(clickable\)\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
+    CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s.*\((.*)\:(\d+)\)"
+    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
 
     def on_post_text_command(self, view, command_name, args):
         window = view.window()
