@@ -33,7 +33,7 @@ STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from 
 
 STR_ERR_MESSAGE_LINE                 = "    File: {}, Line: {}, Column: {}, Message: {}\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "Deploy failed because of the compilation errors:\n"
-STR_ERR_RUNTIME_ERROR                = "ERROR:  at {}:{} "
+STR_ERR_RUNTIME_ERROR                = "ERROR:   (clickable) at {} {}:{} "
 STR_ERR_CONSOLE_NOT_FOUND            = "Couldn't find console to print: {}"
 STR_ERR_PREPROCESSING_ERROR          = "Preprocessing failed: {}, error code: {}"
 STR_ERR_PREPROCESSING_WARNING        = "Preprocessing completed with warnings: {}"

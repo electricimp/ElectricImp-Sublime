@@ -980,7 +980,10 @@ class AdvancedNewProject(AdvancedNewFileNew):
         self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
 
 
-class ImpEventListener(sublime_plugin.EventListener):
+class ImpErrorProcessor(sublime_plugin.EventListener):
+
+    CLICKABLE_CP_ERROR_PATTERN = r"\s*File: (.+), Line: (\d+), Column: (\d+), Message: (.*)"
+    CLICKABLE_RT_ERROR_PATTERN = r".*\sERROR:\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
 
     def on_post_text_command(self, view, command_name, args):
         window = view.window()
@@ -990,8 +993,8 @@ class ImpEventListener(sublime_plugin.EventListener):
             return
         selected_line = view.substr(view.line(view.sel()[0]))
 
-        cp_error_pattern = re.compile(r"\s*File: (.+), Line: (\d+), Column: (\d+), Message: (.*)")
-        rt_error_pattern = re.compile(r".*\sERROR:\s*at\s*(.*):(\d+)\s*")
+        cp_error_pattern = re.compile(self.CLICKABLE_CP_ERROR_PATTERN)
+        rt_error_pattern = re.compile(self.CLICKABLE_RT_ERROR_PATTERN)
 
         orig_file = None
         orig_line = None
@@ -1082,18 +1085,18 @@ def update_log_windows(restart_timer=True):
                 for log in response_json["logs"]:
                     message = log["message"]
                     if log["type"] in ["server.error", "agent.error"]:
-                        # agent/device compilation errors
+                        # agent/device runtime errors
                         preprocessor = env.code_processor
-                        pattern = re.compile(r"ERROR:\s*at\s*(.*):(\d+)")
+                        pattern = re.compile(r"ERROR:\s*(?:at|from)\s*(\S+)\s*.*:(\d+)")
                         match = pattern.match(log["message"])
-                        # log_debug("  [ ] Original runtime error: " + log["message"] + " was " + ("recognized" if match else "unrecognized"))
+                        log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") + "  [ ] Original runtime error: " + log["message"])
                         if match:
-                            file_read = match.group(1)
+                            func_name = match.group(1)
                             line_read = int(match.group(2)) - 1
                             try:
                                 (orig_file, orig_line) = preprocessor.get_error_location(
                                     SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read, env)
-                                message = STR_ERR_RUNTIME_ERROR.format(orig_file, orig_line)
+                                message = STR_ERR_RUNTIME_ERROR.format(func_name, orig_file, orig_line)
                             except:
                                 pass  # Use original message if failed to translate the error location
                     try:
