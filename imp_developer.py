@@ -1059,11 +1059,7 @@ def update_log_windows(restart_timer=True):
                 continue
             device_id = env.project_manager.load_settings().get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
-            if not timestamp:
-                log_debug("[ERROR] Oops: timestamp is None!")
-                timestamp = PL_LOG_DEFAULT_TIMESTAMP
-
-            if None in [device_id, env.project_manager.get_build_api_key()]:
+            if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
                 # Device is not selected yet and the console is not setup for the project, nothing we can do here
                 continue
             url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
@@ -1078,6 +1074,10 @@ def update_log_windows(restart_timer=True):
             log_size = 0 if "logs" not in response_json else len(response_json["logs"])
             if log_size > 0:
                 timestamp = response_json["logs"][log_size - 1]["timestamp"]
+                if not timestamp:
+                    log_debug("[ERROR] Oops again: timestamp is None for the message: " + response_json["logs"][log_size - 1])
+                    # Don't do anything if timestamp is null, we'll try to reiterate later.
+                    break
                 env.logs_timestamp = timestamp
                 for log in response_json["logs"]:
                     message = log["message"]
