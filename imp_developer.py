@@ -41,7 +41,7 @@ PL_DEBUG_FLAG            = "debug"
 PL_AGENT_URL             = "https://agent.electricimp.com/{}"
 PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
-PL_LOG_START_TIME        = "2000-01-01T00:00:00.000+00:00"
+PL_LOG_DEFAULT_TIMESTAMP = "2000-01-01T00:00:00.000+00:00"
 PL_LOGS_UPDATE_PERIOD    = 5000 # ms
 PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_VIEW_STATUS_KEY       = "electric-imp-view-status-key"
@@ -138,7 +138,7 @@ class Env:
         # Plugin text area
         self.terminal = None
         # Timestamp for the last log shown in the Plugin text area
-        self.logs_timestamp = PL_LOG_START_TIME
+        self.logs_timestamp = PL_LOG_DEFAULT_TIMESTAMP
 
         # UI Manager
         self.ui_manager = UIManager(window)
@@ -186,7 +186,7 @@ class UIManager:
     def create_new_console(self):
         env = Env.For(self.window)
         env.terminal = self.window.get_output_panel("textarea")
-        env.logs_timestamp = PL_LOG_START_TIME
+        env.logs_timestamp = PL_LOG_DEFAULT_TIMESTAMP
 
     def write_to_console(self, text):
         terminal = Env.For(self.window).terminal
@@ -1059,7 +1059,11 @@ def update_log_windows(restart_timer=True):
                 continue
             device_id = env.project_manager.load_settings().get(EI_DEVICE_ID)
             timestamp = env.logs_timestamp
-            if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
+            if not timestamp:
+                log_debug("[ERROR] Oops: timestamp is None!")
+                timestamp = PL_LOG_DEFAULT_TIMESTAMP
+
+            if None in [device_id, env.project_manager.get_build_api_key()]:
                 # Device is not selected yet and the console is not setup for the project, nothing we can do here
                 continue
             url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
