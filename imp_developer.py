@@ -363,17 +363,14 @@ class Preprocessor:
                 pipes = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 prep_out, prep_err = pipes.communicate()
 
-                def strip_off_color_control(str):
+                def strip_off_color_control_chars(str):
                     return str.replace("\x1B[31m", "").replace("\x1B[39m", "")
 
-                if pipes.returncode != 0:
-                    reported_error = strip_off_color_control(prep_err.strip().decode("utf-8"))
-                    env.ui_manager.write_to_console(STR_ERR_PREPROCESSING_ERROR.format(reported_error, pipes.returncode))
+                if pipes.returncode != 0 or len(prep_err):
+                    reported_error = strip_off_color_control_chars(prep_err.strip().decode("utf-8"))
+                    env.ui_manager.write_to_console(STR_ERR_PREPROCESSING_ERROR.format(reported_error))
                     # Return on error
                     return None, None
-                elif len(prep_err):
-                    reported_error = strip_off_color_control(prep_err.strip().decode("utf-8"))
-                    env.ui_manager.write_to_console(STR_ERR_PREPROCESSING_WARNING.format(reported_error))
 
                 with open(code_files[1], "w") as output:
                     output.write(str(prep_out.decode("utf-8")))
@@ -727,7 +724,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                         except Exception as exc:
                             log_debug("Error trying to find original error source: {}".format(exc))
                             pass  # Do nothing - use read values
-                        report += STR_ERR_MESSAGE_LINE.format(orig_file, orig_line, e["column"], e["error"])
+                        report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
                 return report
 
             response_json = response.json()
@@ -982,8 +979,8 @@ class AdvancedNewProject(AdvancedNewFileNew):
 
 class ImpErrorProcessor(sublime_plugin.EventListener):
 
-    CLICKABLE_CP_ERROR_PATTERN = r"\s*File: (.+), Line: (\d+), Column: (\d+), Message: (.*)"
-    CLICKABLE_RT_ERROR_PATTERN = r".*\sERROR:\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
+    CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR: \(clickable\)\s.*\((.*)\:(\d+)\)"
+    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR: \(clickable\)\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
 
     def on_post_text_command(self, view, command_name, args):
         window = view.window()
