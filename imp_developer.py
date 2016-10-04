@@ -16,16 +16,6 @@ import imp
 import sublime
 import sublime_plugin
 
-# Import AdvancedNewFile resources
-sys.path.append(os.path.join(os.path.dirname(__file__), "anf"))
-from advanced_new_file.commands import AdvancedNewFileNew
-
-sys.path.append(os.path.join(os.path.dirname(__file__), "."))
-# Import resources
-if 'plugin_resources' in sys.modules:
-    imp.reload(sys.modules['plugin_resources.strings'])
-from plugin_resources.strings import *
-
 
 def import_or_reload(module_name, *names):
     if module_name in sys.modules:
@@ -36,6 +26,15 @@ def import_or_reload(module_name, *names):
     for name in names:
         globals()[name] = getattr(sys.modules[module_name], name)
 
+# Import AdvancedNewFile resources
+sys.path.append(os.path.join(os.path.dirname(__file__), "anf"))
+import_or_reload("advanced_new_file.commands", "AdvancedNewFileNew")
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "."))
+# Import resources
+import_or_reload("plugin_resources.strings")
+from plugin_resources.strings import *
+
 # Append requests module to the system module path
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
 # On Windows platform there may be a "wrong" requests module preloaded in the system
@@ -43,7 +42,7 @@ import_or_reload("requests")
 
 # Append future (async) requests
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests-futures"))
-from requests_futures.sessions import FuturesSession
+import_or_reload("requests_futures.sessions", "FuturesSession")
 
 # Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
