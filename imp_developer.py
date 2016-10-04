@@ -12,37 +12,29 @@ import subprocess
 import sys
 import urllib
 
-import imp
 import sublime
 import sublime_plugin
 
 
-def import_or_reload(module_name, *names):
-    if module_name in sys.modules:
-        imp.reload(sys.modules[module_name])
-    else:
-        __import__(module_name, fromlist=names)
-
-    for name in names:
-        globals()[name] = getattr(sys.modules[module_name], name)
-
 # Import AdvancedNewFile resources
 sys.path.append(os.path.join(os.path.dirname(__file__), "anf"))
-import_or_reload("advanced_new_file.commands", "AdvancedNewFileNew")
+from advanced_new_file.commands import AdvancedNewFileNew
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 # Import resources
-import_or_reload("plugin_resources.strings")
 from plugin_resources.strings import *
 
 # Append requests module to the system module path
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
 # On Windows platform there may be a "wrong" requests module preloaded in the system
-import_or_reload("requests")
+if sublime.platform() is "windows" and "requests" in sys.modules:
+    del sys.modules["requests"]
+
+import requests
 
 # Append future (async) requests
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests-futures"))
-import_or_reload("requests_futures.sessions", "FuturesSession")
+from requests_futures.sessions import FuturesSession
 
 # Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"

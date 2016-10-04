@@ -9,11 +9,11 @@ import imp_developer
 
 
 class OSTests(unittest.TestCase):
-	"""OS specific tests"""
+    """OS specific tests"""
 
-	# Verifies that the platform executable exists on the platform
-	def test_platform_executable_exists(self):
-		global current_window
-		create_project_command = imp_developer.ImpCreateProjectCommand(current_window)
-		path = create_project_command.get_sublime_path()
-		self.assertTrue(os.path.exists(path))
+    # Verifies that the platform executable exists on the platform
+    def test_platform_executable_exists(self):
+        global current_window
+        create_project_command = imp_developer.ImpCreateProjectCommand(current_window)
+        path = create_project_command.get_sublime_path()
+        self.assertTrue(os.path.exists(path))
