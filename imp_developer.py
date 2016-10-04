@@ -793,7 +793,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
     def run(self):
-        AdvancedNewProject(self.window, self.on_project_path_entered).run()
+        AnfNewProject(self.window, self.on_project_path_entered).run(initial_path=self.get_default_project_path())
 
     @staticmethod
     def get_default_project_path():
@@ -966,10 +966,10 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
         self.env.tmp_device_ids = None
 
 
-class AdvancedNewProject(AdvancedNewFileNew):
+class AnfNewProject(AdvancedNewFileNew):
 
     def __init__(self, window, on_path_provided=None):
-        super(AdvancedNewProject, self).__init__(window)
+        super(AnfNewProject, self).__init__(window)
         self.on_path_provided = on_path_provided
         self.window = window
 
@@ -981,10 +981,16 @@ class AdvancedNewProject(AdvancedNewFileNew):
             self.on_path_provided(path)
 
     def update_status_message(self, creation_path):
-            self.window.active_view().set_status(PL_VIEW_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
+        self.window.active_view().set_status(PL_VIEW_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
 
     def clear(self):
         self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
+
+
+# This is a helper class to implement text substitution in the file path command line
+class AnfReplaceCommand(sublime_plugin.TextCommand):
+    def run(self, edit, content):
+        self.view.replace(edit, sublime.Region(0, self.view.size()), content)
 
 
 class ImpErrorProcessor(sublime_plugin.EventListener):
