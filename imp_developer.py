@@ -23,12 +23,23 @@ from advanced_new_file.commands import AdvancedNewFileNew
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 # Import resources
 if 'plugin_resources' in sys.modules:
-  imp.reload(sys.modules['plugin_resources.strings'])
+    imp.reload(sys.modules['plugin_resources.strings'])
 from plugin_resources.strings import *
+
+
+def import_or_reload(module_name, *names):
+    if module_name in sys.modules:
+        imp.reload(sys.modules[module_name])
+    else:
+        __import__(module_name, fromlist=names)
+
+    for name in names:
+        globals()[name] = getattr(sys.modules[module_name], name)
 
 # Append requests module to the system module path
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
-import requests
+# On Windows platform there may be a "wrong" requests module preloaded in the system
+import_or_reload("requests")
 
 # Append future (async) requests
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests-futures"))
