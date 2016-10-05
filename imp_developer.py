@@ -308,7 +308,7 @@ class Preprocessor:
     def get_node_path(self):
         platform = sublime.platform()
         if platform == "windows":
-            return self.get_root_nodejs_dir_path() + "bin\\node"
+            return self.get_root_nodejs_dir_path() + "node.exe"
         elif platform in ["linux", "osx"]:
             return self.get_root_nodejs_dir_path() + "bin/node"
 
