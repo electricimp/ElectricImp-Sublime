@@ -8,18 +8,19 @@ supported. Tested on OS X only.**
 
 ### Installing Node.js
 
-**Please note that the Plugin requires Node.js 4.0 or above.**
+**Please note that the Plugin requires Node.js 4.0 or above with npm installed.**
 
-The plugin requires Node.js to be installed on the machine. Please follow 
+Please follow 
 [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
-### Installing Builder Node.js Module
+### Installing the necessary Node.js Modules
 
-The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. 
-To install the Builder module, please use npm command:
+To install the necessary modules, please use the npm commands:
 
 ```
-npm i -g Builder
+npm i clone
+npm i jsep
+npm i request
 ```
 
 ### Installing the Plugin

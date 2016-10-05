@@ -312,12 +312,8 @@ class Preprocessor:
         elif platform in ["linux", "osx"]:
             return self.get_root_nodejs_dir_path() + "bin/node"
 
-    def get_node_cli_path(self):
-        platform = sublime.platform()
-        if platform == "windows":
-            return self.get_root_nodejs_dir_path() + "lib\\node_modules\\Builder\\src\\cli.js"
-        elif platform in ["linux", "osx"]:
-            return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
+    def get_builder_cli_path(self):
+        return os.path.join(os.path.dirname(__file__), "builder", "src", "cli.js")
 
     def preprocess(self, env):
 
@@ -343,7 +339,7 @@ class Preprocessor:
             try:
                 args = [
                     self.get_node_path(),
-                    self.get_node_cli_path(),
+                    self.get_builder_cli_path(),
                     "-l",
                     code_files[0]
                 ]
