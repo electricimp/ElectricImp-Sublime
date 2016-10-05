@@ -346,7 +346,7 @@ class Preprocessor:
                     self.get_node_path(),
                     self.get_builder_cli_path(),
                     "-l",
-                    code_files[0].replace("\\", "\/")
+                    code_files[0].replace("\\", "/")
                 ]
                 pipes = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 prep_out, prep_err = pipes.communicate()
