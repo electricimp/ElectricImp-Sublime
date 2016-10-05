@@ -311,7 +311,7 @@ class Preprocessor:
         elif platform in ["linux", "osx"]:
             return self.get_root_nodejs_dir_path() + "bin/node"
 
-    def get_node_cli_path(self):
+    def get_builder_cli_path(self):
         platform = sublime.platform()
         if platform == "windows":
             home = os.path.expanduser("~")
