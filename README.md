@@ -21,6 +21,7 @@ To install the necessary modules, please use the npm commands:
 npm i clone
 npm i jsep
 npm i request
+npm i github
 ```
 
 ### Installing the Plugin
