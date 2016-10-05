@@ -28,10 +28,6 @@ from plugin_resources.strings import *
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
 import requests
 
-# Append future (async) requests
-sys.path.append(os.path.join(os.path.dirname(__file__), "requests-futures"))
-from requests_futures.sessions import FuturesSession
-
 # Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
 PL_SETTINGS_FILE         = "ImpDeveloper.sublime-settings"
@@ -208,14 +204,14 @@ class UIManager:
 
     def start_waiting_for_response_status_update(self):
         self.keep_updating_status = True
-        self.update_wait_for_response_status()
+        self.__update_wait_for_response_status()
 
     def stop_updating_status(self):
         self.keep_updating_status = False
 
-    def update_wait_for_response_status(self):
+    def __update_wait_for_response_status(self):
         if not self.keep_updating_status:
-            self.clear_status_message()
+            self.__clear_status_message()
             return
 
         suffix = {
@@ -225,15 +221,15 @@ class UIManager:
             3: "[\]"
         }[self.__status_counter]
 
-        self.set_status_message(STR_STATUS_WAITING_FOR_RESPONSE.format(suffix))
+        self.__set_status_message(STR_STATUS_WAITING_FOR_RESPONSE.format(suffix))
         self.__status_counter = (self.__status_counter + 1) % 4
 
-        sublime.set_timeout(self.update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_MS)
+        sublime.set_timeout(self.__update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_MS)
 
-    def set_status_message(self, message):
+    def __set_status_message(self, message):
         self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value=message)
 
-    def clear_status_message(self):
+    def __clear_status_message(self):
         self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
 
 
@@ -263,13 +259,6 @@ class HTTPConnection:
     @staticmethod
     def post(key, url, data=None):
         return requests.post(url, data=data, headers=HTTPConnection.__get_http_headers(key))
-
-    @staticmethod
-    def post_async(key, url, data=None, callback=None):
-        return FuturesSession().post(url,
-                                     data=data,
-                                     headers=HTTPConnection.__get_http_headers(key),
-                                     background_callback=callback)
 
     @staticmethod
     def put(key, url, data=None):
@@ -668,15 +657,12 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             settings = self.load_settings()
             url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
             data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-            HTTPConnection.post_async(self.env.project_manager.get_build_api_key(), url, data, self.handle_response)
-            self.env.ui_manager.start_waiting_for_response_status_update()
+            response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
+            self.handle_response(response)
 
         self.check_settings(callback=check_settings_callback)
 
-    def handle_response(self, session, response):
-        print("handle_response called")
-        self.env.ui_manager.stop_updating_status()
-
+    def handle_response(self, response):
         settings = self.load_settings()
 
         # Update the logs first
