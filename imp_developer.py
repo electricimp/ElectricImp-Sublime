@@ -26,10 +26,6 @@ from plugin_resources.strings import *
 
 # Append requests module to the system module path
 sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
-# On Windows platform there may be a "wrong" requests module preloaded in the system
-if sublime.platform() is "windows" and "requests" in sys.modules:
-    del sys.modules["requests"]
-
 import requests
 
 # Append future (async) requests
