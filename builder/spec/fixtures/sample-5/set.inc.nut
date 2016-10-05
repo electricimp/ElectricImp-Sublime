@@ -1,3 +1,0 @@
-
-@ wrong @set
-@set
