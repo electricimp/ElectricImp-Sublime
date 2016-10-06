@@ -15,17 +15,20 @@ import urllib
 import sublime
 import sublime_plugin
 
-# Import AdvancedNewFile resources
-sys.path.append(os.path.join(os.path.dirname(__file__), "anf"))
-from advanced_new_file.commands import AdvancedNewFileNew
-
+# Import string resources
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
-# Import resources
 from plugin_resources.strings import *
 
-# Append requests module to the system module path
-sys.path.append(os.path.join(os.path.dirname(__file__), "requests"))
+# Import AdvancedNewFile module
+sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "anf"))
+from modules.anf.advanced_new_file.commands import AdvancedNewFileNew
+
+# Import Requests module
+sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "requests"))
 import requests
+
+# sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "PyExecJS-1.4.0"))
+# import execjs
 
 # Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
