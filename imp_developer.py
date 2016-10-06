@@ -20,15 +20,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 from plugin_resources.strings import *
 
 # Import AdvancedNewFile module
-sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "anf"))
-from modules.anf.advanced_new_file.commands import AdvancedNewFileNew
+sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Sublime-AdvancedNewFile-1.0.0"))
+from advanced_new_file.commands import AdvancedNewFileNew
 
 # Import Requests module
-sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "requests"))
+sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Requests-2.10.0"))
 import requests
-
-# sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "PyExecJS-1.4.0"))
-# import execjs
 
 # Generic plugin constants
 PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
