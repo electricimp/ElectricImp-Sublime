@@ -28,7 +28,7 @@ You can install the plugin script via the following command in the Sublime Text 
 which utilizes `git clone`. NOTE: please make sure you have git installed on your system when trying this method.
 
 ```python
-import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path})
+import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path}); window.run_command('exec', {'cmd': ['git', 'pull'], 'working_dir': os.path.join(path, "imp-developer")})
 ```
 
 or follow the steps manually:
