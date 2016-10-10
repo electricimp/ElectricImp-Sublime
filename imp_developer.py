@@ -18,6 +18,7 @@ import sublime_plugin
 # Import string resources
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 from plugin_resources.strings import *
+from plugin_resources.node_locator import NodeLocator
 
 # Import AdvancedNewFile module
 sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Sublime-AdvancedNewFile-1.0.0"))
@@ -51,6 +52,10 @@ PR_BUILD_DIRECTORY       = "build"
 PR_DEVICE_FILE_NAME      = "device.nut"
 PR_AGENT_FILE_NAME       = "agent.nut"
 PR_PREPROCESSED_PREFIX   = "preprocessed."
+
+PR_EI_ST_PR_SETTINGS     = "electric_imp_settings"
+PR_EI_ST_PR_NODE_PATH    = "node_path"
+PR_EI_ST_PR_BUILDER_CLI  = "builder_cli_path"
 
 PR_INITIAL_SRC_CONTENT   = "####################################\n" \
                            "## {} source code goes here\n" \
@@ -138,7 +143,7 @@ class Env:
         # Electric Imp Project manager
         self.project_manager = ProjectManager(window)
         # Preprocessor
-        self.code_processor = Preprocessor(self.project_manager)
+        self.code_processor = Preprocessor()
 
         # Temp variables
         self.tmp_model = None
@@ -280,45 +285,8 @@ class SourceType():
 class Preprocessor:
     """Preprocessor and Builder specific implementation"""
 
-    def __init__(self, project_manager):
+    def __init__(self):
         self.line_table = {SourceType.AGENT: None, SourceType.DEVICE: None}
-
-    @staticmethod
-    def get_root_nodejs_dir_path():
-        result = None
-        platform = sublime.platform()
-        if platform == "windows":
-            path64 = PL_WIN_PROGRAMS_DIR_64 + "nodejs\\"
-            path32 = PL_WIN_PROGRAMS_DIR_32 + "nodejs\\"
-            if os.path.exists(path64):
-                result = path64
-            elif os.path.exists(path32):
-                result = path32
-        elif platform in ["linux", "osx"]:
-            bin_dir = "bin/node"
-            js_dir1 = "/usr/local/nodejs/"
-            js_dir2 = "/usr/local/"
-            if os.path.exists(os.path.join(js_dir1, bin_dir)):
-                result = js_dir1
-            elif os.path.exists(os.path.join(js_dir2, bin_dir)):
-                result = js_dir2
-        return result
-
-    def get_node_path(self):
-        platform = sublime.platform()
-        if platform == "windows":
-            return self.get_root_nodejs_dir_path() + "node.exe"
-        elif platform in ["linux", "osx"]:
-            return self.get_root_nodejs_dir_path() + "bin/node"
-
-    def get_builder_cli_path(self):
-        platform = sublime.platform()
-        if platform == "windows":
-            home = os.path.expanduser("~")
-            return os.path.join(home, "Application Data", "npm", "node_modules", "Builder", "src", "cli.js")
-        elif platform in ["linux", "osx"]:
-            return self.get_root_nodejs_dir_path() + "lib/node_modules/Builder/src/cli.js"
-
 
     def preprocess(self, env):
 
@@ -342,9 +310,10 @@ class Preprocessor:
             result_device_filename
         ]]:
             try:
+                sublime_project_settings = env.window.project_data()[PR_EI_ST_PR_SETTINGS]
                 args = [
-                    self.get_node_path(),
-                    self.get_builder_cli_path(),
+                    sublime_project_settings[PR_EI_ST_PR_NODE_PATH],
+                    sublime_project_settings[PR_EI_ST_PR_BUILDER_CLI],
                     "-l",
                     code_files[0].replace("\\", "/")
                 ]
@@ -430,9 +399,33 @@ class Preprocessor:
 class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
 
-    def init_env(self):
+    def init_env_and_settings(self):
         if not hasattr(self, "env") and ProjectManager.is_electric_imp_project_window(self.window):
             self.env = Env.get_existing_or_create_env_for(self.window)
+
+        # Try to locate node and node modules
+        node_locator = NodeLocator(sublime.platform())
+        project_data = self.window.project_data()
+        if PR_EI_ST_PR_SETTINGS not in project_data:
+            project_data[PR_EI_ST_PR_SETTINGS] = {}
+        settings = project_data.get(PR_EI_ST_PR_SETTINGS)
+
+        update_pd = False
+
+        node_path = node_locator.get_node_path()
+        if (PR_EI_ST_PR_NODE_PATH not in settings or node_path != settings[PR_EI_ST_PR_NODE_PATH]) \
+                and os.path.exists(node_path):
+            update_pd = True
+            settings[PR_EI_ST_PR_NODE_PATH] = node_path
+
+        builder_cli_path = node_locator.get_builder_cli_path()
+        if (PR_EI_ST_PR_BUILDER_CLI not in settings or builder_cli_path != settings[PR_EI_ST_PR_BUILDER_CLI]) \
+                and os.path.exists(builder_cli_path):
+            update_pd = True
+            settings[PR_EI_ST_PR_BUILDER_CLI] = builder_cli_path
+
+        if update_pd:
+            self.window.set_project_data(project_data)
 
     def load_settings(self):
         return self.env.project_manager.load_settings()
@@ -445,17 +438,71 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             callback = self.env.tmp_check_settings_callback
 
         # Perform the checks and prompts for appropriate settings
-        if self.is_missing_build_api_key():
+        if self.is_missing_node_js_path():
+            self.prompt_for_node_js_path()
+        elif self.is_missing_builder_cli_path():
+            self.prompt_for_builder_cli_path()
+        elif self.is_missing_build_api_key():
             self.prompt_for_build_api_key()
         elif self.is_missing_model():
             self.create_new_model()
-        # elif self.is_missing_device():
-        #     self.select_or_register_device()
         else:
             # All the checks passed, invoke the callback now
             if callback:
                 callback()
             self.env.tmp_check_settings_callback = None
+
+    def is_missing_node_js_path(self):
+        project_data = self.window.project_data()
+        settings = project_data[PR_EI_ST_PR_SETTINGS] if PR_EI_ST_PR_SETTINGS in project_data else {}
+        return PR_EI_ST_PR_NODE_PATH not in settings or not os.path.exists(settings[PR_EI_ST_PR_NODE_PATH])
+
+    def prompt_for_node_js_path(self, need_to_confirm=True):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_NODE_JS_PATH): return
+        AnfNewProject(self.window, STR_NODE_JS_PATH, self.on_node_js_path_provided).run("/")
+
+    def on_node_js_path_provided(self, path):
+        log_debug("Node.js path provided: " + path)
+        if os.path.exists(path):
+            log_debug("Node.js path is valid")
+            project_data = self.window.project_data()
+            if PR_EI_ST_PR_SETTINGS not in project_data:
+                project_data[PR_EI_ST_PR_SETTINGS] = {}
+            settings = project_data[PR_EI_ST_PR_SETTINGS]
+            settings[PR_EI_ST_PR_NODE_PATH] = path
+            self.window.set_project_data(project_data)
+        else:
+            if sublime.ok_cancel_dialog(STR_INVALID_NODE_JS_PATH):
+                self.prompt_for_node_js_path(False)
+
+        # Loop back to the main settings check
+        self.check_settings()
+
+    def is_missing_builder_cli_path(self):
+        project_data = self.window.project_data()
+        settings = project_data[PR_EI_ST_PR_SETTINGS] if PR_EI_ST_PR_SETTINGS in project_data else {}
+        return PR_EI_ST_PR_BUILDER_CLI not in settings or not os.path.exists(settings[PR_EI_ST_PR_BUILDER_CLI])
+
+    def prompt_for_builder_cli_path(self, need_to_confirm=True):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH): return
+        AnfNewProject(self.window, STR_BUILDER_CLI_PATH, self.on_builder_cli_path_provided).run("/")
+
+    def on_builder_cli_path_provided(self, path):
+        log_debug("Builder CLI path provided: " + path)
+        if os.path.exists(path):
+            log_debug("Builder CLI path is valid")
+            project_data = self.window.project_data()
+            if PR_EI_ST_PR_SETTINGS not in project_data:
+                project_data[PR_EI_ST_PR_SETTINGS] = {}
+            settings = project_data[PR_EI_ST_PR_SETTINGS]
+            settings[PR_EI_ST_PR_BUILDER_CLI] = path
+            self.window.set_project_data(project_data)
+        else:
+            if sublime.ok_cancel_dialog(STR_INVALID_BUILDER_CLI_PATH):
+                self.prompt_for_node_js_path(False)
+
+        # Loop back to the main settings check
+        self.check_settings()
 
     def is_missing_build_api_key(self):
         return not self.env.project_manager.get_build_api_key()
@@ -627,7 +674,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
 
     def run(self):
-        self.init_env()
+        self.init_env_and_settings()
         self.env.ui_manager.init_tty()
         # Clean up all the error marks first
         for view in self.window.views():
@@ -736,7 +783,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 class ImpShowConsoleCommand(BaseElectricImpCommand):
 
     def run(self):
-        self.init_env()
+        self.init_env_and_settings()
         self.env.ui_manager.init_tty()
         self.check_settings()
         update_log_windows(False)
@@ -745,13 +792,13 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
 
     def run(self):
-        self.init_env()
+        self.init_env_and_settings()
         self.check_settings(callback=self.select_or_register_device)
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
-        self.init_env()
+        self.init_env_and_settings()
         def check_settings_callback():
             settings = self.load_settings()
             if EI_DEVICE_ID in settings:
@@ -768,7 +815,8 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
     def run(self):
-        AnfNewProject(self.window, self.on_project_path_entered).run(initial_path=self.get_default_project_path())
+        AnfNewProject(self.window, STR_NEW_PROJECT_LOCATION, self.on_project_path_provided).\
+            run(initial_path=self.get_default_project_path())
 
     @staticmethod
     def get_default_project_path():
@@ -783,7 +831,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             default_project_path = default_project_path_setting
         return default_project_path
 
-    def on_project_path_entered(self, path):
+    def on_project_path_provided(self, path):
         log_debug("Project path specified: " + path)
         # self.__tmp_project_path = path
         if os.path.exists(path):
@@ -895,7 +943,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 class ImpAddDeviceToModel(BaseElectricImpCommand):
 
     def run(self):
-        self.init_env()
+        self.init_env_and_settings()
         def check_settings_callback():
             self.select_or_register_device(need_to_confirm=False, force_register=True)
         self.check_settings(callback=check_settings_callback)
@@ -904,7 +952,7 @@ class ImpAddDeviceToModel(BaseElectricImpCommand):
 class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
     def run(self):
-        self.init_env()
+        self.init_env_and_settings()
         self.check_settings(callback=self.prompt_model_to_remove_device)
 
     def prompt_model_to_remove_device(self, need_to_confirm=True):
@@ -943,13 +991,14 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
 class AnfNewProject(AdvancedNewFileNew):
 
-    def __init__(self, window, on_path_provided=None):
+    def __init__(self, window, capture="", on_path_provided=None):
         super(AnfNewProject, self).__init__(window)
         self.on_path_provided = on_path_provided
         self.window = window
+        self.capture = capture
 
     def input_panel_caption(self):
-        return STR_NEW_PROJECT_LOCATION
+        return self.capture
 
     def entered_file_action(self, path):
         if self.on_path_provided:
