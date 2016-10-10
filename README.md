@@ -91,6 +91,8 @@ To build and deploy the application code, please select ``Electric Imp->Build an
 When one builds the code (or does any other action, that requires access to the imp server) for the first time, the user 
 is asked to provide:
 
+- Path to the Node.js executable (if not automatically detected by the plugin).
+- Location of the Builder cli.js command line tool (if not automatically detected by the plugin).
 - Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
 top right corner and selecting the Build API Keys menu item 
 - New Model name to be created for the project. Each Electric Imp project is associated with a particular Model, 
