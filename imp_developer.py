@@ -585,7 +585,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             return
 
         model = self.env.tmp_model
-        print(str(model))
         device_id = self.env.tmp_device_ids[index]
 
         response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
@@ -903,6 +902,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
             # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
             sublime.set_timeout_async(open_sources, 10)
+        else:
+            log_debug("Something went wrong..., won't try to open the sources")
+
 
     @staticmethod
     def get_sublime_path():
