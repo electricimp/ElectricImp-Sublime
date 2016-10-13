@@ -63,11 +63,6 @@ PR_EI_ST_PR_SETTINGS     = "electric_imp_settings"
 PR_EI_ST_PR_NODE_PATH    = "node_path"
 PR_EI_ST_PR_BUILDER_CLI  = "builder_cli_path"
 
-PR_INITIAL_SRC_CONTENT   = "####################################\n" \
-                           "## {} source code goes here\n" \
-                           "####################################\n" \
-                           "\n"
-
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
 EI_MODEL_ID              = "model-id"
@@ -441,12 +436,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         if callback:
             self.env.tmp_check_settings_callback = callback
         else:
-            callback = self.env.tmp_check_settings_callback
+            callback = getattr(self.env, "tmp_check_settings_callback", None)
 
         if selecting_or_creating_model is not None:
             self.env.tmp_selecting_or_creating_model = selecting_or_creating_model
         else:
-            selecting_or_creating_model = self.env.tmp_selecting_or_creating_model
+            selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
 
         # Perform the checks and prompts for appropriate settings
         if self.is_missing_node_js_path():
@@ -950,11 +945,11 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         # Create empty files if they don't exist
         if not os.path.exists(agent_file):
             with open(agent_file, 'a') as f:
-                f.write(PR_INITIAL_SRC_CONTENT.format("Agent"))
+                f.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
 
         if not os.path.exists(device_file):
             with open(device_file, 'a') as f:
-                f.write(PR_INITIAL_SRC_CONTENT.format("Device"))
+                f.write(STR_INITIAL_SRC_CONTENT.format("Device"))
 
         return agent_file, device_file
 
@@ -974,6 +969,70 @@ class ImpCreateModel(BaseElectricImpCommand):
             self.create_new_model()
 
         self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+
+class ImpSelectModel(BaseElectricImpCommand):
+
+    def run(self):
+        self.init_env_and_settings()
+
+        def check_settings_callback():
+            self.select_existing_model()
+
+        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+
+    def select_existing_model(self, need_to_confirm=True):
+        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL + "models").json()
+        if len(response["models"]) > 0:
+            if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
+                return
+            all_model_names = [model["name"] for model in response["models"]]
+            self.__tmp_all_model_ids = [model["id"] for model in response["models"]]
+        else:
+            sublime.message_dialog(STR_MODEL_NO_MODELS_FOUND)
+            return
+
+        self.window.show_quick_panel(all_model_names, self.on_model_selected)
+
+    def on_model_selected(self, index):
+        # Selection was canceled, nothing to do here
+        if index == -1:
+            return
+
+        model_id = self.__tmp_all_model_ids[index]
+        self.__tmp_all_model_ids = None # We don't need it anymore
+        log_debug("Model selected id: " + model_id)
+
+        # Save newly created model to the project settings
+        settings = self.load_settings()
+        settings[EI_MODEL_ID] = model_id
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
+            return
+
+        # Pull the latest code from the Model
+        source_dir = self.env.project_manager.get_source_directory_path()
+        agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
+        device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
+
+        revisions = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                       PL_BUILD_API_URL + "models/" + model_id + "/revisions").json()
+        if len(revisions["revisions"]) > 0:
+            latest_revision_url = PL_BUILD_API_URL + "models/" + model_id + "/revisions/" + \
+                                  str(revisions["revisions"][0]["version"])
+            code = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                      latest_revision_url).json()
+            with open(agent_file, "w") as file:
+                file.write(code["revision"]["agent_code"])
+            with open(device_file, "w") as file:
+                file.write(code["revision"]["device_code"])
+        else:
+            # Create initial source files
+            with open(agent_file, "w") as file:
+                file.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
+            with open(device_file, "w") as file:
+                file.write(STR_INITIAL_SRC_CONTENT.format("Device"))
 
 
 class ImpAddDeviceToModel(BaseElectricImpCommand):

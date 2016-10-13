@@ -34,6 +34,9 @@ STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE  = "This device is currently selected as act
 STR_MODEL_REMOVE_DEVICE_FAILED       = "Failed removing device from the Model"
 STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from the Model"
 STR_MODEL_NOT_ASSIGNED               = "The project doesn't have a model assigned. Please select or create one (Electric Imp -> Model -> Create | Select)."
+STR_MODEL_NO_MODELS_FOUND            = "No models available on the account. Please create one (Electric Imp -> Model -> Add)"
+STR_MODEL_SELECT_EXISTING_MODEL      = "Select existing Model"
+STR_MODEL_CONFIRM_PULLING_MODEL_CODE = "Do you want to pull the latest code revision from the Model? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
 
 STR_ERR_MESSAGE_LINE                 = "    ERROR: (clickable) {} ({}:{})\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "\nDeploy failed because of the following errors:\n"
@@ -44,3 +47,9 @@ STR_ERR_PREPROCESSING_ERROR          = "\nPreprocessing failed because of the fo
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
 STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
 STR_STATUS_WAITING_FOR_RESPONSE      = "Waiting for Build API Response {}"
+
+STR_INITIAL_SRC_CONTENT              = "####################################\n" \
+                                       "## {} source code goes here\n" \
+                                       "####################################\n" \
+                                       "\n"
+

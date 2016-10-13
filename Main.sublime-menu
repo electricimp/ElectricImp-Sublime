@@ -29,12 +29,12 @@
                         "caption" : "Device",
                         "children": [
                             {
-                                "caption" : "Select",
-                                "command" : "imp_select_device"
-                            },
-                            {
                                 "caption" : "Add",
                                 "command" : "imp_add_device_to_model"
+                            },
+                            {
+                                "caption" : "Select",
+                                "command" : "imp_select_device"
                             },
                             {
                                 "caption" : "Remove",
