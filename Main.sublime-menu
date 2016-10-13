@@ -15,20 +15,33 @@
 		    	"command" : "imp_create_project"
 		    },
 		    {
-		        "caption" : "Device",
+		        "caption" : "Model",
 		        "children": [
                     {
-                        "caption" : "Select Device",
-                        "command" : "imp_select_device"
+                        "caption" : "Create",
+                        "command" : "imp_create_model"
                     },
                     {
-                        "caption" : "Add Device",
-                        "command" : "imp_add_device_to_model"
+                        "caption" : "Select",
+                        "command" : "imp_select_model"
                     },
                     {
-                        "caption" : "Remove Device",
-                        "command" : "imp_remove_device_from_model"
-                    },
+                        "caption" : "Device",
+                        "children": [
+                            {
+                                "caption" : "Select",
+                                "command" : "imp_select_device"
+                            },
+                            {
+                                "caption" : "Add",
+                                "command" : "imp_add_device_to_model"
+                            },
+                            {
+                                "caption" : "Remove",
+                                "command" : "imp_remove_device_from_model"
+                            }
+                        ]
+                    }
 		        ]
 		    },
 		    { "caption": "-" },
