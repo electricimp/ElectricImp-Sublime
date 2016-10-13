@@ -33,7 +33,7 @@ STR_MODEL_NO_DEVICES_TO_REMOVE       = "The Model has no devices to remove"
 STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE  = "This device is currently selected as active. Can't remove it from the Model"
 STR_MODEL_REMOVE_DEVICE_FAILED       = "Failed removing device from the Model"
 STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from the Model"
-STR_MODEL_NOT_ASSIGNED               = "The project doesn't have a model assigned. Please select or create one."
+STR_MODEL_NOT_ASSIGNED               = "The project doesn't have a model assigned. Please select or create one (Electric Imp -> Model -> Create | Select)."
 
 STR_ERR_MESSAGE_LINE                 = "    ERROR: (clickable) {} ({}:{})\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "\nDeploy failed because of the following errors:\n"

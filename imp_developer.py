@@ -12,13 +12,18 @@ import subprocess
 import sys
 import urllib
 
+import imp
 import sublime
 import sublime_plugin
 
 # Import string resources
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
+import plugin_resources
+plugin_resources = imp.reload(plugin_resources)
 from plugin_resources.strings import *
+plugin_resources.strings = imp.reload(plugin_resources.strings)
 from plugin_resources.node_locator import NodeLocator
+plugin_resources.node_locator = imp.reload(plugin_resources.node_locator)
 
 # Import AdvancedNewFile module
 sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Sublime-AdvancedNewFile-1.0.0"))
@@ -45,6 +50,7 @@ PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
 PR_TEMPLATE_DIR_NAME     = "project-template"
 PR_PROJECT_FILE_TEMPLATE = "_project_name_.sublime-project"
 PR_SETTINGS_FILE         = "electric-imp.settings"
+PR_BUILDER_SETTINGS_FILE = "builder.settings"
 PR_BUILD_API_KEY_FILE    = "build-api.key"
 PR_SOURCE_DIRECTORY      = "src"
 PR_SETTINGS_DIRECTORY    = "settings"
@@ -430,12 +436,17 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_settings(self):
         return self.env.project_manager.load_settings()
 
-    def check_settings(self, callback=None):
+    def check_settings(self, callback=None, selecting_or_creating_model=None):
         # Setup pending callback
         if callback:
             self.env.tmp_check_settings_callback = callback
         else:
             callback = self.env.tmp_check_settings_callback
+
+        if selecting_or_creating_model is not None:
+            self.env.tmp_selecting_or_creating_model = selecting_or_creating_model
+        else:
+            selecting_or_creating_model = self.env.tmp_selecting_or_creating_model
 
         # Perform the checks and prompts for appropriate settings
         if self.is_missing_node_js_path():
@@ -444,13 +455,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.prompt_for_builder_cli_path()
         elif self.is_missing_build_api_key():
             self.prompt_for_build_api_key()
-        elif self.is_missing_model():
-            self.create_new_model()
+        elif not selecting_or_creating_model and self.is_missing_model():
+            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
         else:
             # All the checks passed, invoke the callback now
             if callback:
                 callback()
             self.env.tmp_check_settings_callback = None
+            self.env.tmp_selecting_or_creating_model = None
 
     def is_missing_node_js_path(self):
         project_data = self.window.project_data()
@@ -537,7 +549,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
         # Check settings
-        self.check_settings()
+        self.check_settings(selecting_or_creating_model=True)
 
     def is_missing_device(self):
         settings = self.load_settings()
@@ -954,12 +966,23 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         return True
 
 
-class ImpAddDeviceToModel(BaseElectricImpCommand):
-
+class ImpCreateModel(BaseElectricImpCommand):
     def run(self):
         self.init_env_and_settings()
+
+        def check_settings_callback():
+            self.create_new_model()
+
+        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+
+
+class ImpAddDeviceToModel(BaseElectricImpCommand):
+    def run(self):
+        self.init_env_and_settings()
+
         def check_settings_callback():
             self.add_device(need_to_confirm=False)
+
         self.check_settings(callback=check_settings_callback)
 
 
