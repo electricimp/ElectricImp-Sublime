@@ -928,7 +928,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             log_debug("Unknown platform: {}".format(platform))
 
     def run_sublime_from_command_line(self, args):
-        log_debug("Running Sublime...: " + self.get_sublime_path())
+        log_debug("Running Sublime...: " + self.get_sublime_path() + " " + str(args))
         args.insert(0, self.get_sublime_path())
         return subprocess.call(args)
 
