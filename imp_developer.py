@@ -898,11 +898,14 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
                 # TODO: Redo: this code assumes that the last open window was appended to the window list
                 last_window = sublime.windows()[-1]
                 if ProjectManager.is_electric_imp_project_window(last_window):
+                    log_debug("last window is Electric Imp project one...")
                     last_window.open_file(agent_file)
                     last_window.open_file(device_file)
+                else:
+                    log_debug("the last window is not Electric Imp project one...")
 
             # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
-            sublime.set_timeout_async(open_sources, 10)
+            sublime.set_timeout_async(open_sources, 100)
         else:
             log_debug("Something went wrong..., won't try to open the sources")
 
