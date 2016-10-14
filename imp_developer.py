@@ -894,6 +894,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         if ok:
             def open_sources():
+                log_debug("opening the sources...")
                 # TODO: Redo: this code assumes that the last open window was appended to the window list
                 last_window = sublime.windows()[-1]
                 if ProjectManager.is_electric_imp_project_window(last_window):
@@ -924,6 +925,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             log_debug("Unknown platform: {}".format(platform))
 
     def run_sublime_from_command_line(self, args):
+        log_debug("Running Sublime...: " + self.get_sublime_path())
         args.insert(0, self.get_sublime_path())
         return subprocess.call(args)
 
