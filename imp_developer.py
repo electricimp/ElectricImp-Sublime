@@ -930,7 +930,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def run_sublime_from_command_line(self, args):
         log_debug("Running Sublime...: " + self.get_sublime_path() + " " + str(args))
         args.insert(0, self.get_sublime_path())
-        return subprocess.call(args)
+        return subprocess.Popen(args)
 
     def get_project_file_name(self, path):
         return os.path.join(path, PR_PROJECT_FILE_TEMPLATE.replace("_project_name_", os.path.basename(path)))
