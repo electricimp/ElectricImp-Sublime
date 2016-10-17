@@ -12,13 +12,18 @@ import subprocess
 import sys
 import urllib
 
+import imp
 import sublime
 import sublime_plugin
 
 # Import string resources
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
+import plugin_resources
+plugin_resources = imp.reload(plugin_resources)
 from plugin_resources.strings import *
+plugin_resources.strings = imp.reload(plugin_resources.strings)
 from plugin_resources.node_locator import NodeLocator
+plugin_resources.node_locator = imp.reload(plugin_resources.node_locator)
 
 # Import AdvancedNewFile module
 sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Sublime-AdvancedNewFile-1.0.0"))
@@ -45,6 +50,7 @@ PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
 PR_TEMPLATE_DIR_NAME     = "project-template"
 PR_PROJECT_FILE_TEMPLATE = "_project_name_.sublime-project"
 PR_SETTINGS_FILE         = "electric-imp.settings"
+PR_BUILDER_SETTINGS_FILE = "builder.settings"
 PR_BUILD_API_KEY_FILE    = "build-api.key"
 PR_SOURCE_DIRECTORY      = "src"
 PR_SETTINGS_DIRECTORY    = "settings"
@@ -56,11 +62,6 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 PR_EI_ST_PR_SETTINGS     = "electric_imp_settings"
 PR_EI_ST_PR_NODE_PATH    = "node_path"
 PR_EI_ST_PR_BUILDER_CLI  = "builder_cli_path"
-
-PR_INITIAL_SRC_CONTENT   = "####################################\n" \
-                           "## {} source code goes here\n" \
-                           "####################################\n" \
-                           "\n"
 
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
@@ -430,12 +431,17 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_settings(self):
         return self.env.project_manager.load_settings()
 
-    def check_settings(self, callback=None):
+    def check_settings(self, callback=None, selecting_or_creating_model=None):
         # Setup pending callback
         if callback:
             self.env.tmp_check_settings_callback = callback
         else:
-            callback = self.env.tmp_check_settings_callback
+            callback = getattr(self.env, "tmp_check_settings_callback", None)
+
+        if selecting_or_creating_model is not None:
+            self.env.tmp_selecting_or_creating_model = selecting_or_creating_model
+        else:
+            selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
 
         # Perform the checks and prompts for appropriate settings
         if self.is_missing_node_js_path():
@@ -444,13 +450,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.prompt_for_builder_cli_path()
         elif self.is_missing_build_api_key():
             self.prompt_for_build_api_key()
-        elif self.is_missing_model():
-            self.create_new_model()
+        elif not selecting_or_creating_model and self.is_missing_model():
+            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
         else:
             # All the checks passed, invoke the callback now
             if callback:
                 callback()
             self.env.tmp_check_settings_callback = None
+            self.env.tmp_selecting_or_creating_model = None
 
     def is_missing_node_js_path(self):
         project_data = self.window.project_data()
@@ -537,7 +544,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
         # Check settings
-        self.check_settings()
+        self.check_settings(selecting_or_creating_model=True)
 
     def is_missing_device(self):
         settings = self.load_settings()
@@ -572,21 +579,11 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         return device_ids, device_names
 
-    def prompt_add_device_to_model(self, model, exclude_ids, need_to_confirm=True):
-        (device_ids, device_names) = self.load_devices(exclude_device_ids=exclude_ids)
-
-        if len(device_ids) == 0:
-            sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
+    def on_device_to_add_selected(self, index):
+        # Selection was canceled, just return
+        if index == -1:
             return
 
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REGISTER_DEVICE): return
-
-        self.env.tmp_model = model
-        self.env.tmp_device_ids = device_ids
-
-        self.window.show_quick_panel(device_names, self.on_device_to_register_selected)
-
-    def on_device_to_register_selected(self, index):
         model = self.env.tmp_model
         device_id = self.env.tmp_device_ids[index]
 
@@ -594,7 +591,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
                                       PL_BUILD_API_URL + "devices/" + device_id,
                                       '{"model_id": "' + model.get("id") + '"}')
         if not HTTPConnection.is_response_valid(response):
-            sublime.message_dialog(STR_MODEL_REGISTER_FAILED)
+            sublime.message_dialog(STR_MODEL_ADDING_DEVICE_FAILED)
 
         # Once the device is registered, select this device
         self.on_device_selected(index)
@@ -610,23 +607,46 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                       PL_BUILD_API_URL + "models/" + str(model_id))
         if HTTPConnection.is_response_valid(response):
-            return response.json()
+            return response.json().get("model")
 
-    def select_or_register_device(self, need_to_confirm=True, force_register=False):
-
+    def select_device(self, need_to_confirm=True):
         model = self.load_this_model()
-        device_ids = model.get("model").get("devices") if model else None
+        if not model:
+            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
+            return
 
-        if (force_register or not model or not device_ids or len(device_ids) == 0) and \
-                (not need_to_confirm or sublime.ok_cancel_dialog(STR_MODEL_HAS_NO_DEVICES)):
-            self.prompt_add_device_to_model(model.get("model"), exclude_ids=device_ids, need_to_confirm=False)
+        device_ids = model.get("devices")
+        if not device_ids or not len(device_ids):
+            sublime.message_dialog(STR_MODEL_HAS_NO_DEVICES)
             return
 
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
         (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
         self.window.show_quick_panel(device_names, self.on_device_selected)
 
+    def add_device(self, need_to_confirm=True):
+        model = self.load_this_model()
+        if not model:
+            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
+            return
+
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_ADD_DEVICE): return
+
+        device_ids = model.get("devices")
+        (device_ids, device_names) = self.load_devices(exclude_device_ids=device_ids)
+
+        if len(device_ids) == 0:
+            sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
+            return
+
+        self.env.tmp_model = model
+        self.env.tmp_device_ids = device_ids
+        self.window.show_quick_panel(device_names, self.on_device_to_add_selected)
+
     def on_device_selected(self, index):
+        # Selection was canceled, just return
+        if index == -1:
+            return
         settings = self.load_settings()
         new_device_id = Env.For(self.window).tmp_device_ids[index]
         old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
@@ -793,7 +813,7 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 
     def run(self):
         self.init_env_and_settings()
-        self.check_settings(callback=self.select_or_register_device)
+        self.check_settings(callback=self.select_device)
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
@@ -874,14 +894,21 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         if ok:
             def open_sources():
+                log_debug("opening the sources...")
                 # TODO: Redo: this code assumes that the last open window was appended to the window list
                 last_window = sublime.windows()[-1]
                 if ProjectManager.is_electric_imp_project_window(last_window):
+                    log_debug("last window is Electric Imp project one...")
                     last_window.open_file(agent_file)
                     last_window.open_file(device_file)
+                else:
+                    log_debug("the last window is not Electric Imp project one...")
 
             # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
-            sublime.set_timeout_async(open_sources, 10)
+            sublime.set_timeout_async(open_sources, 100)
+        else:
+            log_debug("Something went wrong..., won't try to open the sources")
+
 
     @staticmethod
     def get_sublime_path():
@@ -901,8 +928,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             log_debug("Unknown platform: {}".format(platform))
 
     def run_sublime_from_command_line(self, args):
+        log_debug("Running Sublime...: " + self.get_sublime_path() + " " + str(args))
         args.insert(0, self.get_sublime_path())
-        return subprocess.call(args)
+        return subprocess.Popen(args)
 
     def get_project_file_name(self, path):
         return os.path.join(path, PR_PROJECT_FILE_TEMPLATE.replace("_project_name_", os.path.basename(path)))
@@ -924,11 +952,11 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         # Create empty files if they don't exist
         if not os.path.exists(agent_file):
             with open(agent_file, 'a') as f:
-                f.write(PR_INITIAL_SRC_CONTENT.format("Agent"))
+                f.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
 
         if not os.path.exists(device_file):
             with open(device_file, 'a') as f:
-                f.write(PR_INITIAL_SRC_CONTENT.format("Device"))
+                f.write(STR_INITIAL_SRC_CONTENT.format("Device"))
 
         return agent_file, device_file
 
@@ -940,12 +968,87 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         return True
 
 
-class ImpAddDeviceToModel(BaseElectricImpCommand):
+class ImpCreateModel(BaseElectricImpCommand):
+    def run(self):
+        self.init_env_and_settings()
+
+        def check_settings_callback():
+            self.create_new_model()
+
+        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+
+class ImpSelectModel(BaseElectricImpCommand):
 
     def run(self):
         self.init_env_and_settings()
+
         def check_settings_callback():
-            self.select_or_register_device(need_to_confirm=False, force_register=True)
+            self.select_existing_model()
+
+        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+
+    def select_existing_model(self, need_to_confirm=True):
+        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL + "models").json()
+        if len(response["models"]) > 0:
+            if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
+                return
+            all_model_names = [model["name"] for model in response["models"]]
+            self.__tmp_all_model_ids = [model["id"] for model in response["models"]]
+        else:
+            sublime.message_dialog(STR_MODEL_NO_MODELS_FOUND)
+            return
+
+        self.window.show_quick_panel(all_model_names, self.on_model_selected)
+
+    def on_model_selected(self, index):
+        # Selection was canceled, nothing to do here
+        if index == -1:
+            return
+
+        model_id = self.__tmp_all_model_ids[index]
+        self.__tmp_all_model_ids = None # We don't need it anymore
+        log_debug("Model selected id: " + model_id)
+
+        # Save newly created model to the project settings
+        settings = self.load_settings()
+        settings[EI_MODEL_ID] = model_id
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
+            return
+
+        # Pull the latest code from the Model
+        source_dir = self.env.project_manager.get_source_directory_path()
+        agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
+        device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
+
+        revisions = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                       PL_BUILD_API_URL + "models/" + model_id + "/revisions").json()
+        if len(revisions["revisions"]) > 0:
+            latest_revision_url = PL_BUILD_API_URL + "models/" + model_id + "/revisions/" + \
+                                  str(revisions["revisions"][0]["version"])
+            code = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                      latest_revision_url).json()
+            with open(agent_file, "w") as file:
+                file.write(code["revision"]["agent_code"])
+            with open(device_file, "w") as file:
+                file.write(code["revision"]["device_code"])
+        else:
+            # Create initial source files
+            with open(agent_file, "w") as file:
+                file.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
+            with open(device_file, "w") as file:
+                file.write(STR_INITIAL_SRC_CONTENT.format("Device"))
+
+
+class ImpAddDeviceToModel(BaseElectricImpCommand):
+    def run(self):
+        self.init_env_and_settings()
+
+        def check_settings_callback():
+            self.add_device(need_to_confirm=False)
+
         self.check_settings(callback=check_settings_callback)
 
 
@@ -959,7 +1062,7 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REMOVE_DEVICE): return
 
         model = self.load_this_model()
-        device_ids = model.get("model").get("devices") if model else None
+        device_ids = model.get("devices") if model else None
 
         if not device_ids or len(device_ids) == 0:
             sublime.message_dialog(STR_MODEL_NO_DEVICES_TO_REMOVE)

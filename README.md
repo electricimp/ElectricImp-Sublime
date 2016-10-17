@@ -95,19 +95,30 @@ is asked to provide:
 - Location of the Builder cli.js command line tool (if not automatically detected by the plugin).
 - Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
 top right corner and selecting the Build API Keys menu item 
-- New Model name to be created for the project. Each Electric Imp project is associated with a particular Model, 
-i.e. application code.
+- New Model name to be created for the project or one of the existing ones to be selected.
 
 NOTE: to build and deploy your code it's not necessary to select a device for your project. Even if you don't have a 
 device selected, you still can work on the code and receive compilation errors from the server.
 
 If you want to have you code running on a specific device and see it's logs, you need to select a device 
-(``Electric Imp->Device->Select`` Device).
+(``Electric Imp->Model->Device->Select`` menu item).
 
 When a project is created the empty device and agent code (device.nut and agent.nut) files are automatically created 
 and stored in the ``src`` project folder.
 
 If a project is created successfully, a new window with the project folder is opened. 
+
+### Model Management
+
+Each Electric Imp project is associated with a particular Model, i.e. application device and agent code.
+One can create a new project Model by selecting ``Electric Imp->Model->Create``. 
+
+You can also select an existing Model and associate the project with it through ``Electric Imp->Model->Select`` menu item.
+
+**IMPORTANT: The code which is deployed to the Model is preprocessed and contains line control markers in it. On the Model
+selection the plugin pulls down the Model code, but it doesn't restore the original file/folder structure.
+So for collaborative work on the same Model sources, please share the original Electric Imp plugin project sources/structure 
+via a source control.**
 
 ### Building and Running the Code
 
@@ -121,17 +132,19 @@ from the Model and the selected device.
 
 ### Selecting Device
 
-Device can be selected through the ``Electric Imp->Device->Select Device`` menu item. The selected device is used as a 
-source of logs for the Server Logs Console.
+Device of the Model the project is associated with can be selected through the 
+``Electric Imp->Model->Device->Select`` menu item. The selected device will used as a source of logs for the Logs Console.
+
+You can add other devices enrolled into your account to the project Model via ``Electric Imp->Model->Device->Add`` menu item. 
 
 ### Adding Device to the Model
 
-To add a device to the project model, select ``Electric Imp->Device->Add Device`` menu item. The newly added device
+To add a device to the project model, select ``Electric Imp->Model->Device->Add`` menu item. The newly added device
 is selected as the current one, which means the Console will show the logs for it.
 
 ### Removing Device from the Model
 
-Devices can be removed from the model by selecting ``Electric Imp->Device->Remove Device``.
+Devices can be removed from the model by selecting ``Electric Imp->Model->Device->Remove``.
 
 NOTE: one can't delete an active device (the one that is currently selected as current for the project).
 
@@ -146,7 +159,6 @@ Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu ite
 - Create Project: Ctrl + Shift + L
 - Build and Run: Ctrl + Shift + D
 - Show Logs Console: Ctrl + Shift + C
-- Select Device: Ctrc + Shift + I
 
 ## Preprocessor and Multi-File Support
  
