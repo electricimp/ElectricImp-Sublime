@@ -1,19 +1,19 @@
-Electric Imp Sublime Plugin
-=================================
+Electric Imp Sublime Plugin (Beta)
+==================================
 
 **Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are 
 supported. Tested on OS X only.**
 
-## Installation (manual)
+## Installation Steps
 
-### Installing Node.js
+### Install Node.js
 
 **Please note that the Plugin requires Node.js 4.0 or above.**
 
 The plugin requires Node.js to be installed on the machine. Please follow 
 [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
-### Installing Builder Node.js Module
+### Install Builder Node.js Module
 
 The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. 
 To install the Builder module, please use npm command:
@@ -22,7 +22,7 @@ To install the Builder module, please use npm command:
 npm i -g Builder
 ```
 
-### Installing the Plugin
+### Install the Electric Imp Sublime Plugin
 
 You can install the plugin script via the following command in the Sublime Text terminal (``ctrl+` ``) 
 which utilizes `git clone`. NOTE: please make sure you have git installed on your system when trying this method.
@@ -75,6 +75,9 @@ As the result project is created at the specified location:
   "device-id"     : "my-selected-device-id"
 }
 ```
+
+**NOTE: For the proper Squirrel language syntax highlighting please make sure you have Squirrel (Electric Imp) 
+languages selected under the ``View->Syntax`` menu item.** 
 
 ### Opening an existing Project
 
