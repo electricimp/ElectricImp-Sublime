@@ -123,8 +123,9 @@ class ProjectManager:
 
     def get_github_auth_info(self):
         auth_info = self.load_settings_file(PR_AUTH_INFO_FILE)
+        builder_settings = auth_info[EI_BUILDER_SETTINGS]
         if auth_info:
-            return auth_info.get(EI_GITHUB_USER), auth_info.get(EI_GITHUB_TOKEN)
+            return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
 
     def get_source_directory_path(self):
         return os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
@@ -338,9 +339,9 @@ class Preprocessor:
                     if builder_settings and EI_VARIABLE_DEFINES in builder_settings else None
 
                 if variable_defines:
-                    for variable, value in variable_defines:
-                        args.append("-D" + variable)
-                        args.append(value)
+                    for key in variable_defines:
+                        args.append("-D" + key)
+                        args.append(variable_defines[key])
 
                 pipes = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 prep_out, prep_err = pipes.communicate()
