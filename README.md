@@ -50,7 +50,7 @@ As the result project is created at the specified location:
 ```
 -- <Project Name>
   |--> settings                           - Electric Imp settings folder
-  .   |--> build-api.key                  - SENSITIVE: Build API key stored for the project
+  .   |--> auth.info                      - SENSITIVE: Build API key and GitHub authentication information
   .   |--> electric-imp.settings          - Generic Electric Imp settings
   |--> src                                - Source folder 
   .   |--> <Model Name>.device.nut        - Device code
@@ -59,7 +59,7 @@ As the result project is created at the specified location:
   |--> <Project Name>.sublime-project     - Sublime project file
 ```
 
-**IMPORTANT: settings/build-api.key should not be put under a source control as it contains sensitive information!**
+**IMPORTANT: settings/auth.info should not be put under a source control as it contains sensitive information!**
 
 <Project Name>.electric-imp-settings file contains:
 
@@ -167,6 +167,36 @@ Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu ite
  
 Please refer to the [Builder](https://github.com/electricimp/Builder) for more information on the preprocessor syntax
 that you can use in your Squirrel code.
+
+### Specifying GitHub authentication information
+
+Please use the project ``<project folder>/settings/auth.info`` file to specify your Builder GitHub authentication information: 
+```
+{
+    ...
+    "builder-settings": {
+        "github-user": "GitHub user name", 
+        "github-token": "Personal access token or password"
+    }
+}
+```
+
+### Specifying Builder preset Variables Definitions
+
+Please use the project ``<project folder>/settings/electric-imp.settings`` file to specify the Builder variables definitions: 
+```
+{
+    "builder-settings": {
+        ...
+        "variable-defines": {
+            "key1": "value1", 
+            "key2": "value2"
+        },
+        ...
+    }
+}
+```
+
 
 ## Features supported in the current Version
 
