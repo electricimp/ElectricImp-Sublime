@@ -1,6 +1,28 @@
 Electric Imp Sublime Plugin (Beta)
 ==================================
 
+- [Installation Steps](#installation-steps)
+    - [Install Node.js](#install-nodejs)
+    - [Installing Builder Node.js Module](#installing-builder-nodejs-module)
+    - [Install the Electric Imp Sublime Plugin](#install-the-electric-imp-sublime-plugin)
+- [Usage](#usage)
+    - [Creating a new Project](#creating-a-new-project)
+    - [Opening an existing Project](#opening-an-existing-project)
+    - [Building and Running](#building-and-running)
+    - [Model Management](#model-management)
+    - [Logs Console](#logs-console)
+    - [Selecting Device](#selecting-device)
+    - [Adding Device to the Model](#adding-device-to-the-model)
+    - [Removing Device from the Model](#removing-device-from-the-model)
+    - [Retrieving Agent URL](#retrieving-agent-url)
+    - [Key Shortcuts](#key-shortcuts)
+- [Preprocessor and Multi-File Support](#preprocessor-and-multi-file-support)
+    - [Specifying GitHub Authentication Information](#specifying-github-authentication-information)
+    - [Specifying Builder preset Variables Definitions](#specifying-builder-preset-variables-definitions)
+- [Features supported in the current Version](#features-supported-in-the-current-version)
+- [Future Development Plans](#future-development-plans)
+
+
 **Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are 
 supported. Tested on OS X only.**
 
@@ -13,7 +35,7 @@ supported. Tested on OS X only.**
 The plugin requires Node.js to be installed on the machine. Please follow 
 [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
-### Install Builder Node.js Module
+### Installing Builder Node.js Module
 
 The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. 
 To install the Builder module, please use npm command:
@@ -76,6 +98,11 @@ As the result project is created at the specified location:
 }
 ```
 
+When a project is created, empty device and agent code (device.nut and agent.nut) files are automatically created 
+and stored in the ``src`` project folder.
+
+If a project is created successfully, a new window with the project folder is opened. 
+
 **NOTE: For the proper Squirrel language syntax highlighting please make sure you have Squirrel (Electric Imp) 
 languages selected under the ``View->Syntax`` menu item.** 
 
@@ -87,12 +114,12 @@ To open an existing Electric Imp project, select the ``Project->Open Project...`
 **The plugin won't properly detect Electric Imp project if it's not opened as described, i.e. if it's opened
 as a folder, not as a Text Sublime project!**
 
-### Building the Code
+### Building and Running
 
 To build and deploy the application code, please select ``Electric Imp->Build and Run`` menu item.
+This action uploads the agent and the device code to the server and restarts the model with all the devices attached.
 
-When one builds the code (or does any other action, that requires access to the imp server) for the first time, the user 
-is asked to provide:
+When one builds the code (or does any other action, that requires access to the imp server) for the first time, the user is asked to provide:
 
 - Path to the Node.js executable (if not automatically detected by the plugin).
 - Location of the Builder cli.js command line tool (if not automatically detected by the plugin).
@@ -101,15 +128,10 @@ top right corner and selecting the Build API Keys menu item
 - New Model name to be created for the project or one of the existing ones to be selected.
 
 NOTE: to build and deploy your code it's not necessary to select a device for your project. Even if you don't have a 
-device selected, you still can work on the code and receive compilation errors from the server.
+device selected, you still can work on the code, see compilation errors reported by the server.
 
-If you want to have you code running on a specific device and see it's logs, you need to select a device 
+If you want to have you code running on a specific device and see view the logs, you need to select a device 
 (``Electric Imp->Model->Device->Select`` menu item).
-
-When a project is created the empty device and agent code (device.nut and agent.nut) files are automatically created 
-and stored in the ``src`` project folder.
-
-If a project is created successfully, a new window with the project folder is opened. 
 
 ### Model Management
 
@@ -122,11 +144,6 @@ You can also select an existing Model and associate the project with it through 
 selection the plugin pulls down the Model code, but it doesn't restore the original file/folder structure.
 So for collaborative work on the same Model sources, please share the original Electric Imp plugin project sources/structure 
 via a source control.**
-
-### Building and Running the Code
-
-The code can be pushed to the Model by selecting ``Electric Imp->Build and Run`` menu item. 
-This action uploads the agent and the device code to the server and restarts the model with all the devices attached.
 
 ### Logs Console
 
@@ -168,7 +185,7 @@ Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu ite
 Please refer to the [Builder](https://github.com/electricimp/Builder) for more information on the preprocessor syntax
 that you can use in your Squirrel code.
 
-### Specifying GitHub authentication information
+### Specifying GitHub Authentication Information
 
 Please use the project ``<project folder>/settings/auth.info`` file to specify your Builder GitHub authentication information: 
 ```
