@@ -48,10 +48,9 @@ PL_VIEW_STATUS_KEY       = "electric-imp-view-status-key"
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
 PR_TEMPLATE_DIR_NAME     = "project-template"
-PR_PROJECT_FILE_TEMPLATE = "_project_name_.sublime-project"
+PR_PROJECT_FILE_TEMPLATE = "electric-imp.sublime-project"
 PR_SETTINGS_FILE         = "electric-imp.settings"
-PR_BUILDER_SETTINGS_FILE = "builder.settings"
-PR_BUILD_API_KEY_FILE    = "build-api.key"
+PR_AUTH_INFO_FILE        = "auth.info"
 PR_SOURCE_DIRECTORY      = "src"
 PR_SETTINGS_DIRECTORY    = "settings"
 PR_BUILD_DIRECTORY       = "build"
@@ -59,16 +58,18 @@ PR_DEVICE_FILE_NAME      = "device.nut"
 PR_AGENT_FILE_NAME       = "agent.nut"
 PR_PREPROCESSED_PREFIX   = "preprocessed."
 
-PR_EI_ST_PR_SETTINGS     = "electric_imp_settings"
-PR_EI_ST_PR_NODE_PATH    = "node_path"
-PR_EI_ST_PR_BUILDER_CLI  = "builder_cli_path"
-
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
 EI_MODEL_ID              = "model-id"
 EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
 EI_DEVICE_ID             = "device-id"
+EI_BUILDER_SETTINGS      = "builder-settings"
+EI_ST_PR_NODE_PATH       = "node_path"
+EI_ST_PR_BUILDER_CLI     = "builder_cli_path"
+EI_GITHUB_USER           = "github-user"
+EI_GITHUB_TOKEN          = "github-token"
+EI_VARIABLE_DEFINES      = "variable-defines"
 
 # Global variables
 plugin_settings = None
@@ -90,7 +91,7 @@ class ProjectManager:
     @staticmethod
     def dump_map_to_json_file(filename, map):
         with open(filename, "w") as f:
-            json.dump(map, f)
+            json.dump(map, f, indent=4)
 
     @staticmethod
     def get_settings_file_path(window, filename):
@@ -116,9 +117,15 @@ class ProjectManager:
         return self.load_settings_file(PR_SETTINGS_FILE)
 
     def get_build_api_key(self):
-        api_key_map = self.load_settings_file(PR_BUILD_API_KEY_FILE)
-        if api_key_map:
-            return api_key_map.get(EI_BUILD_API_KEY)
+        auth_info = self.load_settings_file(PR_AUTH_INFO_FILE)
+        if auth_info:
+            return auth_info.get(EI_BUILD_API_KEY)
+
+    def get_github_auth_info(self):
+        auth_info = self.load_settings_file(PR_AUTH_INFO_FILE)
+        builder_settings = auth_info[EI_BUILDER_SETTINGS]
+        if auth_info:
+            return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
 
     def get_source_directory_path(self):
         return os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
@@ -311,13 +318,31 @@ class Preprocessor:
             result_device_filename
         ]]:
             try:
-                sublime_project_settings = env.window.project_data()[PR_EI_ST_PR_SETTINGS]
                 args = [
-                    sublime_project_settings[PR_EI_ST_PR_NODE_PATH],
-                    sublime_project_settings[PR_EI_ST_PR_BUILDER_CLI],
+                    settings[EI_BUILDER_SETTINGS][EI_ST_PR_NODE_PATH],
+                    settings[EI_BUILDER_SETTINGS][EI_ST_PR_BUILDER_CLI],
                     "-l",
                     code_files[0].replace("\\", "/")
                 ]
+
+                github_user, github_token = env.project_manager.get_github_auth_info()
+                if github_user and github_token:
+                    args.append("--github-user")
+                    args.append(github_user)
+                    args.append("--github-token")
+                    args.append(github_token)
+
+                settings = env.project_manager.load_settings()
+                builder_settings = settings[EI_BUILDER_SETTINGS]
+
+                variable_defines = builder_settings[EI_VARIABLE_DEFINES] \
+                    if builder_settings and EI_VARIABLE_DEFINES in builder_settings else None
+
+                if variable_defines:
+                    for key in variable_defines:
+                        args.append("-D" + key)
+                        args.append(variable_defines[key])
+
                 pipes = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 prep_out, prep_err = pipes.communicate()
 
@@ -401,32 +426,38 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
 
     def init_env_and_settings(self):
-        if not hasattr(self, "env") and ProjectManager.is_electric_imp_project_window(self.window):
+        if not ProjectManager.is_electric_imp_project_window(self.window):
+            # Do nothing if it's not an EI project
+            return
+
+        if not hasattr(self, "env"):
             self.env = Env.get_existing_or_create_env_for(self.window)
 
         # Try to locate node and node modules
+        settings = self.load_settings()
+        if EI_BUILDER_SETTINGS not in settings:
+            settings[EI_BUILDER_SETTINGS] = {
+                EI_VARIABLE_DEFINES: {}
+            }
+        builder_settings = settings[EI_BUILDER_SETTINGS]
+
+        settings_updated = False
+
         node_locator = NodeLocator(sublime.platform())
-        project_data = self.window.project_data()
-        if PR_EI_ST_PR_SETTINGS not in project_data:
-            project_data[PR_EI_ST_PR_SETTINGS] = {}
-        settings = project_data.get(PR_EI_ST_PR_SETTINGS)
-
-        update_pd = False
-
         node_path = node_locator.get_node_path()
-        if (PR_EI_ST_PR_NODE_PATH not in settings or node_path != settings[PR_EI_ST_PR_NODE_PATH]) \
+        if (EI_ST_PR_NODE_PATH not in builder_settings or node_path != builder_settings[EI_ST_PR_NODE_PATH]) \
                 and os.path.exists(node_path):
-            update_pd = True
-            settings[PR_EI_ST_PR_NODE_PATH] = node_path
+            settings_updated = True
+            builder_settings[EI_ST_PR_NODE_PATH] = node_path
 
         builder_cli_path = node_locator.get_builder_cli_path()
-        if (PR_EI_ST_PR_BUILDER_CLI not in settings or builder_cli_path != settings[PR_EI_ST_PR_BUILDER_CLI]) \
+        if (EI_ST_PR_BUILDER_CLI not in builder_settings or builder_cli_path != builder_settings[EI_ST_PR_BUILDER_CLI]) \
                 and os.path.exists(builder_cli_path):
-            update_pd = True
-            settings[PR_EI_ST_PR_BUILDER_CLI] = builder_cli_path
+            settings_updated = True
+            builder_settings[EI_ST_PR_BUILDER_CLI] = builder_cli_path
 
-        if update_pd:
-            self.window.set_project_data(project_data)
+        if settings_updated:
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
     def load_settings(self):
         return self.env.project_manager.load_settings()
@@ -460,9 +491,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.env.tmp_selecting_or_creating_model = None
 
     def is_missing_node_js_path(self):
-        project_data = self.window.project_data()
-        settings = project_data[PR_EI_ST_PR_SETTINGS] if PR_EI_ST_PR_SETTINGS in project_data else {}
-        return PR_EI_ST_PR_NODE_PATH not in settings or not os.path.exists(settings[PR_EI_ST_PR_NODE_PATH])
+        settings = self.load_settings()
+        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
+        return EI_ST_PR_NODE_PATH not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_NODE_PATH])
 
     def prompt_for_node_js_path(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_NODE_JS_PATH): return
@@ -472,12 +503,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         log_debug("Node.js path provided: " + path)
         if os.path.exists(path):
             log_debug("Node.js path is valid")
-            project_data = self.window.project_data()
-            if PR_EI_ST_PR_SETTINGS not in project_data:
-                project_data[PR_EI_ST_PR_SETTINGS] = {}
-            settings = project_data[PR_EI_ST_PR_SETTINGS]
-            settings[PR_EI_ST_PR_NODE_PATH] = path
-            self.window.set_project_data(project_data)
+            settings = self.load_settings()
+            if EI_BUILDER_SETTINGS not in settings:
+                settings[EI_BUILDER_SETTINGS] = {}
+            builder_settings = settings[EI_BUILDER_SETTINGS]
+            builder_settings[EI_ST_PR_NODE_PATH] = path
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
         else:
             if sublime.ok_cancel_dialog(STR_INVALID_NODE_JS_PATH):
                 self.prompt_for_node_js_path(False)
@@ -486,9 +517,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.check_settings()
 
     def is_missing_builder_cli_path(self):
-        project_data = self.window.project_data()
-        settings = project_data[PR_EI_ST_PR_SETTINGS] if PR_EI_ST_PR_SETTINGS in project_data else {}
-        return PR_EI_ST_PR_BUILDER_CLI not in settings or not os.path.exists(settings[PR_EI_ST_PR_BUILDER_CLI])
+        settings = self.load_settings()
+        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
+        return EI_ST_PR_BUILDER_CLI not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_BUILDER_CLI])
 
     def prompt_for_builder_cli_path(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH): return
@@ -498,12 +529,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         log_debug("Builder CLI path provided: " + path)
         if os.path.exists(path):
             log_debug("Builder CLI path is valid")
-            project_data = self.window.project_data()
-            if PR_EI_ST_PR_SETTINGS not in project_data:
-                project_data[PR_EI_ST_PR_SETTINGS] = {}
-            settings = project_data[PR_EI_ST_PR_SETTINGS]
-            settings[PR_EI_ST_PR_BUILDER_CLI] = path
-            self.window.set_project_data(project_data)
+            settings = self.load_settings()
+            if EI_BUILDER_SETTINGS not in settings:
+                settings[EI_BUILDER_SETTINGS] = {}
+            builder_settings = settings[EI_BUILDER_SETTINGS]
+            builder_settings[EI_ST_PR_BUILDER_CLI] = path
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
         else:
             if sublime.ok_cancel_dialog(STR_INVALID_BUILDER_CLI_PATH):
                 self.prompt_for_node_js_path(False)
@@ -669,8 +700,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         log_debug("build api key provided: " + key)
         if HTTPConnection.is_build_api_key_valid(key):
             log_debug("build API key is valid")
-            self.env.project_manager.save_settings(PR_BUILD_API_KEY_FILE, {
-                EI_BUILD_API_KEY: key
+            self.env.project_manager.save_settings(PR_AUTH_INFO_FILE, {
+                EI_BUILD_API_KEY: key,
+                EI_BUILDER_SETTINGS: {
+                    EI_GITHUB_USER: None,
+                    EI_GITHUB_TOKEN: None
+                }
             })
         else:
             if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
@@ -933,7 +968,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         return subprocess.Popen(args)
 
     def get_project_file_name(self, path):
-        return os.path.join(path, PR_PROJECT_FILE_TEMPLATE.replace("_project_name_", os.path.basename(path)))
+        return os.path.join(path, PR_PROJECT_FILE_TEMPLATE)
 
     def copy_project_template_file(self, path):
         src = os.path.join(self.get_template_dir(), PR_PROJECT_FILE_TEMPLATE)
