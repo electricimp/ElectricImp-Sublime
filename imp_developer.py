@@ -90,7 +90,7 @@ class ProjectManager:
 
     @staticmethod
     def dump_map_to_json_file(filename, map):
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding="utf-8") as f:
             json.dump(map, f, indent=4)
 
     @staticmethod
@@ -110,7 +110,7 @@ class ProjectManager:
     def load_settings_file(self, filename):
         path = ProjectManager.get_settings_file_path(self.window, filename)
         if path and os.path.exists(path):
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 return json.load(f)
 
     def load_settings(self):
@@ -355,15 +355,15 @@ class Preprocessor:
                     # Return on error
                     return None, None
 
-                with open(code_files[1], "w") as output:
+                with open(code_files[1], "w", encoding="utf-8") as output:
                     output.write(str(prep_out.decode("utf-8")))
 
                 def substitute_string_in_file(filename, old_string, new_string):
-                    with open(filename) as f:
+                    with open(filename, encoding="utf-8") as f:
                         s = f.read()
                         if old_string not in s:
                             return
-                    with open(filename, 'w') as f:
+                    with open(filename, 'w', encoding="utf-8") as f:
                         s = s.replace(old_string, new_string)
                         f.write(s)
 
@@ -986,11 +986,11 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         # Create empty files if they don't exist
         if not os.path.exists(agent_file):
-            with open(agent_file, 'a') as f:
+            with open(agent_file, 'a', encoding="utf-8") as f:
                 f.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
 
         if not os.path.exists(device_file):
-            with open(device_file, 'a') as f:
+            with open(device_file, 'a', encoding="utf-8") as f:
                 f.write(STR_INITIAL_SRC_CONTENT.format("Device"))
 
         return agent_file, device_file
@@ -1065,15 +1065,15 @@ class ImpSelectModel(BaseElectricImpCommand):
                                   str(revisions["revisions"][0]["version"])
             code = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                       latest_revision_url).json()
-            with open(agent_file, "w") as file:
+            with open(agent_file, "w", encoding="utf-8") as file:
                 file.write(code["revision"]["agent_code"])
-            with open(device_file, "w") as file:
+            with open(device_file, "w", encoding="utf-8") as file:
                 file.write(code["revision"]["device_code"])
         else:
             # Create initial source files
-            with open(agent_file, "w") as file:
+            with open(agent_file, "w", encoding="utf-8") as file:
                 file.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
-            with open(device_file, "w") as file:
+            with open(device_file, "w", encoding="utf-8") as file:
                 file.write(STR_INITIAL_SRC_CONTENT.format("Device"))
 
 
