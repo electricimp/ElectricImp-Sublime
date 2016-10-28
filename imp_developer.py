@@ -1291,14 +1291,14 @@ class LogManager:
             preprocessor = self.env.code_processor
             pattern = re.compile(r"ERROR:\s*(?:at|from)\s*(\S+)\s*.*:(\d+)")
             match = pattern.match(log["message"])
-            # log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") +
-            #           "  [ ] Original runtime error: " + log["message"])
+            log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") +
+                      "  [ ] Original runtime error: " + log["message"])
             if match:
                 func_name = match.group(1)
                 line_read = int(match.group(2)) - 1
                 try:
                     (orig_file, orig_line) = preprocessor.get_error_location(
-                        SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read, env)
+                        SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read, self.env)
                     message = STR_ERR_RUNTIME_ERROR.format(func_name, orig_file, orig_line)
                 except:
                     pass  # Use original message if failed to translate the error location
