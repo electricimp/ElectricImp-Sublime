@@ -17,7 +17,7 @@ STR_BUILD_API_KEY                    = "Electric Imp Build API key:"
 STR_INVALID_API_KEY                  = "Build API key is invalid. Please try another one"
 STR_AGENT_URL_COPIED                 = "The agent URL for the selected device {} is:\n{}\nIt is copied into the clipboard"
 STR_NO_DEVICES_AVAILABLE             = "There are no other Imp devices registered in the system. Please register a new device and try again"
-STR_FAILED_TO_GET_LOGS               = "An error occurred while retrieving logs for the specified model/device. Please check the settings"
+STR_FAILED_TO_GET_LOGS               = "An error returned for logs request."
 STR_PROVIDE_BUILD_API_KEY            = "Please provide your Electric Imp Build API key. It can be found in the Developer Console (login into your account and click on the top right link with you user name and select \"Build API Keys\")"
 
 STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
