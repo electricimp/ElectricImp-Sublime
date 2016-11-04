@@ -50,6 +50,7 @@ PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
 PR_TEMPLATE_DIR_NAME     = "project-template"
 PR_PROJECT_FILE_TEMPLATE = "electric-imp.sublime-project"
+PR_WS_FILE_TEMPLATE      = "electric-imp.sublime-workspace"
 PR_SETTINGS_FILE         = "electric-imp.settings"
 PR_AUTH_INFO_FILE        = "auth.info"
 PR_SOURCE_DIRECTORY      = "src"
@@ -917,7 +918,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         if not os.path.exists(settings_dir):
             os.makedirs(settings_dir)
 
-        self.copy_project_template_file(path)
+        self.copy_template_file(path, PR_WS_FILE_TEMPLATE)
+        self.copy_template_file(path, PR_PROJECT_FILE_TEMPLATE)
         self.copy_gitignore(path)
 
         # Create Electric Imp project settings file
@@ -929,33 +931,13 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         # Pull the latest code revision from the server
         (agent_file, device_file) = self.create_source_files_if_absent(path)
 
-        ok = False
         try:
             # Try opening the project in the new window
-            self.run_sublime_from_command_line(["-n", self.get_project_file_name(path)])
-            ok = True
+            self.run_sublime_from_command_line(["-n", os.path.join(path, PR_PROJECT_FILE_TEMPLATE)])
         except:
             log_debug("Error executing sublime: {} ".format(sys.exc_info()[0]))
             # If failed, open the project in the file browser
             self.window.run_command("open_dir", {"dir": path})
-
-        if ok:
-            def open_sources():
-                log_debug("opening the sources...")
-                # TODO: Redo: this code assumes that the last open window was appended to the window list
-                last_window = sublime.windows()[-1]
-                if ProjectManager.is_electric_imp_project_window(last_window):
-                    log_debug("last window is Electric Imp project one...")
-                    last_window.open_file(agent_file)
-                    last_window.open_file(device_file)
-                else:
-                    log_debug("the last window is not Electric Imp project one...")
-
-            # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
-            sublime.set_timeout_async(open_sources, 100)
-        else:
-            log_debug("Something went wrong..., won't try to open the sources")
-
 
     @staticmethod
     def get_sublime_path():
@@ -979,12 +961,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         args.insert(0, self.get_sublime_path())
         return subprocess.Popen(args)
 
-    def get_project_file_name(self, path):
-        return os.path.join(path, PR_PROJECT_FILE_TEMPLATE)
-
-    def copy_project_template_file(self, path):
-        src = os.path.join(self.get_template_dir(), PR_PROJECT_FILE_TEMPLATE)
-        dst = self.get_project_file_name(path)
+    def copy_template_file(self, dest_dir, file_name):
+        src = os.path.join(self.get_template_dir(), file_name)
+        dst = os.path.join(dest_dir, file_name)
         shutil.copy(src, dst)
 
     def copy_gitignore(self, path):
