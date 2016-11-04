@@ -46,7 +46,7 @@ STR_ERR_PREPROCESSING_ERROR          = "\nPreprocessing failed because of the fo
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
 STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
-STR_STATUS_WAITING_FOR_RESPONSE      = "Waiting for Build API Response {}"
+STR_STATUS_ACTIVE_MODEL              = "Model: {}"
 
 STR_INITIAL_SRC_CONTENT              = "####################################\n" \
                                        "## {} source code goes here\n" \

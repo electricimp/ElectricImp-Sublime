@@ -43,7 +43,8 @@ PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
 PL_LOGS_UPDATE_PERIOD    = 1000 # ms
 PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
-PL_VIEW_STATUS_KEY       = "electric-imp-view-status-key"
+PL_MODEL_STATUS_KEY      = "model-status-key"
+PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -61,6 +62,7 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
 EI_MODEL_ID              = "model-id"
+EI_MODEL_NAME            = "model-name"
 EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
 EI_DEVICE_ID             = "device-id"
@@ -215,35 +217,25 @@ class UIManager:
         # TODO: Implement path selection autocomplete (CSE-70)
         self.window.show_input_panel(caption, default_path, on_path_selected, None, None)
 
-    def start_waiting_for_response_status_update(self):
-        self.keep_updating_status = True
-        self.__update_wait_for_response_status()
+    def set_status_message(self, key, message):
+        views = self.window.views()
+        for v in views:
+            v.set_status(key=key, value=message)
 
-    def stop_updating_status(self):
-        self.keep_updating_status = False
+    def erase_status_message(self, key):
+        views = self.window.views()
+        for v in views:
+            v.erase_status(key)
 
-    def __update_wait_for_response_status(self):
-        if not self.keep_updating_status:
-            self.__clear_status_message()
-            return
-
-        suffix = {
-            0: "[|]",
-            1: "[/]",
-            2: "[-]",
-            3: "[\]"
-        }[self.__status_counter]
-
-        self.__set_status_message(STR_STATUS_WAITING_FOR_RESPONSE.format(suffix))
-        self.__status_counter = (self.__status_counter + 1) % 4
-
-        sublime.set_timeout(self.__update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_MS)
-
-    def __set_status_message(self, message):
-        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value=message)
-
-    def __clear_status_message(self):
-        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
+    def show_settings_value_in_status(self, property_name, status_key, formatted_string):
+        env = Env.For(self.window)
+        settings = env.project_manager.load_settings()
+        if settings and property_name in settings:
+            model_name = settings.get(property_name)
+            log_debug("Setting status Model name: " + model_name)
+            env.ui_manager.set_status_message(status_key, formatted_string.format(model_name))
+        else:
+            log_debug("Failed to update the Model name in status")
 
 
 class HTTPConnection:
@@ -573,7 +565,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Save newly created model to the project settings
         settings = self.load_settings()
         settings[EI_MODEL_ID] = response.json().get("model").get("id")
+        settings[EI_MODEL_NAME] = response.json().get("model").get("name")
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        self.update_model_name_in_status(query_model_name=False)
 
         # Check settings
         self.check_settings(selecting_or_creating_model=True)
@@ -725,6 +720,20 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return ProjectManager.is_electric_imp_project_window(self.window)
 
+    def update_model_name_in_status(self, query_model_name=True):
+        if query_model_name:
+            settings = self.load_settings()
+            model_id = settings.get(EI_MODEL_ID)
+            response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                          PL_BUILD_API_URL_V4 + "models/" + str(model_id))
+            if HTTPConnection.is_response_valid(response):
+                model_name = response.json().get("model").get("name")
+                settings[EI_MODEL_NAME] = model_name
+                self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+            else:
+                log_debug("An error occurred while updating the Model name")
+        self.env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
@@ -765,6 +774,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             self.handle_response(response)
 
         self.check_settings(callback=check_settings_callback)
+        self.update_model_name_in_status()
 
     def handle_response(self, response):
         settings = self.load_settings()
@@ -842,6 +852,7 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         self.init_env_and_settings()
         self.env.ui_manager.init_tty()
         self.check_settings()
+        self.update_model_name_in_status()
         update_log_windows(False)
 
 
@@ -1030,7 +1041,7 @@ class ImpSelectModel(BaseElectricImpCommand):
             if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
                 return
             all_model_names = [model["name"] for model in response["models"]]
-            self.__tmp_all_model_ids = [model["id"] for model in response["models"]]
+            self.__tmp_all_models = [(model["id"], model["name"]) for model in response["models"]]
         else:
             sublime.message_dialog(STR_MODEL_NO_MODELS_FOUND)
             return
@@ -1042,14 +1053,18 @@ class ImpSelectModel(BaseElectricImpCommand):
         if index == -1:
             return
 
-        model_id = self.__tmp_all_model_ids[index]
-        self.__tmp_all_model_ids = None # We don't need it anymore
+        model_id, model_name = self.__tmp_all_models[index]
+
+        self.__tmp_all_models = None # We don't need it anymore
         log_debug("Model selected id: " + model_id)
 
         # Save newly created model to the project settings
         settings = self.load_settings()
         settings[EI_MODEL_ID] = model_id
+        settings[EI_MODEL_NAME] = model_name
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        self.update_model_name_in_status(query_model_name=False)
 
         if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
             return
@@ -1144,10 +1159,10 @@ class AnfNewProject(AdvancedNewFileNew):
             self.on_path_provided(path)
 
     def update_status_message(self, creation_path):
-        self.window.active_view().set_status(PL_VIEW_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
+        self.window.active_view().set_status(PL_PLUGIN_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
 
     def clear(self):
-        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
+        self.window.active_view().erase_status(PL_PLUGIN_STATUS_KEY)
 
 
 # This is a helper class to implement text substitution in the file path command line
@@ -1218,7 +1233,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
 
 def log_debug(text):
     global plugin_settings
-    if plugin_settings.get(PL_DEBUG_FLAG):
+    if plugin_settings and plugin_settings.get(PL_DEBUG_FLAG):
         print("  [EI::Debug] " + text)
 
 
