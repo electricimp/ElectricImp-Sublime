@@ -2764,19 +2764,13 @@
 			<array>
 				<dict>
 					<key>match</key>
-					<string>\b(agent|device|server|imp|hardware|http|httprequest|httpresponse|ftp)\b</string>
+					<string>\b(agent|device|server|imp|hardware|http|httprequest|httpresponse|ftp|math|array|blob|bool|float|function|integer|regexp|regexp2|string|table)\b</string>
 					<key>name</key>
 					<string>support.class.builtin.squirrel</string>
 				</dict>
 				<dict>
 					<key>match</key>
-					<string>\b(Array|Boolean|Date|Function|Map|Math|Number|Object|Promise|Proxy|RegExp|Set|String|WeakMap)\b</string>
-					<key>name</key>
-					<string>support.class.builtin.squirrel</string>
-				</dict>
-				<dict>
-					<key>match</key>
-					<string>(?&lt;!\.)\b(decodeURI|decodeURIComponent|encodeURI|encodeURIComponent|escape|eval|isFinite|isNaN|parseFloat|parseInt|unescape)\b</string>
+					<string>\b(getroottable|assert|print|error|array|type|callee|dummy|clock|time|date)\b</string>
 					<key>name</key>
 					<string>support.function.squirrel</string>
 				</dict>
