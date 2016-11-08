@@ -1168,7 +1168,7 @@ class AnfReplaceCommand(sublime_plugin.TextCommand):
 class ImpErrorProcessor(sublime_plugin.EventListener):
 
     CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s.*\((.*)\:(\d+)\)"
-    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
+    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s*(?:\S*)\s*(?:at|from)\s*.*\s+(\S*):(\d+)\s*"
 
     def on_post_text_command(self, view, command_name, args):
         window = view.window()
@@ -1222,7 +1222,11 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                                       icon="circle",
                                       flags=sublime.DRAW_SOLID_UNDERLINE)
                 file_view.show(error_region)
-            select_region()
+            attempt = 0
+            max_attempts = 3
+            while file_view.is_loading() and attempt < max_attempts:
+                attempt += 1
+                sublime.set_timeout(select_region, 100)
 
     def __update_status(self, view):
         env = Env.For(view.window())
@@ -1314,7 +1318,7 @@ class LogManager:
         if log["type"] in ["server.error", "agent.error"]:
             # agent/device runtime errors
             preprocessor = self.env.code_processor
-            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s*(\S+)\s*(?:device_code|agent_code):(\d+)")
+            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s*(\S*)\s*(?:device_code|agent_code|main):(\d+)")
             match = pattern.match(log["message"])
             log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") +
                       "  [ ] Original runtime error: " + log["message"])
