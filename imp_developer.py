@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib
+import time
 
 import imp
 import sublime
@@ -34,21 +34,24 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Requests-2.1
 import requests
 
 # Generic plugin constants
-PL_BUILD_API_URL         = "https://build.electricimp.com/v4/"
+PL_BUILD_API_URL_BASE    = "https://build.electricimp.com"
+PL_BUILD_API_URL_V4      = PL_BUILD_API_URL_BASE + "/v4/"
 PL_SETTINGS_FILE         = "ImpDeveloper.sublime-settings"
 PL_DEBUG_FLAG            = "debug"
 PL_AGENT_URL             = "https://agent.electricimp.com/{}"
 PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
-PL_LOG_DEFAULT_TIMESTAMP = "2000-01-01T00:00:00.000+00:00"
-PL_LOGS_UPDATE_PERIOD    = 5000 # ms
 PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
-PL_VIEW_STATUS_KEY       = "electric-imp-view-status-key"
+PL_MODEL_STATUS_KEY      = "model-status-key"
+PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
+PL_LONG_POLL_TIMEOUT     = 5 # sec
+PL_LOGS_UPDATE_RESTART_PERIOD = 1000 # ms
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
 PR_TEMPLATE_DIR_NAME     = "project-template"
 PR_PROJECT_FILE_TEMPLATE = "electric-imp.sublime-project"
+PR_WS_FILE_TEMPLATE      = "electric-imp.sublime-workspace"
 PR_SETTINGS_FILE         = "electric-imp.settings"
 PR_AUTH_INFO_FILE        = "auth.info"
 PR_SOURCE_DIRECTORY      = "src"
@@ -61,6 +64,7 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 # Electric Imp settings and project properties
 EI_BUILD_API_KEY         = "build-api-key"
 EI_MODEL_ID              = "model-id"
+EI_MODEL_NAME            = "model-name"
 EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
 EI_DEVICE_ID             = "device-id"
@@ -143,8 +147,6 @@ class Env:
 
         # Plugin text area
         self.terminal = None
-        # Timestamp for the last log shown in the Plugin text area
-        self.logs_timestamp = PL_LOG_DEFAULT_TIMESTAMP
 
         # UI Manager
         self.ui_manager = UIManager(window)
@@ -152,6 +154,8 @@ class Env:
         self.project_manager = ProjectManager(window)
         # Preprocessor
         self.code_processor = Preprocessor()
+        # Log Manager
+        self.log_manager = LogManager(self)
 
         # Temp variables
         self.tmp_model = None
@@ -192,7 +196,8 @@ class UIManager:
     def create_new_console(self):
         env = Env.For(self.window)
         env.terminal = self.window.get_output_panel("textarea")
-        env.logs_timestamp = PL_LOG_DEFAULT_TIMESTAMP
+        env.log_manager.poll_url = None
+        env.log_manager.last_shown_log = None
 
     def write_to_console(self, text):
         terminal = Env.For(self.window).terminal
@@ -214,36 +219,28 @@ class UIManager:
         # TODO: Implement path selection autocomplete (CSE-70)
         self.window.show_input_panel(caption, default_path, on_path_selected, None, None)
 
-    def start_waiting_for_response_status_update(self):
-        self.keep_updating_status = True
-        self.__update_wait_for_response_status()
+    def set_status_message(self, key, message):
+        views = self.window.views()
+        for v in views:
+            v.set_status(key=key, value=message)
 
-    def stop_updating_status(self):
-        self.keep_updating_status = False
+    def erase_status_message(self, key):
+        views = self.window.views()
+        for v in views:
+            v.erase_status(key)
 
-    def __update_wait_for_response_status(self):
-        if not self.keep_updating_status:
-            self.__clear_status_message()
-            return
-
-        suffix = {
-            0: "[|]",
-            1: "[/]",
-            2: "[-]",
-            3: "[\]"
-        }[self.__status_counter]
-
-        self.__set_status_message(STR_STATUS_WAITING_FOR_RESPONSE.format(suffix))
-        self.__status_counter = (self.__status_counter + 1) % 4
-
-        sublime.set_timeout(self.__update_wait_for_response_status, UIManager.STATUS_UPDATE_PERIOD_MS)
-
-    def __set_status_message(self, message):
-        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value=message)
-
-    def __clear_status_message(self):
-        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
-
+    def show_settings_value_in_status(self, property_name, status_key, formatted_string):
+        env = Env.For(self.window)
+        settings = env.project_manager.load_settings()
+        if settings and property_name in settings:
+            property_value = settings.get(property_name)
+            if property_value:
+                log_debug("Setting status for property \"" + property_name + "\" value: " + property_value)
+                env.ui_manager.set_status_message(status_key, formatted_string.format(property_value))
+            else:
+                log_debug("Property \"" + property_name + "\" has no value")
+        else:
+            log_debug("Property \"" + property_name + "\" is not found in the settings")
 
 class HTTPConnection:
     """Implementation of all the Electric Imp connection functionality"""
@@ -261,12 +258,12 @@ class HTTPConnection:
 
     @staticmethod
     def is_build_api_key_valid(key):
-        return requests.get(PL_BUILD_API_URL + "models",
+        return requests.get(PL_BUILD_API_URL_V4 + "models",
                             headers=HTTPConnection.__get_http_headers(key)).status_code == requests.codes.ok
 
     @staticmethod
-    def get(key, url):
-        return requests.get(url, headers=HTTPConnection.__get_http_headers(key))
+    def get(key, url, timeout=None):
+        return requests.get(url, headers=HTTPConnection.__get_http_headers(key), timeout=timeout)
 
     @staticmethod
     def post(key, url, data=None):
@@ -278,7 +275,7 @@ class HTTPConnection:
 
     @staticmethod
     def is_response_valid(response):
-        return response.status_code in [
+        return response and response.status_code in [
             requests.codes.ok,
             requests.codes.created,
             requests.codes.accepted
@@ -559,7 +556,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def on_model_name_provided(self, name):
         response = HTTPConnection.post(self.env.project_manager.get_build_api_key(),
-                                       PL_BUILD_API_URL + "models/", '{"name" : "' + name + '" }')
+                                       PL_BUILD_API_URL_V4 + "models/", '{"name" : "' + name + '" }')
 
         if not HTTPConnection.is_response_valid(response) \
                 and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
@@ -572,7 +569,13 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Save newly created model to the project settings
         settings = self.load_settings()
         settings[EI_MODEL_ID] = response.json().get("model").get("id")
+        settings[EI_MODEL_NAME] = response.json().get("model").get("name")
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        self.update_model_name_in_status(query_model_name=False)
+
+        # Reset the logs
+        self.env.log_manager.reset()
 
         # Check settings
         self.check_settings(selecting_or_creating_model=True)
@@ -586,7 +589,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         device_names = []
 
         response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL + "devices/")
+                                      PL_BUILD_API_URL_V4 + "devices/")
         all_devices = response.json().get("devices")
 
         if exclude_device_ids is None:
@@ -619,7 +622,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         device_id = self.env.tmp_device_ids[index]
 
         response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL + "devices/" + device_id,
+                                      PL_BUILD_API_URL_V4 + "devices/" + device_id,
                                       '{"model_id": "' + model.get("id") + '"}')
         if not HTTPConnection.is_response_valid(response):
             sublime.message_dialog(STR_MODEL_ADDING_DEVICE_FAILED)
@@ -636,7 +639,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # We assume the model is set up already
         model_id = self.load_settings().get(EI_MODEL_ID)
         response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL + "models/" + str(model_id))
+                                      PL_BUILD_API_URL_V4 + "models/" + str(model_id))
         if HTTPConnection.is_response_valid(response):
             return response.json().get("model")
 
@@ -695,6 +698,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.env.tmp_device_ids = None
         # Loop back to the main settings check
         self.check_settings()
+        # Reset the logs
+        self.env.log_manager.reset()
 
     def on_build_api_key_provided(self, key):
         log_debug("build api key provided: " + key)
@@ -723,6 +728,23 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def is_enabled(self):
         return ProjectManager.is_electric_imp_project_window(self.window)
+
+    def update_model_name_in_status(self, query_model_name=True):
+        if query_model_name:
+            settings = self.load_settings()
+            model_id = settings.get(EI_MODEL_ID)
+            if not model_id or not self.env.project_manager.get_build_api_key():
+                # Nothing to update
+                return
+            response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
+                                          PL_BUILD_API_URL_V4 + "models/" + str(model_id))
+            if HTTPConnection.is_response_valid(response):
+                model_name = response.json().get("model").get("name")
+                settings[EI_MODEL_NAME] = model_name
+                self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+            else:
+                log_debug("An error occurred while updating the Model name")
+        self.env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
@@ -758,12 +780,13 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             device_code = self.read_file(device_filename)
 
             settings = self.load_settings()
-            url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
+            url = PL_BUILD_API_URL_V4 + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
             data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
             response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
             self.handle_response(response)
 
         self.check_settings(callback=check_settings_callback)
+        self.update_model_name_in_status()
 
     def handle_response(self, response):
         settings = self.load_settings()
@@ -776,7 +799,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response_json["revision"]["version"])))
 
             # Not it's time to restart the Model
-            url = PL_BUILD_API_URL + "models/" + settings.get(EI_MODEL_ID) + "/restart"
+            url = PL_BUILD_API_URL_V4 + "models/" + settings.get(EI_MODEL_ID) + "/restart"
             HTTPConnection.post(self.env.project_manager.get_build_api_key(), url)
         else:
             # {
@@ -841,6 +864,7 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         self.init_env_and_settings()
         self.env.ui_manager.init_tty()
         self.check_settings()
+        self.update_model_name_in_status()
         update_log_windows(False)
 
 
@@ -859,7 +883,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
             if EI_DEVICE_ID in settings:
                 device_id = settings.get(EI_DEVICE_ID)
                 response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                              PL_BUILD_API_URL + "devices/" + device_id).json()
+                                              PL_BUILD_API_URL_V4 + "devices/" + device_id).json()
                 agent_id = response.get("device").get("agent_id")
                 agent_url = PL_AGENT_URL.format(agent_id)
                 sublime.set_clipboard(agent_url)
@@ -905,7 +929,8 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         if not os.path.exists(settings_dir):
             os.makedirs(settings_dir)
 
-        self.copy_project_template_file(path)
+        self.copy_template_file(path, PR_WS_FILE_TEMPLATE)
+        self.copy_template_file(path, PR_PROJECT_FILE_TEMPLATE)
         self.copy_gitignore(path)
 
         # Create Electric Imp project settings file
@@ -917,33 +942,13 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         # Pull the latest code revision from the server
         (agent_file, device_file) = self.create_source_files_if_absent(path)
 
-        ok = False
         try:
             # Try opening the project in the new window
-            self.run_sublime_from_command_line(["-n", self.get_project_file_name(path)])
-            ok = True
+            self.run_sublime_from_command_line(["-n", os.path.join(path, PR_PROJECT_FILE_TEMPLATE)])
         except:
             log_debug("Error executing sublime: {} ".format(sys.exc_info()[0]))
             # If failed, open the project in the file browser
             self.window.run_command("open_dir", {"dir": path})
-
-        if ok:
-            def open_sources():
-                log_debug("opening the sources...")
-                # TODO: Redo: this code assumes that the last open window was appended to the window list
-                last_window = sublime.windows()[-1]
-                if ProjectManager.is_electric_imp_project_window(last_window):
-                    log_debug("last window is Electric Imp project one...")
-                    last_window.open_file(agent_file)
-                    last_window.open_file(device_file)
-                else:
-                    log_debug("the last window is not Electric Imp project one...")
-
-            # TODO: Redo: dirty hack: wait for awhile to open the files as the window might not be created yet
-            sublime.set_timeout_async(open_sources, 100)
-        else:
-            log_debug("Something went wrong..., won't try to open the sources")
-
 
     @staticmethod
     def get_sublime_path():
@@ -967,12 +972,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         args.insert(0, self.get_sublime_path())
         return subprocess.Popen(args)
 
-    def get_project_file_name(self, path):
-        return os.path.join(path, PR_PROJECT_FILE_TEMPLATE)
-
-    def copy_project_template_file(self, path):
-        src = os.path.join(self.get_template_dir(), PR_PROJECT_FILE_TEMPLATE)
-        dst = self.get_project_file_name(path)
+    def copy_template_file(self, dest_dir, file_name):
+        src = os.path.join(self.get_template_dir(), file_name)
+        dst = os.path.join(dest_dir, file_name)
         shutil.copy(src, dst)
 
     def copy_gitignore(self, path):
@@ -1024,12 +1026,12 @@ class ImpSelectModel(BaseElectricImpCommand):
 
     def select_existing_model(self, need_to_confirm=True):
         response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL + "models").json()
+                                      PL_BUILD_API_URL_V4 + "models").json()
         if len(response["models"]) > 0:
             if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
                 return
             all_model_names = [model["name"] for model in response["models"]]
-            self.__tmp_all_model_ids = [model["id"] for model in response["models"]]
+            self.__tmp_all_models = [(model["id"], model["name"]) for model in response["models"]]
         else:
             sublime.message_dialog(STR_MODEL_NO_MODELS_FOUND)
             return
@@ -1041,14 +1043,22 @@ class ImpSelectModel(BaseElectricImpCommand):
         if index == -1:
             return
 
-        model_id = self.__tmp_all_model_ids[index]
-        self.__tmp_all_model_ids = None # We don't need it anymore
+        model_id, model_name = self.__tmp_all_models[index]
+
+        self.__tmp_all_models = None # We don't need it anymore
         log_debug("Model selected id: " + model_id)
 
         # Save newly created model to the project settings
         settings = self.load_settings()
         settings[EI_MODEL_ID] = model_id
+        settings[EI_MODEL_NAME] = model_name
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+        # Reset the logs
+        self.env.log_manager.reset()
+
+        # Update the Model name in the status bar
+        self.update_model_name_in_status(query_model_name=False)
 
         if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
             return
@@ -1059,9 +1069,9 @@ class ImpSelectModel(BaseElectricImpCommand):
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
         revisions = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                       PL_BUILD_API_URL + "models/" + model_id + "/revisions").json()
+                                       PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions").json()
         if len(revisions["revisions"]) > 0:
-            latest_revision_url = PL_BUILD_API_URL + "models/" + model_id + "/revisions/" + \
+            latest_revision_url = PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions/" + \
                                   str(revisions["revisions"][0]["version"])
             code = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                       latest_revision_url).json()
@@ -1115,7 +1125,7 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
             return
 
         response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL + "devices/" + device_id,
+                                      PL_BUILD_API_URL_V4 + "devices/" + device_id,
                                       '{"model_id": ""}')
         if not HTTPConnection.is_response_valid(response):
             sublime.message_dialog(STR_MODEL_REMOVE_DEVICE_FAILED)
@@ -1143,10 +1153,10 @@ class AnfNewProject(AdvancedNewFileNew):
             self.on_path_provided(path)
 
     def update_status_message(self, creation_path):
-        self.window.active_view().set_status(PL_VIEW_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
+        self.window.active_view().set_status(PL_PLUGIN_STATUS_KEY, STR_STATUS_CREATING_PROJECT.format(creation_path))
 
     def clear(self):
-        self.window.active_view().set_status(key=PL_VIEW_STATUS_KEY, value="")
+        self.window.active_view().erase_status(PL_PLUGIN_STATUS_KEY)
 
 
 # This is a helper class to implement text substitution in the file path command line
@@ -1158,7 +1168,7 @@ class AnfReplaceCommand(sublime_plugin.TextCommand):
 class ImpErrorProcessor(sublime_plugin.EventListener):
 
     CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s.*\((.*)\:(\d+)\)"
-    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s*(?:\S*)\s*(?:at|from)\s*\S+\s*(.*):(\d+)\s*"
+    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s*(?:\S*)\s*(?:at|from)\s*.*\s+(\S*):(\d+)\s*"
 
     def on_post_text_command(self, view, command_name, args):
         window = view.window()
@@ -1212,12 +1222,25 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                                       icon="circle",
                                       flags=sublime.DRAW_SOLID_UNDERLINE)
                 file_view.show(error_region)
-            select_region()
+            attempt = 0
+            max_attempts = 3
+            while file_view.is_loading() and attempt < max_attempts:
+                attempt += 1
+                sublime.set_timeout(select_region, 100)
 
+    def __update_status(self, view):
+        env = Env.For(view.window())
+        env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+
+    def on_new(self, view):
+        self.__update_status(view)
+
+    def on_load(self, view):
+        self.__update_status(view)
 
 def log_debug(text):
     global plugin_settings
-    if plugin_settings.get(PL_DEBUG_FLAG):
+    if plugin_settings and plugin_settings.get(PL_DEBUG_FLAG):
         print("  [EI::Debug] " + text)
 
 
@@ -1226,71 +1249,119 @@ def plugin_loaded():
     plugin_settings = sublime.load_settings(PL_SETTINGS_FILE)
 
 
+class LogManager:
+    def __init__(self, env):
+        self.env = env
+        self.poll_url = None
+        self.last_shown_log = None
+
+    def query_logs(self):
+        device_id = self.env.project_manager.load_settings().get(EI_DEVICE_ID)
+        if not device_id:
+            # Nothing to do yet
+            return
+        if self.poll_url:
+            url = PL_BUILD_API_URL_BASE + self.poll_url
+        else:
+            url = PL_BUILD_API_URL_V4 + "devices/" + device_id + "/logs"
+        start = datetime.datetime.now()
+        try:
+            response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url, timeout=PL_LONG_POLL_TIMEOUT)
+        except requests.exceptions.ReadTimeout:
+            # Ignore the timeout exception
+            return None
+        elapsed = datetime.datetime.now() - start
+        log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
+
+        # There was an error while retrieving logs from the server
+        if not HTTPConnection.is_response_valid(response):
+            log_debug(STR_FAILED_TO_GET_LOGS)
+            return None
+        return response.json()
+
+    @staticmethod
+    def get_poll_url(logs_json):
+        if not logs_json:
+            return None
+        return logs_json["poll_url"] if "poll_url" in logs_json else None
+
+    @staticmethod
+    def logs_are_equal(first, second):
+        return first["type"] == second["type"] and \
+               first["message"] == second["message"] and \
+               first["timestamp"] == second["timestamp"]
+
+    def update_logs(self):
+        def __update_logs():
+            logs_json = self.query_logs()
+            if not logs_json:
+                self.poll_url = None
+                return
+            self.poll_url = LogManager.get_poll_url(logs_json)
+            logs_list = logs_json["logs"]
+            i = len(logs_list) if logs_list else 0
+            while i > 0:
+                i -= 1
+                log = logs_list[i]
+                if self.last_shown_log and LogManager.logs_are_equal(self.last_shown_log, log):
+                    i += 1
+                    break
+            while i < len(logs_list):
+                log = logs_list[i]
+                self.write_to_console(log)
+                self.last_shown_log = log
+                i += 1
+        sublime.set_timeout_async(__update_logs, 0)
+
+    def convert_line_numbers(self, log):
+        message = log["message"]
+        if log["type"] in ["server.error", "agent.error"]:
+            # agent/device runtime errors
+            preprocessor = self.env.code_processor
+            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s*(\S*)\s*(?:device_code|agent_code|main):(\d+)")
+            match = pattern.match(log["message"])
+            log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") +
+                      "  [ ] Original runtime error: " + log["message"])
+            if match:
+                func_name = match.group(1)
+                line_read = int(match.group(2)) - 1
+                try:
+                    (orig_file, orig_line) = preprocessor.get_error_location(
+                        SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read, self.env)
+                    message = STR_ERR_RUNTIME_ERROR.format(func_name, orig_file, orig_line)
+                except:
+                    pass  # Use original message if failed to translate the error location
+        return message
+
+    def write_to_console(self, log):
+        message = self.convert_line_numbers(log)
+        try:
+            log_type = {
+                "status": "[Server]",
+                "server.log": "[Device]",
+                "server.error": "[Device]",
+                "lastexitcode": "[Device]",
+                "agent.log": "[Agent] ",
+                "agent.error": "[Agent] "
+            }[log["type"]]
+        except KeyError:
+            log_debug("Unrecognized log type: " + log["type"])
+            log_type = "[Unrecognized]"
+        dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
+        self.env.ui_manager.write_to_console(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + log_type + " " + message)
+
+    def reset(self):
+        self.poll_url = None
+        self.last_shown_log = None
+
 def update_log_windows(restart_timer=True):
     global project_env_map
     try:
         for (project_path, env) in list(project_env_map.items()):
-            if not ProjectManager.is_electric_imp_project_window(env.window):
-                # It's not a windows that corresponds to an EI project, remove it from the list
-                del project_env_map[project_path]
-                log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
-                continue
-            device_id = env.project_manager.load_settings().get(EI_DEVICE_ID)
-            timestamp = env.logs_timestamp
-            if None in [device_id, timestamp, env.project_manager.get_build_api_key()]:
-                # Device is not selected yet and the console is not setup for the project, nothing we can do here
-                continue
-            url = PL_BUILD_API_URL + "devices/" + device_id + "/logs?since=" + urllib.parse.quote(timestamp)
-            response = HTTPConnection.get(env.project_manager.get_build_api_key(), url)
-
-            # There was an error while retrieving logs from the server
-            if not HTTPConnection.is_response_valid(response):
-                log_debug(STR_FAILED_TO_GET_LOGS)
-                continue
-
-            response_json = response.json()
-            log_size = 0 if "logs" not in response_json else len(response_json["logs"])
-            if log_size > 0:
-                timestamp = response_json["logs"][log_size - 1]["timestamp"]
-                if not timestamp:
-                    log_debug("[ERROR] Oops again: timestamp is None for the message: " + response_json["logs"][log_size - 1])
-                    # Don't do anything if timestamp is null, we'll try to reiterate later.
-                    break
-                env.logs_timestamp = timestamp
-                for log in response_json["logs"]:
-                    message = log["message"]
-                    if log["type"] in ["server.error", "agent.error"]:
-                        # agent/device runtime errors
-                        preprocessor = env.code_processor
-                        pattern = re.compile(r"ERROR:\s*(?:at|from)\s*(\S+)\s*.*:(\d+)")
-                        match = pattern.match(log["message"])
-                        log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") + "  [ ] Original runtime error: " + log["message"])
-                        if match:
-                            func_name = match.group(1)
-                            line_read = int(match.group(2)) - 1
-                            try:
-                                (orig_file, orig_line) = preprocessor.get_error_location(
-                                    SourceType.AGENT if log["type"] == "agent.error" else SourceType.DEVICE, line_read, env)
-                                message = STR_ERR_RUNTIME_ERROR.format(func_name, orig_file, orig_line)
-                            except:
-                                pass  # Use original message if failed to translate the error location
-                    try:
-                        type = {
-                            "status"       : "[Server]",
-                            "server.log"   : "[Device]",
-                            "server.error" : "[Device]",
-                            "lastexitcode" : "[Device]",
-                            "agent.log"    : "[Agent] ",
-                            "agent.error"  : "[Agent] "
-                        }[log["type"]]
-                    except KeyError:
-                        log_debug("Unrecognized log type: " + log["type"])
-                        type = "[Unrecognized]"
-                    dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
-                    env.ui_manager.write_to_console(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + type + " " + message)
+            env.log_manager.update_logs()
     finally:
         if restart_timer:
-            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)
+            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_RESTART_PERIOD)
 
 
 update_log_windows()
