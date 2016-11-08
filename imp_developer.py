@@ -41,10 +41,11 @@ PL_DEBUG_FLAG            = "debug"
 PL_AGENT_URL             = "https://agent.electricimp.com/{}"
 PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
-PL_LOGS_UPDATE_PERIOD    = 1000 # ms
 PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_MODEL_STATUS_KEY      = "model-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
+PL_LONG_POLL_TIMEOUT     = 5 # sec
+PL_LOGS_UPDATE_RESTART_PERIOD = 1000 # ms
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -261,8 +262,8 @@ class HTTPConnection:
                             headers=HTTPConnection.__get_http_headers(key)).status_code == requests.codes.ok
 
     @staticmethod
-    def get(key, url):
-        return requests.get(url, headers=HTTPConnection.__get_http_headers(key))
+    def get(key, url, timeout=None):
+        return requests.get(url, headers=HTTPConnection.__get_http_headers(key), timeout=timeout)
 
     @staticmethod
     def post(key, url, data=None):
@@ -573,6 +574,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         self.update_model_name_in_status(query_model_name=False)
 
+        # Reset the logs
+        self.env.log_manager.reset()
+
         # Check settings
         self.check_settings(selecting_or_creating_model=True)
 
@@ -694,6 +698,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.env.tmp_device_ids = None
         # Loop back to the main settings check
         self.check_settings()
+        # Reset the logs
+        self.env.log_manager.reset()
 
     def on_build_api_key_provided(self, key):
         log_debug("build api key provided: " + key)
@@ -1048,6 +1054,10 @@ class ImpSelectModel(BaseElectricImpCommand):
         settings[EI_MODEL_NAME] = model_name
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
+        # Reset the logs
+        self.env.log_manager.reset()
+
+        # Update the Model name in the status bar
         self.update_model_name_in_status(query_model_name=False)
 
         if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
@@ -1214,6 +1224,15 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                 file_view.show(error_region)
             select_region()
 
+    def __update_status(self, view):
+        env = Env.For(view.window())
+        env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+
+    def on_new(self, view):
+        self.__update_status(view)
+
+    def on_load(self, view):
+        self.__update_status(view)
 
 def log_debug(text):
     global plugin_settings
@@ -1242,7 +1261,11 @@ class LogManager:
         else:
             url = PL_BUILD_API_URL_V4 + "devices/" + device_id + "/logs"
         start = datetime.datetime.now()
-        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url)
+        try:
+            response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url, timeout=PL_LONG_POLL_TIMEOUT)
+        except requests.exceptions.ReadTimeout:
+            # Ignore the timeout exception
+            return None
         elapsed = datetime.datetime.now() - start
         log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
@@ -1323,6 +1346,9 @@ class LogManager:
         dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
         self.env.ui_manager.write_to_console(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + log_type + " " + message)
 
+    def reset(self):
+        self.poll_url = None
+        self.last_shown_log = None
 
 def update_log_windows(restart_timer=True):
     global project_env_map
@@ -1331,7 +1357,7 @@ def update_log_windows(restart_timer=True):
             env.log_manager.update_logs()
     finally:
         if restart_timer:
-            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)
+            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_RESTART_PERIOD)
 
 
 update_log_windows()
