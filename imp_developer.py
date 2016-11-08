@@ -200,7 +200,8 @@ class UIManager:
         env.log_manager.last_shown_log = None
 
     def write_to_console(self, text):
-        terminal = Env.For(self.window).terminal
+        env = Env.For(self.window)
+        terminal = env.terminal if "terminal" in env else None
         if terminal:
             terminal.set_read_only(False)
             terminal.run_command("append", {"characters": text + "\n"})
