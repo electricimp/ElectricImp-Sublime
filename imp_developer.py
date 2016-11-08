@@ -232,12 +232,14 @@ class UIManager:
         env = Env.For(self.window)
         settings = env.project_manager.load_settings()
         if settings and property_name in settings:
-            model_name = settings.get(property_name)
-            log_debug("Setting status Model name: " + model_name)
-            env.ui_manager.set_status_message(status_key, formatted_string.format(model_name))
+            property_value = settings.get(property_name)
+            if property_value:
+                log_debug("Setting status for property \"" + property_name + "\" value: " + property_value)
+                env.ui_manager.set_status_message(status_key, formatted_string.format(property_value))
+            else:
+                log_debug("Property \"" + property_name + "\" has no value")
         else:
-            log_debug("Failed to update the Model name in status")
-
+            log_debug("Property \"" + property_name + "\" is not found in the settings")
 
 class HTTPConnection:
     """Implementation of all the Electric Imp connection functionality"""
@@ -272,7 +274,7 @@ class HTTPConnection:
 
     @staticmethod
     def is_response_valid(response):
-        return response.status_code in [
+        return response and response.status_code in [
             requests.codes.ok,
             requests.codes.created,
             requests.codes.accepted
@@ -725,6 +727,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         if query_model_name:
             settings = self.load_settings()
             model_id = settings.get(EI_MODEL_ID)
+            if not model_id or not self.env.project_manager.get_build_api_key():
+                # Nothing to update
+                return
             response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
                                           PL_BUILD_API_URL_V4 + "models/" + str(model_id))
             if HTTPConnection.is_response_valid(response):
@@ -1229,6 +1234,9 @@ class LogManager:
 
     def query_logs(self):
         device_id = self.env.project_manager.load_settings().get(EI_DEVICE_ID)
+        if not device_id:
+            # Nothing to do yet
+            return
         if self.poll_url:
             url = PL_BUILD_API_URL_BASE + self.poll_url
         else:
