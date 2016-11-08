@@ -201,7 +201,7 @@ class UIManager:
 
     def write_to_console(self, text):
         env = Env.For(self.window)
-        terminal = env.terminal if "terminal" in env else None
+        terminal = env.terminal if hasattr(env, "terminal") else None
         if terminal:
             terminal.set_read_only(False)
             terminal.run_command("append", {"characters": text + "\n"})
