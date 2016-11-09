@@ -1359,6 +1359,12 @@ def update_log_windows(restart_timer=True):
     global project_env_map
     try:
         for (project_path, env) in list(project_env_map.items()):
+            # Clean up project windows first
+            if not ProjectManager.is_electric_imp_project_window(env.window):
+                # It's not a windows that corresponds to an EI project, remove it from the list
+                del project_env_map[project_path]
+                log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
+                continue
             env.log_manager.update_logs()
     finally:
         if restart_timer:
