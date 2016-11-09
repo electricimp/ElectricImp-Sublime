@@ -1230,7 +1230,16 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                 sublime.set_timeout(select_region, 100)
 
     def __update_status(self, view):
-        env = Env.For(view.window())
+        window = view.window()
+        if not ProjectManager.is_electric_imp_project_window(window):
+            # Do nothing if it's not an EI project
+            return
+
+        # If there is no existing env for the window, create one
+        env = Env.For(window)
+        if not env:
+            env = Env.get_existing_or_create_env_for(window)
+
         env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
 
     def on_new(self, view):
