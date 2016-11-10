@@ -1267,6 +1267,7 @@ class LogManager:
         self.last_shown_log = None
 
     def query_logs(self):
+        log_request_time = False
         device_id = self.env.project_manager.load_settings().get(EI_DEVICE_ID)
         if not device_id:
             # Nothing to do yet
@@ -1275,14 +1276,20 @@ class LogManager:
             url = PL_BUILD_API_URL_BASE + self.poll_url
         else:
             url = PL_BUILD_API_URL_V4 + "devices/" + device_id + "/logs"
-        start = datetime.datetime.now()
+
+        start = None
+        if log_request_time:
+            start = datetime.datetime.now()
+
         try:
             response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url, timeout=PL_LONG_POLL_TIMEOUT)
         except requests.exceptions.ReadTimeout:
             # Ignore the timeout exception
             return None
-        elapsed = datetime.datetime.now() - start
-        log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
+
+        if log_request_time:
+            elapsed = datetime.datetime.now() - start
+            log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
         # There was an error while retrieving logs from the server
         if not HTTPConnection.is_response_valid(response):
