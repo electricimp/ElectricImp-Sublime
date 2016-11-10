@@ -254,7 +254,8 @@ class HTTPConnection:
     def __get_http_headers(key):
         return {
             "Authorization": "Basic " + HTTPConnection.__base64_encode(key),
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent" : "imp-developer/sublime"
         }
 
     @staticmethod
