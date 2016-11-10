@@ -255,7 +255,7 @@ class HTTPConnection:
         return {
             "Authorization": "Basic " + HTTPConnection.__base64_encode(key),
             "Content-Type": "application/json",
-            "User-Agent" : "imp-developer/sublime"
+            "User-Agent": "imp-developer/sublime"
         }
 
     @staticmethod
