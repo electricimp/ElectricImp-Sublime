@@ -1226,9 +1226,11 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                 file_view.show(error_region)
             attempt = 0
             max_attempts = 3
-            while file_view.is_loading() and attempt < max_attempts:
+            while attempt < max_attempts:
                 attempt += 1
                 sublime.set_timeout(select_region, 100)
+                if not file_view.is_loading():
+                    break
 
     def __update_status(self, view):
         window = view.window()
