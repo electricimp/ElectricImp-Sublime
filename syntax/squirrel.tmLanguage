@@ -2770,9 +2770,15 @@
 				</dict>
 				<dict>
 					<key>match</key>
-					<string>\b(getroottable|assert|print|error|array|type|callee|dummy|clock|time|date)\b</string>
-					<key>name</key>
-					<string>support.function.squirrel</string>
+					<string>\b(getroottable|assert|print|error|array|type|callee|dummy|clock|time|date)\b(?:\s*\()</string>
+					<key>captures</key>
+					<dict>
+						<key>1</key>
+						<dict>
+							<key>name</key>
+							<string>support.function.squirrel</string>
+						</dict>
+					</dict>
 				</dict>
 				<dict>
 					<key>match</key>
