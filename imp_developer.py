@@ -1338,7 +1338,7 @@ class LogManager:
         if log["type"] in ["server.error", "agent.error"]:
             # agent/device runtime errors
             preprocessor = self.env.code_processor
-            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s*(\S*)\s*(?:device_code|agent_code|main):(\d+)")
+            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s+(\w+)\s*(?:\w*):(\d+)")
             match = pattern.match(log["message"])
             log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") +
                       "  [ ] Original runtime error: " + log["message"])
