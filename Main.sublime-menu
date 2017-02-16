@@ -1,58 +1,60 @@
 [
 	{
-	    "id"       : "ElectricImp",
-	    "mnemonic" : "E",
-	    "id"       : "electricimp",
-	    "caption"  : "Electric Imp",
-	    "children" : [ 
-	    	{
-		    	"caption" : "Build and Run",
-		    	"command" : "imp_build_and_run"
-		    },
-            { "caption": "-" },
-	    	{
-		    	"caption" : "Create Project",
-		    	"command" : "imp_create_project"
-		    },
-		    {
-		        "caption" : "Model",
-		        "children": [
+        "id": "tools",
+        "caption": "Tools",
+        "mnemonic": "T",
+        "children" : [
+            {
+                "id"  : "packages",
+                "caption": "Packages",
+                "children" : [
                     {
-                        "caption" : "Create",
-                        "command" : "imp_create_model"
-                    },
-                    {
-                        "caption" : "Select",
-                        "command" : "imp_select_model"
-                    },
-                    {
-                        "caption" : "Device",
-                        "children": [
+                        "id"       : "electricimp",
+                        "caption"  : "Electric Imp",
+                        "children" : [
                             {
-                                "caption" : "Add",
+                                "caption" : "Build and Run",
+                                "command" : "imp_build_and_run"
+                            },
+                            {
+                                "caption" : "Create Project",
+                                "command" : "imp_create_project"
+                            },
+                            { "caption": "-" },
+                            {
+                                "caption" : "Create Model",
+                                "command" : "imp_create_model"
+                            },
+                            {
+                                "caption" : "Select Model",
+                                "command" : "imp_select_model"
+                            },
+                            { "caption": "-" },
+                            {
+                                "caption" : "Add Device",
                                 "command" : "imp_add_device_to_model"
                             },
                             {
-                                "caption" : "Select",
+                                "caption" : "Select Device",
                                 "command" : "imp_select_device"
                             },
                             {
-                                "caption" : "Remove",
+                                "caption" : "Remove Device",
                                 "command" : "imp_remove_device_from_model"
+                            },
+                            { "caption": "-" },
+                            {
+                                "caption" : "Show Console",
+                                "command" : "imp_show_console"
+                            },
+                            {
+                                "caption" : "Get Agent URL",
+                                "command" : "imp_get_agent_url"
                             }
                         ]
                     }
-		        ]
-		    },
-		    { "caption": "-" },
-	    	{
-		    	"caption" : "Show Console",
-		    	"command" : "imp_show_console"
-		    },
-	    	{
-		    	"caption" : "Get Agent URL",
-		    	"command" : "imp_get_agent_url"
-		    }
+                ]
+            }
 	    ]
 	}
 ]

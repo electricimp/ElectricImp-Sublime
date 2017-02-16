@@ -12,20 +12,11 @@
 import os
 import sys
 
-import imp
 import sublime_plugin
 import unittest
 
-sys.path.append(os.path.dirname(__file__))
-sys.path.append(os.path.join(os.path.abspath(os.path.dirname(__file__)), "plugin_tests"))
-
-import plugin_tests
-from plugin_tests import os_tests
-from plugin_tests import preproc_error_origin
-
-plugin_tests = imp.reload(plugin_tests)
-plugin_tests.os_tests = imp.reload(plugin_tests.os_tests)
-plugin_tests.preproc_error_origin = imp.reload(plugin_tests.preproc_error_origin)
+from .plugin_tests import os_tests
+from .plugin_tests import preproc_error_origin
 
 test_classes = [
     os_tests.OSTests,

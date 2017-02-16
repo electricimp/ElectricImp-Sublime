@@ -15,12 +15,12 @@ import sublime
 import sublime_plugin
 
 # Import string resources
-from plugin_resources.strings import *
-from plugin_resources.node_locator import NodeLocator
+from .plugin_resources.strings import *
+from .plugin_resources.node_locator import NodeLocator
 
 # Import third party modules
-from modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
-from modules.Requests_2_10_0 import requests
+from .modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
+from .modules.Requests_2_10_0 import requests
 
 # Generic plugin constants
 PL_BUILD_API_URL_BASE    = "https://build.electricimp.com"

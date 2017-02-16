@@ -9,4 +9,3 @@ class PreprocTests(unittest.TestCase):
 
     def test_find_origin(self):
         pass
-

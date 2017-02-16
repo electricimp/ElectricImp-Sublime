@@ -6,7 +6,7 @@ import os
 import unittest
 import sublime
 
-import imp_developer
+from .. import imp_developer
 
 
 class OSTests(unittest.TestCase):
