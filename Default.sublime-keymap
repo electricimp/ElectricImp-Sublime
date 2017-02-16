@@ -1,5 +1,5 @@
 [
    { "keys": ["ctrl+shift+l"], "command": "imp_create_project" },
-   { "keys": ["ctrl+shift+d"], "command": "imp_build_and_run" },
+   { "keys": ["ctrl+shift+b"], "command": "imp_build_and_run" },
    { "keys": ["ctrl+shift+c"], "command": "imp_show_console" }
 ]

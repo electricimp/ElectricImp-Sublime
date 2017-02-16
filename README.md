@@ -176,9 +176,11 @@ Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu ite
 
 **Electric Imp specific menu items are only available if an Electric Imp project is opened in the currently active window**
 
-- Create Project: Ctrl + Shift + L
-- Build and Run: Ctrl + Shift + D
-- Show Logs Console: Ctrl + Shift + C
+| Command | Keypress |
+| ------- | -------- |
+|Create Project | Ctrl + Shift + L|
+|Build and Run | Ctrl + Shift + B |
+|Show Logs Console | Ctrl + Shift + C |
 
 ## Preprocessor and Multi-File Support
  
