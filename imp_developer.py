@@ -10,28 +10,26 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 
 import imp
 import sublime
 import sublime_plugin
 
 # Import string resources
-sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 import plugin_resources
-plugin_resources = imp.reload(plugin_resources)
 from plugin_resources.strings import *
-plugin_resources.strings = imp.reload(plugin_resources.strings)
 from plugin_resources.node_locator import NodeLocator
+
+# Reload the modules
+plugin_resources = imp.reload(plugin_resources)
+plugin_resources.strings = imp.reload(plugin_resources.strings)
 plugin_resources.node_locator = imp.reload(plugin_resources.node_locator)
 
 # Import AdvancedNewFile module
-sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Sublime-AdvancedNewFile-1.0.0"))
-from advanced_new_file.commands import AdvancedNewFileNew
+from modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
 
 # Import Requests module
-sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Requests-2.10.0"))
-import requests
+from modules.Requests_2_10_0 import requests
 
 # Generic plugin constants
 PL_BUILD_API_URL_BASE    = "https://build.electricimp.com"
