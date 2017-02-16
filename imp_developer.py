@@ -1249,6 +1249,7 @@ def log_debug(text):
 def plugin_loaded():
     global plugin_settings
     plugin_settings = sublime.load_settings(PL_SETTINGS_FILE)
+    update_log_windows()
 
 
 class LogManager:
@@ -1377,6 +1378,3 @@ def update_log_windows(restart_timer=True):
     finally:
         if restart_timer:
             sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_RESTART_PERIOD)
-
-
-update_log_windows()
