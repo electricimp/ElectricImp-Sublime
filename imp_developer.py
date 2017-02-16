@@ -11,24 +11,15 @@ import shutil
 import subprocess
 import sys
 
-import imp
 import sublime
 import sublime_plugin
 
 # Import string resources
-import plugin_resources
 from plugin_resources.strings import *
 from plugin_resources.node_locator import NodeLocator
 
-# Reload the modules
-plugin_resources = imp.reload(plugin_resources)
-plugin_resources.strings = imp.reload(plugin_resources.strings)
-plugin_resources.node_locator = imp.reload(plugin_resources.node_locator)
-
-# Import AdvancedNewFile module
+# Import third party modules
 from modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
-
-# Import Requests module
 from modules.Requests_2_10_0 import requests
 
 # Generic plugin constants
