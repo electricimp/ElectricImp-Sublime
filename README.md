@@ -179,7 +179,7 @@ Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu ite
 | Command | Keypress |
 | ------- | -------- |
 |Create Project | Ctrl + Shift + L|
-|Build and Run | Ctrl + Shift + B |
+|Build and Run | Ctrl + Shift + X |
 |Show Logs Console | Ctrl + Shift + C |
 
 ## Preprocessor and Multi-File Support
