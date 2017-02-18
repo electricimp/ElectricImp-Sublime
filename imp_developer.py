@@ -34,7 +34,7 @@ PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_MODEL_STATUS_KEY      = "model-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 PL_LONG_POLL_TIMEOUT     = 5 # sec
-PL_LOGS_UPDATE_RESTART_PERIOD = 1000 # ms
+PL_LOGS_UPDATE_PERIOD    = 1000 # ms
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -1377,4 +1377,4 @@ def update_log_windows(restart_timer=True):
             env.log_manager.update_logs()
     finally:
         if restart_timer:
-            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_RESTART_PERIOD)
+            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)
