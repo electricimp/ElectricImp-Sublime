@@ -1,0 +1,5 @@
+[
+  { "caption": "Electric Imp: Create New Project", "command": "imp_create_project" },
+  { "caption": "Electric Imp: Build And Run", "command": "imp_build_and_run" },
+  { "caption": "Electric Imp: Show Console", "command": "imp_show_console" }
+]

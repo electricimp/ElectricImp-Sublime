@@ -10,28 +10,17 @@ import re
 import shutil
 import subprocess
 import sys
-import time
 
-import imp
 import sublime
 import sublime_plugin
 
 # Import string resources
-sys.path.append(os.path.join(os.path.dirname(__file__), "."))
-import plugin_resources
-plugin_resources = imp.reload(plugin_resources)
-from plugin_resources.strings import *
-plugin_resources.strings = imp.reload(plugin_resources.strings)
-from plugin_resources.node_locator import NodeLocator
-plugin_resources.node_locator = imp.reload(plugin_resources.node_locator)
+from .plugin_resources.strings import *
+from .plugin_resources.node_locator import NodeLocator
 
-# Import AdvancedNewFile module
-sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Sublime-AdvancedNewFile-1.0.0"))
-from advanced_new_file.commands import AdvancedNewFileNew
-
-# Import Requests module
-sys.path.append(os.path.join(os.path.dirname(__file__), "modules", "Requests-2.10.0"))
-import requests
+# Import third party modules
+from .modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
+from .modules.Requests_2_10_0 import requests
 
 # Generic plugin constants
 PL_BUILD_API_URL_BASE    = "https://build.electricimp.com"
@@ -45,7 +34,7 @@ PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_MODEL_STATUS_KEY      = "model-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 PL_LONG_POLL_TIMEOUT     = 5 # sec
-PL_LOGS_UPDATE_RESTART_PERIOD = 1000 # ms
+PL_LOGS_UPDATE_PERIOD    = 1000 # ms
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -200,7 +189,8 @@ class UIManager:
         env.log_manager.last_shown_log = None
 
     def write_to_console(self, text):
-        terminal = Env.For(self.window).terminal
+        env = Env.For(self.window)
+        terminal = env.terminal if hasattr(env, "terminal") else None
         if terminal:
             terminal.set_read_only(False)
             terminal.run_command("append", {"characters": text + "\n"})
@@ -253,7 +243,8 @@ class HTTPConnection:
     def __get_http_headers(key):
         return {
             "Authorization": "Basic " + HTTPConnection.__base64_encode(key),
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "imp-developer/sublime"
         }
 
     @staticmethod
@@ -1224,12 +1215,23 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                 file_view.show(error_region)
             attempt = 0
             max_attempts = 3
-            while file_view.is_loading() and attempt < max_attempts:
+            while attempt < max_attempts:
                 attempt += 1
                 sublime.set_timeout(select_region, 100)
+                if not file_view.is_loading():
+                    break
 
     def __update_status(self, view):
-        env = Env.For(view.window())
+        window = view.window()
+        if not ProjectManager.is_electric_imp_project_window(window):
+            # Do nothing if it's not an EI project
+            return
+
+        # If there is no existing env for the window, create one
+        env = Env.For(window)
+        if not env:
+            env = Env.get_existing_or_create_env_for(window)
+
         env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
 
     def on_new(self, view):
@@ -1247,6 +1249,7 @@ def log_debug(text):
 def plugin_loaded():
     global plugin_settings
     plugin_settings = sublime.load_settings(PL_SETTINGS_FILE)
+    update_log_windows()
 
 
 class LogManager:
@@ -1256,6 +1259,7 @@ class LogManager:
         self.last_shown_log = None
 
     def query_logs(self):
+        log_request_time = False
         device_id = self.env.project_manager.load_settings().get(EI_DEVICE_ID)
         if not device_id:
             # Nothing to do yet
@@ -1264,14 +1268,20 @@ class LogManager:
             url = PL_BUILD_API_URL_BASE + self.poll_url
         else:
             url = PL_BUILD_API_URL_V4 + "devices/" + device_id + "/logs"
-        start = datetime.datetime.now()
+
+        start = None
+        if log_request_time:
+            start = datetime.datetime.now()
+
         try:
             response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url, timeout=PL_LONG_POLL_TIMEOUT)
         except requests.exceptions.ReadTimeout:
             # Ignore the timeout exception
             return None
-        elapsed = datetime.datetime.now() - start
-        log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
+
+        if log_request_time:
+            elapsed = datetime.datetime.now() - start
+            log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
         # There was an error while retrieving logs from the server
         if not HTTPConnection.is_response_valid(response):
@@ -1318,7 +1328,7 @@ class LogManager:
         if log["type"] in ["server.error", "agent.error"]:
             # agent/device runtime errors
             preprocessor = self.env.code_processor
-            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s*(\S*)\s*(?:device_code|agent_code|main):(\d+)")
+            pattern = re.compile(r"ERROR:\s*(?:at|from|in)\s+(\w+)\s*(?:\w*):(\d+)")
             match = pattern.match(log["message"])
             log_debug(("[RECOGNIZED]  " if match else "[UNRECOGNIZED]") +
                       "  [ ] Original runtime error: " + log["message"])
@@ -1358,10 +1368,13 @@ def update_log_windows(restart_timer=True):
     global project_env_map
     try:
         for (project_path, env) in list(project_env_map.items()):
+            # Clean up project windows first
+            if not ProjectManager.is_electric_imp_project_window(env.window):
+                # It's not a windows that corresponds to an EI project, remove it from the list
+                del project_env_map[project_path]
+                log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
+                continue
             env.log_manager.update_logs()
     finally:
         if restart_timer:
-            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_RESTART_PERIOD)
-
-
-update_log_windows()
+            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)

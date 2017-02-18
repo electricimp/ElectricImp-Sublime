@@ -4,8 +4,9 @@
 
 import os
 import unittest
+import sublime
 
-import imp_developer
+from .. import imp_developer
 
 
 class OSTests(unittest.TestCase):
@@ -13,7 +14,6 @@ class OSTests(unittest.TestCase):
 
     # Verifies that the platform executable exists on the platform
     def test_platform_executable_exists(self):
-        global current_window
-        create_project_command = imp_developer.ImpCreateProjectCommand(current_window)
+        create_project_command = imp_developer.ImpCreateProjectCommand(sublime.active_window())
         path = create_project_command.get_sublime_path()
         self.assertTrue(os.path.exists(path))

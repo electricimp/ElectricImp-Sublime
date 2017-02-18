@@ -6,7 +6,7 @@ class NodeLocator:
         self.platform = platform
 
     def get_root_nodejs_dir_path(self):
-        result = None
+        result = ""
         if self.platform == "windows":
             path64 = "C:\\Program Files (x86)\\nodejs\\"
             path32 = "C:\\Program Files\\nodejs\\"
