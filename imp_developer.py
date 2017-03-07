@@ -346,8 +346,9 @@ class Preprocessor:
                     # Return on error
                     return None, None
 
-                with open(code_files[1], "w", encoding="utf-8") as output:
-                    output.write(str(prep_out.decode("utf-8")))
+                # Write the binary content to the file
+                with open(code_files[1], "wb") as output:
+                    output.write(prep_out)
 
                 def substitute_string_in_file(filename, old_string, new_string):
                     with open(filename, encoding="utf-8") as f:
