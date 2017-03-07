@@ -21,7 +21,7 @@ for i in range(0, divs.len):
     h2 = div.children("h2")
     if h2.len:
         # Process function section title node
-        print "        \"" + h2[0].children()[0].text() + "\","
+        print("        \"" + h2[0].children()[0].text() + "\",")
     else:
         # Process actual function node, read function params
         h3 = div.children("h3")
@@ -36,5 +36,5 @@ for i in range(0, divs.len):
                     param_separator = ("" if j == params.len - 1 else ", ")
                     arg_string += param_name + param_separator
                     con_string += "${" + str(params.len - 1 - j) + ":" + param_name + "}" + param_separator
-            print "            { \"trigger\": \""   + function_name + "\\t(" + arg_string + ")\"" + \
-                  ", \"contents\": \"" + function_name + "(" + con_string + ")\"" + "},"
+            print("            { \"trigger\": \"" + function_name + "\\t(" + arg_string + ")\"" +
+                  ", \"contents\": \"" + function_name + "(" + con_string + ")\"" + "},")

@@ -120,6 +120,9 @@ class ProjectManager:
         if auth_info:
             return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
 
+    def get_project_directory_path(self):
+        return os.path.dirname(self.window.project_file_name())
+
     def get_source_directory_path(self):
         return os.path.join(os.path.dirname(self.window.project_file_name()), PR_SOURCE_DIRECTORY)
 
@@ -287,16 +290,16 @@ class Preprocessor:
     def preprocess(self, env):
 
         settings = env.project_manager.load_settings()
-        bld_dir  = env.project_manager.get_build_directory_path()
-        src_dir  = env.project_manager.get_source_directory_path()
+        dest_dir = env.project_manager.get_build_directory_path()
+        proj_dir = env.project_manager.get_project_directory_path()
 
-        source_agent_filename  = os.path.join(src_dir, settings.get(EI_AGENT_FILE))
-        result_agent_filename  = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
-        source_device_filename = os.path.join(src_dir, settings.get(EI_DEVICE_FILE))
-        result_device_filename = os.path.join(bld_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
+        source_agent_filename  = os.path.join(proj_dir, settings.get(EI_AGENT_FILE))
+        result_agent_filename  = os.path.join(dest_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
+        source_device_filename = os.path.join(proj_dir, settings.get(EI_DEVICE_FILE))
+        result_device_filename = os.path.join(dest_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
 
-        if not os.path.exists(bld_dir):
-            os.makedirs(bld_dir)
+        if not os.path.exists(dest_dir):
+            os.makedirs(dest_dir)
 
         for code_files in [[
             source_agent_filename,
@@ -343,8 +346,9 @@ class Preprocessor:
                     # Return on error
                     return None, None
 
-                with open(code_files[1], "w", encoding="utf-8") as output:
-                    output.write(str(prep_out.decode("utf-8")))
+                # Write the binary content to the file
+                with open(code_files[1], "wb") as output:
+                    output.write(prep_out)
 
                 def substitute_string_in_file(filename, old_string, new_string):
                     with open(filename, encoding="utf-8") as f:
@@ -926,12 +930,12 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         # Create Electric Imp project settings file
         ProjectManager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
-            EI_AGENT_FILE:  PR_AGENT_FILE_NAME,
-            EI_DEVICE_FILE: PR_DEVICE_FILE_NAME
+            EI_AGENT_FILE:  os.path.join(PR_SOURCE_DIRECTORY, PR_AGENT_FILE_NAME),
+            EI_DEVICE_FILE: os.path.join(PR_SOURCE_DIRECTORY, PR_DEVICE_FILE_NAME)
         })
 
         # Pull the latest code revision from the server
-        (agent_file, device_file) = self.create_source_files_if_absent(path)
+        self.create_source_files_if_absent(path)
 
         try:
             # Try opening the project in the new window
