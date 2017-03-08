@@ -1,73 +1,70 @@
-Electric Imp Sublime Plugin (Beta)
+Electric Imp Sublime Plug-in (Beta)
 ==================================
 
 - [Installation Steps](#installation-steps)
     - [Install Node.js](#install-nodejs)
-    - [Installing Builder Node.js Module](#installing-builder-nodejs-module)
-    - [Install the Electric Imp Sublime Plugin](#install-the-electric-imp-sublime-plugin)
+    - [Install the Builder Node.js Module](#install-the-builder-nodejs-module)
+    - [Install the Electric Imp Sublime Plug-in](#install-the-electric-imp-sublime-plug-in)
 - [Usage](#usage)
-    - [Creating a new Project](#creating-a-new-project)
-    - [Opening an existing Project](#opening-an-existing-project)
+    - [Creating a New Project](#creating-a-new-project)
+    - [Opening an Existing Project](#opening-an-existing-project)
     - [Building and Running](#building-and-running)
     - [Model Management](#model-management)
     - [Logs Console](#logs-console)
-    - [Selecting Device](#selecting-device)
-    - [Adding Device to the Model](#adding-device-to-the-model)
-    - [Removing Device from the Model](#removing-device-from-the-model)
-    - [Retrieving Agent URL](#retrieving-agent-url)
+    - [Selecting a Device](#selecting-a-device)
+    - [Adding a Device to the Model](#adding-a-device-to-the-model)
+    - [Removing a Device from the Model](#removing-a-device-from-the-model)
+    - [Retrieving a Device’s Agent URL](#retrieving-a-devices--agent-url)
     - [Key Shortcuts](#key-shortcuts)
 - [Preprocessor and Multi-File Support](#preprocessor-and-multi-file-support)
     - [Specifying GitHub Authentication Information](#specifying-github-authentication-information)
-    - [Specifying Builder preset Variables Definitions](#specifying-builder-preset-variables-definitions)
-- [Features supported in the current Version](#features-supported-in-the-current-version)
+    - [Specifying Builder Preset Variable Definitions](#specifying-builder-preset-variable-definitions)
+- [Features Supported in the Current Version](#features-supported-in-the-current-version)
 - [Future Development Plans](#future-development-plans)
 
 
-**Electric Imp Sublime Plugin supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are 
-supported. Tested on OS X only.**
+**The Electric Imp Sublime Plug-in supports [Sublime Text 3](https://www.sublimetext.com/3) only &mdash; no other versions are supported. Tested on macOS only.**
 
 ## Installation Steps
 
 ### Install Node.js
 
-**Please note that the Plugin requires Node.js 4.0 or above.**
+**Note** The plug-in requires Node.js 4.0 or above.**
 
-The plugin requires Node.js to be installed on the machine. Please follow 
-[instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
+Please follow [these instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
-### Installing Builder Node.js Module
+### Install the Builder Node.js Module
 
-The plugin uses [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. 
-To install the Builder module, please use npm command:
+The plug-in uses the [Builder](https://github.com/electricimp/Builder) Node.js module for source code pre-processing. 
+To install Builder, please use Node Package Manage (NPM):
 
 ```
 npm i -g Builder
 ```
 
-### Install the Electric Imp Sublime Plugin
+### Install the Electric Imp Sublime Plug-in
 
-You can install the plugin script via the following command in the Sublime Text terminal (``ctrl+` ``) 
-which utilizes `git clone`. NOTE: please make sure you have git installed on your system when trying this method.
+You can install the plug-in script with the following code in the Sublime Text terminal (``ctrl+` ``) 
+which utilizes `git clone`. **Note** please make sure you have *git* installed on your system before trying this method.
 
 ```python
 import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path}); window.run_command('exec', {'cmd': ['git', 'pull'], 'working_dir': os.path.join(path, "imp-developer")})
 ```
 
-or follow the steps manually:
+Alternatively, follow these steps to install the plug-in manually:
 
-1. Download or checkout the plugin package from https://github.com/ElectricImp-CSE/ElectricImp-Sublime
-2. Install the plugin by manally copying the package content into
-    - (OS X): /Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/
-    - (Windows): "%AppData%\Sublime Text 3\Packages\%"
+1. Download or check out the plug-in package from [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime)
+2. Install the plug-in by manually copying the package content into
+    - macOS X: */Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/*
+    - Windows: *"%AppData%\Sublime Text 3\Packages\%"*
 
 ## Usage
 
-### Creating a new Project
+### Creating a New Project
 
-First step is creation of a project by selecting ``Electric Imp->Create Project`` menu item. On the new project creation 
-the user is asked to specify the project folder.
+Your first step should be the creation of a new project. Do this by selecting the ‘Electric Imp’ > ‘Create Project’ menu item. You will then be asked to specify the project folder.
 
-As the result project is created at the specified location:
+The  project folder will be set up with the following
 
 ```
 -- <Project Name>
@@ -81,13 +78,13 @@ As the result project is created at the specified location:
   |--> <Project Name>.sublime-project     - Sublime project file
 ```
 
-**IMPORTANT: settings/auth.info should not be put under a source control as it contains sensitive information!**
+**IMPORTANT** *settings/auth.info* **should not be put under a source control as it contains sensitive information!**
 
-<Project Name>.electric-imp-settings file contains:
+The *<Project Name>.electric-imp-settings* file contains:
 
-- Imp Model ID for the project
-- Device and Agent code file names
-- Selected device id
+- The model ID for the project
+- Device and agent code file names
+- Selected device ID
 
 ```
 {
@@ -98,98 +95,88 @@ As the result project is created at the specified location:
 }
 ```
 
-When a project is created, empty device and agent code (device.nut and agent.nut) files are automatically created 
-and stored in the ``src`` project folder.
+When a project is created, empty device and agent code files (device.nut and agent.nut) are automatically created 
+and stored in the *<Project Name>/src* folder.
 
 If a project is created successfully, a new window with the project folder is opened. 
 
-**NOTE: For the proper Squirrel language syntax highlighting please make sure you have Squirrel (Electric Imp) 
-languages selected under the ``View->Syntax`` menu item.** 
+**Note** For the proper Squirrel language syntax highlighting, please make sure you have Squirrel (Electric Imp) 
+languages selected under the ‘View’ > ‘Syntax’ menu item.
 
-### Opening an existing Project
+### Opening an Existing Project
 
-To open an existing Electric Imp project, select the ``Project->Open Project...`` menu option and choose the 
-<Project Name>.sublime-project file from your project directory.
+To open an existing Electric Imp project, select the ‘Project’ > ‘Open Project...’ menu option and choose the 
+*<Project Name>.sublime-project* file from your project folder.
 
-**The plugin won't properly detect Electric Imp project if it's not opened as described, i.e. if it's opened
-as a folder, not as a Text Sublime project!**
+**Note** The plug-in won’t properly detect Electric Imp project if it is not opened as described, ie. if it is opened
+as a folder, not as a Text Sublime project.
 
 ### Building and Running
 
-To build and deploy the application code, please select ``Electric Imp->Build and Run`` menu item.
-This action uploads the agent and the device code to the server and restarts the model with all the devices attached.
+To build and deploy the application code, please select the ‘Electric Imp’ > ‘Build and Run’ menu item. This action uploads the agent and the device code to the server, and restarts all of the devices assigned to the model.
 
-When one builds the code (or does any other action, that requires access to the imp server) for the first time, the user is asked to provide:
+When you build code (or perform any other action that requires access to the impCloud&trade;) for the first time, you will be asked to provide:
 
-- Path to the Node.js executable (if not automatically detected by the plugin).
-- Location of the Builder cli.js command line tool (if not automatically detected by the plugin).
-- Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
-top right corner and selecting the Build API Keys menu item 
-- New Model name to be created for the project or one of the existing ones to be selected.
+- The path to the Node.js executable (if it is not automatically detected by the plug-in).
+- The location of the Builder *cli.js* command line tool (if not automatically detected by the plug-in).
+- Your Build API Key, which can be obtained at the [Electric Imp IDE](https://ide.electricimp.com/) by clicking on the ‘username’ > ‘Build API Keys’ menu item at the top right of the screen. 
+- A model name. A model with this name will be created for the project, or if the name matches an existing model, that will be used instead.
 
-NOTE: to build and deploy your code it's not necessary to select a device for your project. Even if you don't have a 
-device selected, you still can work on the code, see compilation errors reported by the server.
+**Note** To build and deploy your code it isn’t necessary to select a device for your project. Even if you don’t have a 
+device selected, you can still work on the code and see compilation errors reported by the server.
 
-If you want to have you code running on a specific device and see view the logs, you need to select a device 
-(``Electric Imp->Model->Device->Select`` menu item).
+If you want to have you code running on a specific device and view the logs from that device, you need to select a device using the ‘Electric Imp’ > ‘Model’ > ‘Device’ > ‘Select’ menu item.
 
 ### Model Management
 
-Each Electric Imp project is associated with a particular Model, i.e. application device and agent code.
-One can create a new project Model by selecting ``Electric Imp->Model->Create``. 
+Each Electric Imp project is associated with a particular model, ie. the device and agent code that define your application. You can create a new project model by selecting ‘Electric Imp’ > ‘Model’ > ‘Create’. 
 
-You can also select an existing Model and associate the project with it through ``Electric Imp->Model->Select`` menu item.
+You can also select an existing model and associate the project with it by using the ‘Electric Imp’ > ‘Model’ > ‘Select’ menu item.
 
-**IMPORTANT: The code which is deployed to the Model is preprocessed and contains line control markers in it. On the Model
-selection the plugin pulls down the Model code, but it doesn't restore the original file/folder structure.
-So for collaborative work on the same Model sources, please share the original Electric Imp plugin project sources/structure 
-via a source control.**
+**Important** The code which is deployed to the model is preprocessed and contains line control markers. When you select a model, the plug-in pulls down the model’s code, but it doesn’t transfer the project file/folder structure. So for collaborative work on the same project, please share the original Electric Imp plug-in project sources/structure 
+via a source control.
 
 ### Logs Console
 
-The Console can be popped up by selecting ``Electric Imp->Show Console`` menu item. The Console shows live logs
-from the Model and the selected device.
+The Console can be popped up by selecting ‘Electric Imp’ > ‘Show Console’ menu item. The Console shows live logs
+from the model and the selected device.
 
-### Selecting Device
+### Selecting a Device
 
-Device of the Model the project is associated with can be selected through the 
-``Electric Imp->Model->Device->Select`` menu item. The selected device will used as a source of logs for the Logs Console.
+Any device associated with the project model can be selected using the ‘Electric Imp’ > ‘Model’ > ‘Device’ > ‘Select’ menu item. The selected device will used as a source of logs for the Console.
 
-You can add other devices enrolled into your account to the project Model via ``Electric Imp->Model->Device->Add`` menu item. 
+### Adding a Device to the Model
 
-### Adding Device to the Model
+You can add other devices enrolled into your account to the project model by selecting ‘Electric Imp’ > ‘Model’ > ‘Device’ > ‘Add’.The newly added device is automatically selected as the current one, which means the Console will show its logs.
 
-To add a device to the project model, select ``Electric Imp->Model->Device->Add`` menu item. The newly added device
-is selected as the current one, which means the Console will show the logs for it.
+### Removing a Device from the Model
 
-### Removing Device from the Model
+Devices can be removed from the model by selecting ‘Electric Imp’ > ‘Model’ > ‘Device’ > ‘Remove’.
 
-Devices can be removed from the model by selecting ``Electric Imp->Model->Device->Remove``.
+**Note** You can’t remove an active device (the one that is currently selected for logging).
 
-NOTE: one can't delete an active device (the one that is currently selected as current for the project).
+### Retrieving a Device’s Agent URL
 
-### Retrieving Agent URL
-
-Agent URL can be retrieved by selecting ``Electric Imp->Get Agent URL`` menu item. The URL is saved in the clipboard.
+The URL of a device’s agent can be retrieved by selecting the ‘Electric Imp’ > ‘Get Agent URL’ menu item. The URL is saved in the clipboard.
 
 ### Key Shortcuts
 
-**Electric Imp specific menu items are only available if an Electric Imp project is opened in the currently active window**
+**Note** Electric Imp-specific menu items are only available if an Electric Imp project is opened in the currently active window.
 
 | Command | Keypress |
 | ------- | -------- |
-|Create Project | Ctrl + Shift + L|
-|Build and Run | Ctrl + Shift + X |
-|Show Logs Console | Ctrl + Shift + C |
+| Create Project | Ctrl + Shift + L|
+| Build and Run | Ctrl + Shift + X |
+| Show Logs Console | Ctrl + Shift + C |
 
 ## Preprocessor and Multi-File Support
  
-Please refer to the [Builder](https://github.com/electricimp/Builder) for more information on the preprocessor syntax
-that you can use in your Squirrel code.
+Please refer to the [Builder documentation](https://github.com/electricimp/Builder) for more information on the preprocessor syntax that you can use in your Squirrel code.
 
 ### Specifying GitHub Authentication Information
 
-Please use the project ``<project folder>/settings/auth.info`` file to specify your Builder GitHub authentication information: 
+Please use the project *<Project Name>/settings/auth.info* file to specify your Builder GitHub authentication information: 
+
 ```
 {
     ...
@@ -200,9 +187,10 @@ Please use the project ``<project folder>/settings/auth.info`` file to specify y
 }
 ```
 
-### Specifying Builder preset Variables Definitions
+### Specifying Builder Preset Variable Definitions
 
-Please use the project ``<project folder>/settings/electric-imp.settings`` file to specify the Builder variables definitions: 
+Please use the project *<Project Name>/settings/electric-imp.settings* file to specify the Builder variables definitions: 
+
 ```
 {
     "builder-settings": {
@@ -216,19 +204,18 @@ Please use the project ``<project folder>/settings/electric-imp.settings`` file 
 }
 ```
 
+## Features Supported in the Current Version
 
-## Features supported in the current Version
-
-- Push of the code to the server
-- Live logs view
-- Generating a URL to the agent associated with the device
+- Push code to the server
+- View live logs
+- Copy the URL of the agent paired with the selected device
 - An early version of the Squirrel language code highlighter (to be improved)
-- An early version of the API inline code suggestions (to be improved)
-- Preprocessor [Builder](https://github.com/electricimp/Builder) support
+- An early version of API inline code suggestions (to be improved)
+- [Builder](https://github.com/electricimp/Builder) preprocessor support
 
 ## Future Development Plans
 
-- Improved Compilation/Runtime issues logs representation
+- Improved compilation/runtime issues logs representation
 - Improved highlighting and API suggestions
-- Squirrel code lintering and inline error highlighting
+- Squirrel code linting and inline error highlighting
 - Squirrel refactoring or advanced navigation features
