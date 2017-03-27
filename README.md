@@ -206,7 +206,7 @@ The URL is saved in the clipboard.
 
 | Command | Keypress |
 | ------- | -------- |
-| Create Project | Ctrl + Shift + L|
+| Create Project | Ctrl + Shift + Y |
 | Build and Run | Ctrl + Shift + X |
 | Show Logs Console | Ctrl + Shift + C |
 
