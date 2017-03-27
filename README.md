@@ -48,7 +48,7 @@ supported. Tested on OS X only.
 
 ### Install Node.js
 
-**Note** The plug-in requires Node.js 4.0 or above.**
+**NOTE**: The plug-in requires Node.js 4.0 or above.
 
 Please follow [these instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
