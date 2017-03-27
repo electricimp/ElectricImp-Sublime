@@ -28,7 +28,7 @@ Electric Imp Sublime Plug-in (Beta)
 The Plug-in is designed to improve developer productivity and allows to rapidly build and maintain applications by 
 providing:
 
-* Code auto-completion for []Electric Imp Squirrel API](https://electricimp.com/docs/api/)
+* Code auto-completion for [Electric Imp Squirrel API](https://electricimp.com/docs/api/)
 * Ability to use a source control system to manage application code and configuration
 * Advanced Squirrel code highlighting
 * Integration the [Builder](https://github.com/electricimp/Builder) to enable multi-file 
@@ -38,7 +38,7 @@ projects and code preprocessing
 * Leveraging the rich set of Sublime Text 3 Editor features.
 
 The Plug-in requires connection to the Internet as it leverages the 
-[Electric Imp Build API]([Electric Imp Build API](https://electricimp.com/docs/buildapi/)) 
+[Electric Imp Build API](https://electricimp.com/docs/buildapi/) 
 to work with the the [Electric Imp impCloud™](https://electricimp.com/platform/cloud/).
 
 ## Installation Steps
@@ -63,8 +63,7 @@ npm i -g Builder
 
 ### Install the Electric Imp Sublime Plug-in
 
-You can install the plug-in script via the following command in the Sublime Text terminal (`ctrl+` `) 
-which utilizes `git clone`. 
+You can install the plug-in script via the following command in the Sublime Text terminal (``ctrl+` ``) which utilizes `git clone`. 
 
 **NOTE**: Please make sure you have git installed on your system when trying this method.
 
@@ -149,7 +148,7 @@ for the first time, you will be asked to provide:
 - The path to the Node.js executable (if it is not automatically detected by the plug-in).
 - The location of the Builder *cli.js* command line tool (if not automatically detected by the plug-in).
 - Your Build API Key, which can be obtained at the [Electric Imp IDE](https://ide.electricimp.com/) by clicking on the 
-‘username’ > ‘Build API Keys’ menu item at the top right of the screen. 
+`username` > `Build API Keys` menu item at the top right of the screen. 
 - A model name. A model with this name will be created for the project, 
 or if the name matches an existing model, that will be used instead.
 
