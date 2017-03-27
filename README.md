@@ -50,7 +50,7 @@ supported. Tested on OS X only.
 
 **Note** The plug-in requires Node.js 4.0 or above.**
 
-Please follow [instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
+Please follow [there instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
 ### Install the Builder Node.js Module
 
@@ -85,8 +85,9 @@ Download the full GitHub source repository or clone it from
 
 ### Creating a New Project
 
-First step is creation of a project by selecting `Tools` > `Packages` > `Electric Imp` > `Create Project` menu item. 
-On the new project creation the user is asked to specify the project folder.
+Your first step should be the creation of a new project. 
+Do this by selecting the `Tools` > `Packages` > `Electric Imp` > `Create Project` menu item. 
+You will then be asked to specify the project folder.
 
 The  project folder will be set up with the following
 
@@ -121,12 +122,12 @@ The `electric-imp.settings` file contains:
 ```
 
 When a project is created, empty device and agent code files (`device.nut` and `agent.nut`) are automatically created 
-and stored in the `src` folder.
+and stored in the `<Project Name>/src` folder.
 
 If a project is created successfully, a new window with the project folder is opened. 
 
 **NOTE**: If you need to apply the Squirrel language syntax highlighting to files with extension other than `.nut`
-please make sure you have Squirrel (Electric Imp) languages selected under the `View` > `Syntax` menu item. 
+please make sure you have Squirrel (Electric Imp) language selected under the `View` > `Syntax` menu item. 
 
 ### Opening an Existing Project
 
@@ -138,65 +139,66 @@ as a folder, not as a Text Sublime project!**
 
 ### Building and Running
 
-To build and deploy the application code, please select `Tools` > `Packages` > `Electric Imp` > `Build and Run` menu item.
-This action uploads the agent and the device code to the server and restarts the model with all the devices attached.
+To build and deploy the application code, please select the `Tools` > `Packages` > `Electric Imp` > `Build and Run` 
+menu item. This action uploads the agent and the device code to the server and restarts the model with all 
+the devices attached.
 
 When you build code (or perform any other action that requires access to the impCloud&trade;) 
 for the first time, you will be asked to provide:
 
-- Path to the Node.js executable (if not automatically detected by the plug-in).
-- Location of the Builder cli.js command line tool (if not automatically detected by the plug-in).
-- Build API Key - can be obtained at the [Web IDE](https://ide.electricimp.com) by clicking on user name link at the 
-top right corner and selecting the Build API Keys menu item 
-- New Model name to be created for the project or one of the existing ones to be selected. You can create you model 
-at `Tools` > `Packages` > `Electric Imp` > `Create Model`.
+- The path to the Node.js executable (if it is not automatically detected by the plug-in).
+- The location of the Builder *cli.js* command line tool (if not automatically detected by the plug-in).
+- Your Build API Key, which can be obtained at the [Electric Imp IDE](https://ide.electricimp.com/) by clicking on the 
+‘username’ > ‘Build API Keys’ menu item at the top right of the screen. 
+- A model name. A model with this name will be created for the project, 
+or if the name matches an existing model, that will be used instead.
 
-**NOTE**: to build and deploy your code it's not necessary to select a device for your project. Even if you don't have a 
-device selected, you still can work on the code, see compilation errors reported by the server.
+**NOTE**: To build and deploy your code it isn’t necessary to select a device for your project. Even if you don’t have a 
+device selected, you can still work on the code and see compilation errors reported by the server.
 
-If you want to have you code running on a specific device and see view the logs from it, 
-you need to add a device to the Model 
-(`Tools` > `Packages` > `Electric Imp` > `Add Device`).
+If you want to have you code running on a specific device and view the logs from that device, you need to select a 
+device using the `Tools` > `Packages` > `Electric Imp` > `Add Device` menu item.
 
 ### Model Management
 
-Each Electric Imp project is associated with a particular Model, i.e. application code for device and agent.
-One can create a new project Model by selecting `Tools` > `Packages` > `Electric Imp` > `Create Model`. 
+Each Electric Imp project is associated with a particular model, ie. the device and agent code that define your 
+application. You can create a new project model by selecting `Tools` > `Packages` > `Electric Imp` > `Create Model`. 
 
-You can also select an existing Model and associate the project with it through 
+You can also select an existing model and associate the project with it by using the 
 `Tools` > `Packages` > `Electric Imp` > `Select Model` menu item.
 
-**IMPORTANT: The code which is deployed to the Model is preprocessed and contains line control markers in it. On the Model
-selection the plug-in pulls down the Model code, but it doesn't restore the original file/folder structure.
-So for collaborative work on the same Model sources, please share the original Electric Imp plug-in project 
-sources/structure via a source control.**
+**Important** The code which is deployed to the model is preprocessed and contains line control markers. 
+When you select a model, the plug-in pulls down the model’s code, but it doesn’t transfer the project 
+file/folder structure. So for collaborative work on the same project, please share the original Electric 
+Imp plug-in project sources/structure via a source control.
 
 ### Logs Console
 
 The Console can be popped up by selecting `Tools` > `Packages` > `Electric Imp` > `Show Console` menu item. 
-The Console shows live logs from the Model and the selected device.
+The Console shows live logs from the model and the selected device.
 
-### Adding Device to the Model
+### Adding a Device to the Model
 
-To add a device to the project model, select `Tools` > `Packages` > `Electric Imp` > `Add Device` menu item. 
-The newly added device
-is selected as the current one, which means the Console will show the logs for it.
+You can add other devices enrolled into your account to the project model by selecting 
+`Tools` > `Packages` > `Electric Imp` > `Add Device`. 
+The newly added device is automatically selected as the current one, which means the Console will show its logs.
 
 ### Selecting a Device
 
-Device of the Model the project is associated with can be selected through the 
-`Tools` > `Packages` > `Electric Imp` > `Select Device` menu item. The selected device will used as a source of logs 
-for the Logs Console.
+Any device associated with the project model can be selected using the  
+`Tools` > `Packages` > `Electric Imp` > `Select Device` menu item. 
+The selected device will used as a source of logs for the Console.
 
 ### Removing a Device from the Model
 
 Devices can be removed from the model by selecting `Tools` > `Packages` > `Electric Imp` > `Remove Device`.
 
-**NOTE**: you can't delete an active device (the one that is currently selected for the project).
+**NOTE**: You can’t remove an active device (the one that is currently selected for logging).
 
-### Retrieving a Device's Agent URL
+### Retrieving a Device’s Agent URL
 
-Agent URL can be retrieved by selecting `Tools` > `Packages` > `Electric Imp` > `Get Agent URL` menu item. 
+The URL of a device’s agent can be retrieved by selecting the 
+`Tools` > `Packages` > `Electric Imp` > `Get Agent URL` menu item. 
 The URL is saved in the clipboard.
 
 ### Key Shortcuts
@@ -216,8 +218,9 @@ for more information on the preprocessor syntax that you can use in your Squirre
 
 ### Specifying GitHub Authentication Information
 
-Please use the project `<project folder>/settings/auth.info` file to specify your Builder GitHub authentication 
-information: 
+Please use the project *<Project Name>/settings/auth.info* file to specify your Builder 
+GitHub authentication information:
+ 
 ```
 {
     ...
@@ -230,8 +233,8 @@ information:
 
 ### Specifying Builder Preset Variable Definitions
 
-Please use the project `<project folder>/settings/electric-imp.settings` file to specify the Builder 
-variables definitions: 
+Please use the project *<Project Name>/settings/electric-imp.settings* file to specify the Builder variables definitions:
+
 ```
 {
     "builder-settings": {
