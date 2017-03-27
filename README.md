@@ -50,7 +50,7 @@ supported. Tested on OS X only.
 
 **Note** The plug-in requires Node.js 4.0 or above.**
 
-Please follow [there instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
+Please follow [these instructions](https://nodejs.org/en/download/package-manager/) to install Node on your machine.
   
 ### Install the Builder Node.js Module
 
@@ -132,7 +132,7 @@ please make sure you have Squirrel (Electric Imp) language selected under the `V
 ### Opening an Existing Project
 
 To open an existing Electric Imp project, select the `Project` > `Open Project...` menu option and choose the 
-<Project Name>.sublime-project file from your project folder.
+`<Project Name>.sublime-project` file from your project folder.
 
 **NOTE: The plug-in won't properly detect Electric Imp project if it is not opened as described, ie. if it is opened
 as a folder, not as a Text Sublime project!**
@@ -140,8 +140,8 @@ as a folder, not as a Text Sublime project!**
 ### Building and Running
 
 To build and deploy the application code, please select the `Tools` > `Packages` > `Electric Imp` > `Build and Run` 
-menu item. This action uploads the agent and the device code to the server and restarts the model with all 
-the devices attached.
+menu item. This action uploads the agent and the device code to the server, 
+and restarts all of the devices assigned to the model.
 
 When you build code (or perform any other action that requires access to the impCloud&trade;) 
 for the first time, you will be asked to provide:
