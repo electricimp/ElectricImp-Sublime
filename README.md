@@ -44,7 +44,7 @@ to work with the the [Electric Imp impCloud™](https://electricimp.com/platform
 ## Installation Steps
 
 **NOTE**: Electric Imp Sublime Plug-in supports [Sublime Text 3](https://www.sublimetext.com/3) only, no other versions are 
-supported. Tested on OS X only.
+supported. Tested on macOS only.
 
 ### Install Node.js
 
