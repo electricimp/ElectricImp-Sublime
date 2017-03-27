@@ -54,8 +54,9 @@ import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exist
 Alternatively, follow these steps to install the plug-in manually:
 
 Download the full GitHub source repository or clone it from [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into
-    - macOS X: */Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/*
-    - Windows: *"%AppData%\Sublime Text 3\Packages\%"*
+
+- macOS X: */Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/*
+- Windows: *"%AppData%\Sublime Text 3\Packages\%"*
 
 ## Usage
 
