@@ -62,7 +62,7 @@ EI_ST_PR_NODE_PATH       = "node_path"
 EI_ST_PR_BUILDER_CLI     = "builder_cli_path"
 EI_GITHUB_USER           = "github-user"
 EI_GITHUB_TOKEN          = "github-token"
-EI_VARIABLE_DEFINES      = "variable-defines"
+EI_VARIABLE_DEFINES      = "variable-definitions"
 
 # Global variables
 plugin_settings = None
