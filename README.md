@@ -68,7 +68,7 @@ You can install the plug-in script via the following command in the Sublime Text
 **NOTE**: Please make sure you have git installed on your system when trying this method.
 
 ```python
-import os; path=sublime.packages_path(); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path}); window.run_command('exec', {'cmd': ['git', 'pull'], 'working_dir': os.path.join(path, "imp-developer")})
+import os; path=sublime.packages_path(); ie_plugin_path=os.path.join(path, 'imp-developer'); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path}) if not os.path.exists(ie_plugin_path) else window.run_command('exec', {'cmd': ['git', 'pull'], 'working_dir': ie_plugin_path})
 ```
 
 Alternatively, follow these steps to install the plug-in manually:
