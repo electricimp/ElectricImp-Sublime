@@ -73,12 +73,13 @@ import os; path=sublime.packages_path(); ie_plugin_path=os.path.join(path, 'imp-
 
 Alternatively, follow these steps to install the plug-in manually:
 
-Download the full GitHub source repository or clone it from 
-[https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into
+1. Create the *plug-in folder*:
+    - **macOS**: */Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/imp-developer*
+    - **Windows**: *"%AppData%\Sublime Text 3\Packages\imp-developer%"*
 
-- **macOS**: */Users/&lt;username&gt;/Library/Application Support/Sublime Text 3/Packages/*
-- **Windows**: *"%AppData%\Sublime Text 3\Packages\%"*
-
+2. Do one of the following:
+    - Download the full GitHub source [repository](https://github.com/electricimp/ElectricImp-Sublime) as a zip file and extract it into the *plug-in folder* or
+    - Clone the contents of the source repository [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into the *plugin folder*.
 
 ## Usage
 
