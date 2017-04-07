@@ -466,12 +466,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         else:
             selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
 
+        key = self.env.project_manager.get_build_api_key()
+
         # Perform the checks and prompts for appropriate settings
         if self.is_missing_node_js_path():
             self.prompt_for_node_js_path()
         elif self.is_missing_builder_cli_path():
             self.prompt_for_builder_cli_path()
-        elif self.is_missing_build_api_key():
+        elif not key or not HTTPConnection.is_build_api_key_valid(key):
             self.prompt_for_build_api_key()
         elif not selecting_or_creating_model and self.is_missing_model():
             sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
@@ -533,9 +535,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         # Loop back to the main settings check
         self.check_settings()
-
-    def is_missing_build_api_key(self):
-        return not self.env.project_manager.get_build_api_key()
 
     def prompt_for_build_api_key(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILD_API_KEY): return
