@@ -38,9 +38,9 @@ STR_MODEL_NO_MODELS_FOUND            = "No models available on the account. Plea
 STR_MODEL_SELECT_EXISTING_MODEL      = "Select existing Model"
 STR_MODEL_CONFIRM_PULLING_MODEL_CODE = "Do you want to pull the latest code revision from the Model? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
 
-STR_ERR_MESSAGE_LINE                 = "    ERROR: (clickable) {} ({}:{})\n"
+STR_ERR_MESSAGE_LINE                 = "    ERROR: [CLICKABLE] {} ({}:{})\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "\nDeploy failed because of the following errors:\n"
-STR_ERR_RUNTIME_ERROR                = "ERROR:   (clickable) at {} {}:{} "
+STR_ERR_RUNTIME_ERROR                = "ERROR:   [CLICKABLE] at {} ({}:{})"
 STR_ERR_CONSOLE_NOT_FOUND            = "Couldn't find console to print: {}"
 STR_ERR_PREPROCESSING_ERROR          = "\nPreprocessing failed because of the following errors:\n    ERROR: (clickable) {}\n"
 
