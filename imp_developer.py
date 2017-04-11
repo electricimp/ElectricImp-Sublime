@@ -1,6 +1,26 @@
-# Copyright (c) 2016 Electric Imp
-# This file is licensed under the MIT License
-# http://opensource.org/licenses/MIT
+# MIT License
+#
+# Copyright 2016-2017 Electric Imp
+#
+# SPDX-License-Identifier: MIT
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+# EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+# OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+# OTHER DEALINGS IN THE SOFTWARE.
 
 import base64
 import datetime
@@ -466,12 +486,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         else:
             selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
 
+        key = self.env.project_manager.get_build_api_key()
+
         # Perform the checks and prompts for appropriate settings
         if self.is_missing_node_js_path():
             self.prompt_for_node_js_path()
         elif self.is_missing_builder_cli_path():
             self.prompt_for_builder_cli_path()
-        elif self.is_missing_build_api_key():
+        elif not key or not HTTPConnection.is_build_api_key_valid(key):
             self.prompt_for_build_api_key()
         elif not selecting_or_creating_model and self.is_missing_model():
             sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
@@ -533,9 +555,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         # Loop back to the main settings check
         self.check_settings()
-
-    def is_missing_build_api_key(self):
-        return not self.env.project_manager.get_build_api_key()
 
     def prompt_for_build_api_key(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILD_API_KEY): return
@@ -924,9 +943,9 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         if not os.path.exists(settings_dir):
             os.makedirs(settings_dir)
 
-        self.copy_template_file(path, PR_WS_FILE_TEMPLATE)
-        self.copy_template_file(path, PR_PROJECT_FILE_TEMPLATE)
-        self.copy_gitignore(path)
+        self.copy_template_resource(path, PR_WS_FILE_TEMPLATE)
+        self.copy_template_resource(path, PR_PROJECT_FILE_TEMPLATE)
+        self.copy_template_resource(path, ".gitignore")
 
         # Create Electric Imp project settings file
         ProjectManager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
@@ -967,14 +986,12 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         args.insert(0, self.get_sublime_path())
         return subprocess.Popen(args)
 
-    def copy_template_file(self, dest_dir, file_name):
-        src = os.path.join(self.get_template_dir(), file_name)
-        dst = os.path.join(dest_dir, file_name)
-        shutil.copy(src, dst)
-
-    def copy_gitignore(self, path):
-        src = os.path.join(self.get_template_dir(), ".gitignore")
-        shutil.copy(src, path)
+    def copy_template_resource(self, dest_path, resource_name):
+        resource_path = os.path.join("Packages", "imp-developer", PR_TEMPLATE_DIR_NAME, resource_name)
+        dest_path = os.path.join(dest_path, resource_name) if os.path.isdir(dest_path) else dest_path
+        content = sublime.load_resource(resource_path)
+        with open(dest_path, 'a', encoding="utf-8") as f:
+            f.write(content)
 
     def create_source_files_if_absent(self, path):
         source_dir  = os.path.join(path, PR_SOURCE_DIRECTORY)
@@ -991,9 +1008,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
                 f.write(STR_INITIAL_SRC_CONTENT.format("Device"))
 
         return agent_file, device_file
-
-    def get_template_dir(self):
-        return os.path.join(os.path.dirname(os.path.realpath(__file__)), PR_TEMPLATE_DIR_NAME)
 
     # Create Project menu item is always enabled regardless of the project type
     def is_enabled(self):
@@ -1162,8 +1176,8 @@ class AnfReplaceCommand(sublime_plugin.TextCommand):
 
 class ImpErrorProcessor(sublime_plugin.EventListener):
 
-    CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s.*\((.*)\:(\d+)\)"
-    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\(clickable\)\s*(?:\S*)\s*(?:at|from)\s*.*\s+(\S*):(\d+)\s*"
+    CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\[CLICKABLE\]\s.*\((.*)\:(\d+)\)"
+    CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\[CLICKABLE\]\s*(?:\S*)\s*(?:at|from)\s*.*\s+\((\S*):(\d+)\)\s*"
 
     def on_post_text_command(self, view, command_name, args):
         window = view.window()
