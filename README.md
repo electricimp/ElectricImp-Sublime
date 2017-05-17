@@ -1,6 +1,8 @@
 Electric Imp Sublime Plug-in (Beta)
 ==================================
 
+[Sublime Text 3](https://www.sublimetext.com/3) plug-in for [Electric Imp](https://electricimp.com) applications development.
+
 - [Overview](#overview)
 - [Installation Steps](#installation-steps)
     - [Install Node.js](#install-nodejs)
