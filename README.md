@@ -69,8 +69,8 @@ npm i -g Builder
 
 If you already have [Package Control](http://wbond.net/sublime_packages/package_control/) installed in Sublime Text:
 
-* Select "Install Package" from the Command Palette: <kbd>Ctrl+Shift+P</kbd> on Windows and Linux or <kbd>⇧⌘P</kbd> on OS X
-* Search for "**Electric Imp Developer**" and click <kbd>enter</kbd>.
+* Select `Install Package` from the Command Palette: <kbd>Ctrl+Shift+P</kbd> on Windows and Linux or <kbd>⇧⌘P</kbd> on macOS
+* Search for **Electric Imp Developer** and click <kbd>enter</kbd>.
 
 #### From Sublime Text Terminal
 
