@@ -65,6 +65,15 @@ npm i -g Builder
 
 ### Install the Electric Imp Sublime Plug-in
 
+#### Package Control
+
+If you already have [Package Control](http://wbond.net/sublime_packages/package_control/) installed in Sublime Text:
+
+* Select "Install Package" from the Command Palette: <kbd>Ctrl+Shift+P</kbd> on Windows and Linux or <kbd>⇧⌘P</kbd> on OS X
+* Search for "**Electric Imp Developer**" and click <kbd>enter</kbd>.
+
+#### From Sublime Text Terminal
+
 You can install the plug-in script via the following command in the Sublime Text terminal (``ctrl+` ``) which utilizes `git clone`. 
 
 **NOTE**: Please make sure you have git installed on your system when trying this method.
@@ -72,6 +81,7 @@ You can install the plug-in script via the following command in the Sublime Text
 ```python
 import os; path=sublime.packages_path(); ie_plugin_path=os.path.join(path, 'imp-developer'); (os.makedirs(path) if not os.path.exists(path) else None); window.run_command('exec', {'cmd': ['git', 'clone', 'https://github.com/electricimp/ElectricImp-Sublime.git', 'imp-developer'], 'working_dir': path}) if not os.path.exists(ie_plugin_path) else window.run_command('exec', {'cmd': ['git', 'pull'], 'working_dir': ie_plugin_path})
 ```
+#### Manual
 
 Alternatively, follow these steps to install the plug-in manually:
 
