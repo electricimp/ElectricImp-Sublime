@@ -991,6 +991,11 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def copy_template_resource(self, dest_path, resource_name):
         resource_path = os.path.join("Packages", "imp-developer", PR_TEMPLATE_DIR_NAME, resource_name)
         dest_path = os.path.join(dest_path, resource_name) if os.path.isdir(dest_path) else dest_path
+
+        # for Windows we have to replace slashes
+        resource_path = resource_path.replace('\\', '/')
+        dest_path = dest_path.replace('\\', '/')
+        
         content = sublime.load_resource(resource_path)
         with open(dest_path, 'a', encoding="utf-8") as f:
             f.write(content)
