@@ -208,6 +208,8 @@ class UIManager:
     def create_new_console(self):
         env = Env.For(self.window)
         env.terminal = self.window.get_output_panel("textarea")
+        # env.terminal.set_syntax_file(os.path.join("Packages", "imp-developer", "syntax", "logs.tmLanguage"))
+
         env.log_manager.poll_url = None
         env.log_manager.last_shown_log = None
 
@@ -1022,6 +1024,7 @@ class ImpCreateModel(BaseElectricImpCommand):
             self.create_new_model()
 
         self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+
 
 class ImpSelectModel(BaseElectricImpCommand):
 
