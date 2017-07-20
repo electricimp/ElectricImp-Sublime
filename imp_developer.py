@@ -991,7 +991,13 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         return subprocess.Popen(args)
 
     def copy_template_resource(self, dest_path, resource_name):
-        plugin_name = os.path.basename(os.path.dirname(os.path.realpath(__file__)))
+        plugin_dir_name = os.path.basename(os.path.dirname(os.path.realpath(__file__)))
+        # extract plugin name from file with extention ".sublime-package":
+        # Electric Imp Developer.sublime-package
+        plugin_name, ext = os.path.splitext(plugin_dir_name)
+        # see https://www.sublimetext.com/docs/3/api_reference.html:
+        #       load_resource(name) - Loads the given resource.
+        #       The name should be in the format Packages/Default/Main.sublime-menu.
         resource_path = '/'.join(["Packages", plugin_name, PR_TEMPLATE_DIR_NAME, resource_name])
         content = sublime.load_resource(resource_path)
 
