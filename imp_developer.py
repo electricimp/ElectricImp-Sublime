@@ -992,7 +992,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
     def copy_template_resource(self, dest_path, resource_name):
         plugin_name = os.path.basename(os.path.dirname(os.path.realpath(__file__)))
-        resource_path = os.path.join(["Packages", plugin_name, PR_TEMPLATE_DIR_NAME, resource_name])
+        resource_path = '/'.join(["Packages", plugin_name, PR_TEMPLATE_DIR_NAME, resource_name])
         content = sublime.load_resource(resource_path)
 
         dest_path = os.path.join(dest_path, resource_name) if os.path.isdir(dest_path) else dest_path
