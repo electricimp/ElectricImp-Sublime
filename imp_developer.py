@@ -32,6 +32,7 @@ import subprocess
 import sys
 import urllib.request
 import urllib.parse
+import urllib.error
 import socket
 
 import sublime
@@ -300,6 +301,8 @@ class HTTP:
                 result = json.loads(f.read().decode('utf-8'))
         except socket.timeout:
             log_debug("Timeout error occurred for URL: " + url)
+        except urllib.error.HTTPError as err:
+            code = err.code
         return result, code
 
     @staticmethod
