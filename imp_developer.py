@@ -32,6 +32,7 @@ import subprocess
 import sys
 import urllib.request
 import urllib.parse
+import socket
 
 import sublime
 import sublime_plugin
@@ -283,21 +284,27 @@ class HTTP:
         return code == 200
 
     @staticmethod
-    def do_request(key, url, method, data=None):
+    def do_request(key, url, method, data=None, timeout=None):
         if data:
             data = data.encode('utf-8')
         req = urllib.request.Request(url,
                                      headers=HTTP.__get_http_headers(key),
                                      data=data,
                                      method=method)
-        res = urllib.request.urlopen(req)
-        with res as f:
-            result = json.loads(f.read().decode('utf-8'))
-        return result, res.getcode()
+
+        result, code = None, None
+        try:
+            res = urllib.request.urlopen(req, timeout=timeout)
+            code = res.getcode()
+            with res as f:
+                result = json.loads(f.read().decode('utf-8'))
+        except socket.timeout:
+            log_debug("Timeout error occurred for URL: " + url)
+        return result, code
 
     @staticmethod
-    def get(key, url):
-        return HTTP.do_request(key, url, "GET")
+    def get(key, url, timeout=None):
+        return HTTP.do_request(key, url, "GET", timeout=timeout)
 
     @staticmethod
     def post(key, url, data=None):
@@ -1311,7 +1318,8 @@ class LogManager:
         if log_request_time:
             start = datetime.datetime.now()
 
-        response, code = HTTP.get(self.env.project_manager.get_build_api_key(), url)
+        response, code = HTTP.get(key=self.env.project_manager.get_build_api_key(),
+                                  url=url, timeout=PL_LONG_POLL_TIMEOUT)
 
         if log_request_time:
             elapsed = datetime.datetime.now() - start
