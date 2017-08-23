@@ -297,12 +297,13 @@ class HTTP:
         try:
             res = urllib.request.urlopen(req, timeout=timeout)
             code = res.getcode()
-            with res as f:
-                result = json.loads(f.read().decode('utf-8'))
+            result = json.loads(res.read().decode('utf-8'))
         except socket.timeout:
             log_debug("Timeout error occurred for URL: " + url)
+            result = code
         except urllib.error.HTTPError as err:
             code = err.code
+            result = json.loads(err.read().decode('utf-8'))
         return result, code
 
     @staticmethod
@@ -877,7 +878,6 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                             pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
                 return report
-
             error = response["error"]
             if error and error["code"] == "CompileFailed":
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
