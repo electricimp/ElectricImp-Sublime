@@ -1236,7 +1236,8 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
 
         if orig_file is not None and orig_line is not None:
 
-            file_name = os.path.join(os.path.dirname(window.project_file_name()), orig_file)
+            source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
+            file_name = os.path.join(source_dir, orig_file)
 
             if not os.path.exists(file_name):
                 return
