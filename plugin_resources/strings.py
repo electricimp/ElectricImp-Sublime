@@ -20,6 +20,16 @@ STR_NO_DEVICES_AVAILABLE             = "There are no other Imp devices registere
 STR_FAILED_TO_GET_LOGS               = "An error returned for logs request."
 STR_PROVIDE_BUILD_API_KEY            = "Please provide your Electric Imp Build API key. It can be found in the Developer Console (login into your account and click on the top right link with you user name and select \"Build API Keys\")"
 
+STR_INVALID_CREDENTIALS              = "Invalid user name or password. Try again ?"
+STR_USER_ID                          = "Username"
+STR_PASSWORD                         = "Password"
+STR_PROVIDE_USER_ID                  = "Please signin to get an access to the ElectricImp environment"
+
+STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
+STR_PRODUCT_NAME                     = "Product name:"
+STR_PRODUCT_SERVER_ERROR             = "Failed to extrac produc list"
+STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
+
 STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
 STR_MODEL_NAME                       = "New Model name:"
 STR_MODEL_NAME_EXISTS                = "The Model name already exists. Please try another one"
@@ -49,4 +59,3 @@ STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
 STR_STATUS_ACTIVE_MODEL              = "Model: {}"
 
 STR_INITIAL_SRC_CONTENT              = "// {} source code goes here\n\n"
-
