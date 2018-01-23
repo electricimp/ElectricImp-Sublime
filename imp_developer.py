@@ -78,7 +78,7 @@ EI_LOGIN_KEY             = "login-key"
 EI_REFRESH_TOKEN         = "refresh-token"
 EI_ACCEESS_TOKEN         = "access-token"
 EI_PRODUCT_ID            = "product-id"
-EI_DEVICE_GROUP_ID       = "device-group-id"
+EI_DEVICEGROUP_ID        = "device-group-id"
 
 EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
@@ -146,9 +146,7 @@ class ProjectManager:
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
             token = auth_info.get(EI_ACCEESS_TOKEN)
-            print(token)
             if token and "access_token" in token:
-                print(token["access_token"])
                 return token["access_token"]
 
         return None
@@ -315,7 +313,6 @@ class HTTP:
     def do_request(key, url, method, data=None, timeout=None, content_type="application/json"):
         if data:
             data = data.encode('utf-8')
-        print(HTTP.__get_http_headers(key, content_type))
         req = urllib.request.Request(url,
                                      headers=HTTP.__get_http_headers(key, content_type),
                                      data=data,
@@ -323,7 +320,7 @@ class HTTP:
 
         result, code = None, None
         try:
-            res = urllib.request.urlopen(req, timeout=timeout)
+            res = urllib.request.urlopen(req, timeout=None)
             code = res.getcode()
             result = json.loads(res.read().decode('utf-8'))
         except socket.timeout:
@@ -667,8 +664,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.prompt_for_user_password(False, user_name)
         else:
             url = PL_BUILD_API_URL_V5 + "auth"
-            print(user_name)
-            print(password)
             response, code = HTTP.post(None, url, '{"id": "' + user_name + '", "password": "' + password + '"}')
             self.on_login_complete(code, response)
 
@@ -690,6 +685,16 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             # check setting again
             self.check_settings();
 
+    def reset_credentails(self):
+        settings = self.load_settings()
+        settings[EI_ACCEESS_TOKEN] = None
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+    def _update_settings(self, index, value):
+        settings = self.load_settings()
+        settings[index] = value
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
     ###
     ### Refresh access token if necessary
     ###
@@ -700,15 +705,14 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         refresh_token = token["refresh_token"]
         request, code = HTTP.post(None, PL_BUILD_API_URL_V5 + "/auth/token", '{"token":'+refresh_token+'}')
         # Failed to refresh token reset credentials
-        settings = self.load_settings()
         if not HTTP.is_response_code_valid(code):
-            settings[EI_ACCEESS_TOKEN] = None
+            self._update_settings(EI_ACCEESS_TOKEN, None)
         else:
-            settings[EI_ACCEESS_TOKEN] = request
             # refresh token should not be updated during request
-            settings[EI_ACCEESS_TOKEN]["refresh_token"] = refresh_token
+            if not request["refresh_token"]:
+                request["refresh_token"] = refresh_token
+            self._update_settings(EI_ACCEESS_TOKEN, request)
 
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
         # restart login process
         self.check_settings();
 
@@ -722,24 +726,32 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # TODO: Check that project still available in the remote configuraiton
         return False
 
-    def create_new_product(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PRODUCT_PROVIDE_NAME): return
-        self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_product_name_provided, None, None)
+    def on_create_new_product(self, need_to_confirm=True):
+        print("HANDLE NEW PRODUCT CREATION")
 
-    def on_product_name_provided(self, names, index):
+    def on_product_name_provided(self, index, names):
+        # prevent wrong index which should never happened
+        if (index < 0 or index > len(names)):
+            return
+
         # Create new product
-        if name == STR_PRODUCT_CREATE_NEW:
+        if index == 0:
             # Handle a new product creation process
-            print("CREATE A NEW PRODUCT")
+            self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_create_new_product, None, None)
         else:
-            print("SAVE SELECTED AND CONFIRM")
             # Save selected product in the settings file
+            self._update_settings(EI_PRODUCT_ID, names[index-1][0])
+            self.check_settings()
+
 
     def select_existing_product(self):
         response, code = HTTP.get(self.env.project_manager.get_refresh_token(), PL_BUILD_API_URL_V5 + "products")
         # Check that code is correct
         if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR)
+            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
+            if code == 401:
+                self.reset_credentails()
+                self.check_settings()
             return
 
         # check that response has some payload
@@ -748,7 +760,50 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.__tmp_all_models = [(product["id"], product["attributes"]["name"]) for product in response['data']]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, self.on_product_name_provided)
+        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+
+    def is_missing_device_group(self):
+        settings = self.load_settings();
+        if EI_DEVICEGROUP_ID not in settings or settings.get(EI_DEVICEGROUP_ID) is None:
+            return True
+        # TODO: Check that project still available in the remote configuraiton
+        return False
+
+    def on_devicegroup_name_provided(self, index, items):
+        # prevent wrong index which should never happened
+        if (index < 0 or index > len(items)):
+            return
+
+        if index == 0:
+            print("CREATE NEW DEVICE GROUP")
+        else:
+            id = items[index-1][0]
+            self._update_settings(EI_DEVICEGROUP_ID, id)
+            self.check_settings()
+
+    def select_existing_device_group(self):
+        settings = self.load_settings()
+        response, code = HTTP.get(self.env.project_manager.get_refresh_token(), PL_BUILD_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
+
+        # Check that code is correct
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
+            if code == 401:
+                self.reset_credentails()
+                self.check_settings()
+            return
+
+        # check that response has some payload
+        if len(response['data']) > 0:
+            all_names = []
+            self.__tmp_all_models = []
+            for product in response['data']:
+                if product["relationships"]["product"]["id"] == settings[EI_PRODUCT_ID]:
+                    self.__tmp_all_models += [(product["id"], product["attributes"]["name"])]
+                    all_names += [product["attributes"]["name"]]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel([ STR_DEVICEGROUP_CREATE_NEW ] + all_names, lambda id: self.on_devicegroup_name_provided(id, self.__tmp_all_models))
 
     def is_missing_model(self):
         settings = self.load_settings()

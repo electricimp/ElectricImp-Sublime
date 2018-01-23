@@ -30,6 +30,8 @@ STR_PRODUCT_NAME                     = "Product name:"
 STR_PRODUCT_SERVER_ERROR             = "Failed to extrac produc list"
 STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
 
+STR_DEVICEGROUP_CREATE_NEW           = "Create a new Device Group ..."
+
 STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
 STR_MODEL_NAME                       = "New Model name:"
 STR_MODEL_NAME_EXISTS                = "The Model name already exists. Please try another one"
