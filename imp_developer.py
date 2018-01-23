@@ -145,7 +145,13 @@ class ProjectManager:
     def get_refresh_token(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            return auth_info.get(EI_REFRESH_TOKEN)
+            token = auth_info.get(EI_ACCEESS_TOKEN)
+            print(token)
+            if token and "access_token" in token:
+                print(token["access_token"])
+                return token["access_token"]
+
+        return None
 
     def get_github_auth_info(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
@@ -278,16 +284,17 @@ class HTTP:
         return base64.b64encode(str.encode()).decode()
 
     @staticmethod
-    def __get_http_headers(key):
+    def __get_http_headers(key, content_type="application/json"):
+
         if not key:
             return {
-                "Content-Type": "application/json",
+                "Content-Type": content_type,
                 "User-Agent": "imp-developer/sublime"
             }
 
         return {
-            "Authorization": "Basic " + HTTP.__base64_encode(key),
-            "Content-Type": "application/json",
+            "Authorization": "Bearer " + key, # HTTP.__base64_encode(key),
+            "Content-Type": content_type,
             "User-Agent": "imp-developer/sublime"
         }
 
@@ -298,18 +305,19 @@ class HTTP:
 
     @staticmethod
     def is_refresh_token_valid(token):
-        if datetime.strptime(token.expires_at, "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now():
+        if datetime.datetime.strptime(token.expires_at, "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now():
             return True
         request, code = HTTP.post({token:token.value}, PL_BUILD_API_URL_V5 + "/auth/token")
         return code == 200
 
 
     @staticmethod
-    def do_request(key, url, method, data=None, timeout=None):
+    def do_request(key, url, method, data=None, timeout=None, content_type="application/json"):
         if data:
             data = data.encode('utf-8')
+        print(HTTP.__get_http_headers(key, content_type))
         req = urllib.request.Request(url,
-                                     headers=HTTP.__get_http_headers(key),
+                                     headers=HTTP.__get_http_headers(key, content_type),
                                      data=data,
                                      method=method)
 
@@ -328,7 +336,7 @@ class HTTP:
 
     @staticmethod
     def get(key, url, timeout=None):
-        return HTTP.do_request(key, url, "GET", timeout=timeout)
+        return HTTP.do_request(key, url, "GET", timeout=timeout, content_type="application/vnd.api+json")
 
     @staticmethod
     def post(key, url, data=None):
@@ -678,16 +686,30 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             log_debug("Access token received")
             settings = self.load_settings()
             settings[EI_ACCEESS_TOKEN] = payload
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)            # check setting again
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+            # check setting again
             self.check_settings();
 
     ###
     ### Refresh access token if necessary
     ###
     def is_access_token_expired(self, token):
-        return False
+        return datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ") <= datetime.datetime.now()
 
     def refresh_access_token(self, token):
+        refresh_token = token["refresh_token"]
+        request, code = HTTP.post(None, PL_BUILD_API_URL_V5 + "/auth/token", '{"token":'+refresh_token+'}')
+        # Failed to refresh token reset credentials
+        settings = self.load_settings()
+        if not HTTP.is_response_code_valid(code):
+            settings[EI_ACCEESS_TOKEN] = None
+        else:
+            settings[EI_ACCEESS_TOKEN] = request
+            # refresh token should not be updated during request
+            settings[EI_ACCEESS_TOKEN]["refresh_token"] = refresh_token
+
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        # restart login process
         self.check_settings();
 
     ###
@@ -704,7 +726,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PRODUCT_PROVIDE_NAME): return
         self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_product_name_provided, None, None)
 
-    def on_product_name_provided(self, name):
+    def on_product_name_provided(self, names, index):
         # Create new product
         if name == STR_PRODUCT_CREATE_NEW:
             # Handle a new product creation process
@@ -720,12 +742,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             sublime.message_dialog(STR_PRODUCT_SERVER_ERROR)
             return
 
-        if len(response) > 0:
-            print(">>>>>>>>>>>>>>>>>>>>>>>>")
-            print(response)
-            print(">>>>>>>>>>>>>>>>>>>>>>>>")
-            all_names = [product["attributes"]["name"] for product in response]
-            self.__tmp_all_models = [(product["id"], product["attributes"]["name"]) for product in response]
+        # check that response has some payload
+        if len(response['data']) > 0:
+            all_names = [product["attributes"]["name"] for product in response['data']]
+            self.__tmp_all_models = [(product["id"], product["attributes"]["name"]) for product in response['data']]
 
         # make a new product creation option as a part of the product select menu
         self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, self.on_product_name_provided)
