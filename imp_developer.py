@@ -30,6 +30,10 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.request
+import urllib.parse
+import urllib.error
+import socket
 
 import sublime
 import sublime_plugin
@@ -40,7 +44,6 @@ from .plugin_resources.node_locator import NodeLocator
 
 # Import third party modules
 from .modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
-from .modules.Requests_2_10_0 import requests
 
 # Generic plugin constants
 PL_BUILD_API_URL_BASE    = "https://build.electricimp.com"
@@ -87,6 +90,7 @@ EI_VARIABLE_DEFINES      = "variable-definitions"
 # Global variables
 plugin_settings = None
 project_env_map = {}
+
 
 class ProjectManager:
     """Electric Imp project specific fuctionality"""
@@ -208,6 +212,10 @@ class UIManager:
     def create_new_console(self):
         env = Env.For(self.window)
         env.terminal = self.window.get_output_panel("textarea")
+
+        # plugin_name = os.path.basename(os.path.dirname(os.path.realpath(__file__)))
+        # env.terminal.set_syntax_file(os.path.join("Packages", plugin_name, "syn tax", "logs.tmLanguage"))
+
         env.log_manager.poll_url = None
         env.log_manager.last_shown_log = None
 
@@ -255,7 +263,8 @@ class UIManager:
         else:
             log_debug("Property \"" + property_name + "\" is not found in the settings")
 
-class HTTPConnection:
+
+class HTTP:
     """Implementation of all the Electric Imp connection functionality"""
 
     @staticmethod
@@ -265,35 +274,53 @@ class HTTPConnection:
     @staticmethod
     def __get_http_headers(key):
         return {
-            "Authorization": "Basic " + HTTPConnection.__base64_encode(key),
+            "Authorization": "Basic " + HTTP.__base64_encode(key),
             "Content-Type": "application/json",
             "User-Agent": "imp-developer/sublime"
         }
 
     @staticmethod
     def is_build_api_key_valid(key):
-        return requests.get(PL_BUILD_API_URL_V4 + "models",
-                            headers=HTTPConnection.__get_http_headers(key)).status_code == requests.codes.ok
+        request, code = HTTP.get(key, PL_BUILD_API_URL_V4 + "models")
+        return code == 200
+
+    @staticmethod
+    def do_request(key, url, method, data=None, timeout=None):
+        if data:
+            data = data.encode('utf-8')
+        req = urllib.request.Request(url,
+                                     headers=HTTP.__get_http_headers(key),
+                                     data=data,
+                                     method=method)
+
+        result, code = None, None
+        try:
+            res = urllib.request.urlopen(req, timeout=timeout)
+            code = res.getcode()
+            result = json.loads(res.read().decode('utf-8'))
+        except socket.timeout:
+            log_debug("Timeout error occurred for URL: " + url)
+            result = code
+        except urllib.error.HTTPError as err:
+            code = err.code
+            result = json.loads(err.read().decode('utf-8'))
+        return result, code
 
     @staticmethod
     def get(key, url, timeout=None):
-        return requests.get(url, headers=HTTPConnection.__get_http_headers(key), timeout=timeout)
+        return HTTP.do_request(key, url, "GET", timeout=timeout)
 
     @staticmethod
     def post(key, url, data=None):
-        return requests.post(url, data=data, headers=HTTPConnection.__get_http_headers(key))
+        return HTTP.do_request(key, url, "POST", data)
 
     @staticmethod
     def put(key, url, data=None):
-        return requests.put(url, data=data, headers=HTTPConnection.__get_http_headers(key))
+        return HTTP.do_request(key, url, "PUT", data)
 
     @staticmethod
-    def is_response_valid(response):
-        return response and response.status_code in [
-            requests.codes.ok,
-            requests.codes.created,
-            requests.codes.accepted
-        ]
+    def is_response_code_valid(code):
+        return code in [200, 201, 202]
 
 
 class SourceType():
@@ -493,7 +520,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.prompt_for_node_js_path()
         elif self.is_missing_builder_cli_path():
             self.prompt_for_builder_cli_path()
-        elif not key or not HTTPConnection.is_build_api_key_valid(key):
+        elif not key or not HTTP.is_build_api_key_valid(key):
             self.prompt_for_build_api_key()
         elif not selecting_or_creating_model and self.is_missing_model():
             sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
@@ -533,7 +560,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def is_missing_builder_cli_path(self):
         settings = self.load_settings()
         builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
-        return EI_ST_PR_BUILDER_CLI not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_BUILDER_CLI])
+        return EI_ST_PR_BUILDER_CLI not in builder_settings or not os.path.exists(
+            builder_settings[EI_ST_PR_BUILDER_CLI])
 
     def prompt_for_builder_cli_path(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH): return
@@ -569,21 +597,21 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.window.show_input_panel(STR_MODEL_NAME, "", self.on_model_name_provided, None, None)
 
     def on_model_name_provided(self, name):
-        response = HTTPConnection.post(self.env.project_manager.get_build_api_key(),
-                                       PL_BUILD_API_URL_V4 + "models/", '{"name" : "' + name + '" }')
+        response, code = HTTP.post(self.env.project_manager.get_build_api_key(),
+                                   PL_BUILD_API_URL_V4 + "models/", '{"name" : "' + name + '" }')
 
-        if not HTTPConnection.is_response_valid(response) \
+        if not HTTP.is_response_code_valid(code) \
                 and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
             self.create_new_model(False)
             return
-        elif not HTTPConnection.is_response_valid(response):
+        elif not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
             return
 
         # Save newly created model to the project settings
         settings = self.load_settings()
-        settings[EI_MODEL_ID] = response.json().get("model").get("id")
-        settings[EI_MODEL_NAME] = response.json().get("model").get("name")
+        settings[EI_MODEL_ID] = response.get("model").get("id")
+        settings[EI_MODEL_NAME] = response.get("model").get("name")
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
         self.update_model_name_in_status(query_model_name=False)
@@ -602,9 +630,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         device_ids = input_device_ids if input_device_ids else []
         device_names = []
 
-        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL_V4 + "devices/")
-        all_devices = response.json().get("devices")
+        response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
+                                  PL_BUILD_API_URL_V4 + "devices/")
+        all_devices = response.get("devices")
 
         if exclude_device_ids is None:
             exclude_device_ids = []
@@ -635,10 +663,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         model = self.env.tmp_model
         device_id = self.env.tmp_device_ids[index]
 
-        response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL_V4 + "devices/" + device_id,
-                                      '{"model_id": "' + model.get("id") + '"}')
-        if not HTTPConnection.is_response_valid(response):
+        response, code = HTTP.put(self.env.project_manager.get_build_api_key(),
+                                  PL_BUILD_API_URL_V4 + "devices/" + device_id,
+                                  '{"model_id": "' + model.get("id") + '"}')
+        if not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_MODEL_ADDING_DEVICE_FAILED)
 
         # Once the device is registered, select this device
@@ -652,10 +680,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_this_model(self):
         # We assume the model is set up already
         model_id = self.load_settings().get(EI_MODEL_ID)
-        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL_V4 + "models/" + str(model_id))
-        if HTTPConnection.is_response_valid(response):
-            return response.json().get("model")
+        response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
+                                  PL_BUILD_API_URL_V4 + "models/" + str(model_id))
+        if HTTP.is_response_code_valid(code):
+            return response.get("model")
 
     def select_device(self, need_to_confirm=True):
         model = self.load_this_model()
@@ -717,7 +745,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def on_build_api_key_provided(self, key):
         log_debug("build api key provided: " + key)
-        if HTTPConnection.is_build_api_key_valid(key):
+        if HTTP.is_build_api_key_valid(key):
             log_debug("build API key is valid")
             self.env.project_manager.save_settings(PR_AUTH_INFO_FILE, {
                 EI_BUILD_API_KEY: key,
@@ -750,10 +778,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             if not model_id or not self.env.project_manager.get_build_api_key():
                 # Nothing to update
                 return
-            response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                          PL_BUILD_API_URL_V4 + "models/" + str(model_id))
-            if HTTPConnection.is_response_valid(response):
-                model_name = response.json().get("model").get("name")
+            response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
+                                      PL_BUILD_API_URL_V4 + "models/" + str(model_id))
+            if HTTP.is_response_code_valid(code):
+                model_name = response.get("model").get("name")
                 settings[EI_MODEL_NAME] = model_name
                 self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
             else:
@@ -796,25 +824,24 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             settings = self.load_settings()
             url = PL_BUILD_API_URL_V4 + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
             data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-            response = HTTPConnection.post(self.env.project_manager.get_build_api_key(), url, data)
-            self.handle_response(response)
+            response, code = HTTP.post(self.env.project_manager.get_build_api_key(), url, data)
+            self.handle_response(response, code)
 
         self.check_settings(callback=check_settings_callback)
         self.update_model_name_in_status()
 
-    def handle_response(self, response):
+    def handle_response(self, response, code):
         settings = self.load_settings()
 
         # Update the logs first
         update_log_windows(False)
 
-        if HTTPConnection.is_response_valid(response):
-            response_json = response.json()
-            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response_json["revision"]["version"])))
+        if HTTP.is_response_code_valid(code):
+            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response["revision"]["version"])))
 
             # Not it's time to restart the Model
             url = PL_BUILD_API_URL_V4 + "models/" + settings.get(EI_MODEL_ID) + "/restart"
-            HTTPConnection.post(self.env.project_manager.get_build_api_key(), url)
+            HTTP.post(self.env.project_manager.get_build_api_key(), url)
         else:
             # {
             # 	'error': {
@@ -844,22 +871,21 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                         orig_line = int(e["row"])
                         try:
                             orig_file, orig_line = \
-                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1), env=env)
+                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1),
+                                                                env=env)
                         except Exception as exc:
                             log_debug("Error trying to find original error source: {}".format(exc))
                             pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
                 return report
-
-            response_json = response.json()
-            error = response_json["error"]
+            error = response["error"]
             if error and error["code"] == "CompileFailed":
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
-                error_message += build_error_messages(error["details"]["agent_errors"],  SourceType.AGENT, self.env)
+                error_message += build_error_messages(error["details"]["agent_errors"], SourceType.AGENT, self.env)
                 error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE, self.env)
                 self.print_to_tty(error_message)
             else:
-                log_debug("Code deploy failed because of the error: {}".format(str(response_json["error"]["code"])))
+                log_debug("Code deploy failed because of the error: {}".format(str(response["error"]["code"])))
 
     def save_all_current_window_views(self):
         log_debug("Saving all views...")
@@ -873,7 +899,6 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
-
     def run(self):
         self.init_env_and_settings()
         self.env.ui_manager.init_tty()
@@ -883,7 +908,6 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
 
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
-
     def run(self):
         self.init_env_and_settings()
         self.check_settings(callback=self.select_device)
@@ -892,12 +916,13 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def run(self):
         self.init_env_and_settings()
+
         def check_settings_callback():
             settings = self.load_settings()
             if EI_DEVICE_ID in settings:
                 device_id = settings.get(EI_DEVICE_ID)
-                response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                              PL_BUILD_API_URL_V4 + "devices/" + device_id).json()
+                response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
+                                          PL_BUILD_API_URL_V4 + "devices/" + device_id)
                 agent_id = response.get("device").get("agent_id")
                 agent_url = PL_AGENT_URL.format(agent_id)
                 sublime.set_clipboard(agent_url)
@@ -908,7 +933,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
     def run(self):
-        AnfNewProject(self.window, STR_NEW_PROJECT_LOCATION, self.on_project_path_provided).\
+        AnfNewProject(self.window, STR_NEW_PROJECT_LOCATION, self.on_project_path_provided). \
             run(initial_path=self.get_default_project_path())
 
     @staticmethod
@@ -949,7 +974,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
 
         # Create Electric Imp project settings file
         ProjectManager.dump_map_to_json_file(os.path.join(settings_dir, PR_SETTINGS_FILE), {
-            EI_AGENT_FILE:  os.path.join(PR_SOURCE_DIRECTORY, PR_AGENT_FILE_NAME),
+            EI_AGENT_FILE: os.path.join(PR_SOURCE_DIRECTORY, PR_AGENT_FILE_NAME),
             EI_DEVICE_FILE: os.path.join(PR_SOURCE_DIRECTORY, PR_DEVICE_FILE_NAME)
         })
 
@@ -987,14 +1012,17 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
         return subprocess.Popen(args)
 
     def copy_template_resource(self, dest_path, resource_name):
-        resource_path = os.path.join("Packages", "imp-developer", PR_TEMPLATE_DIR_NAME, resource_name)
-        dest_path = os.path.join(dest_path, resource_name) if os.path.isdir(dest_path) else dest_path
-
-        # for Windows we have to replace slashes
-        resource_path = resource_path.replace('\\', '/')
-        dest_path = dest_path.replace('\\', '/')
-        
+        plugin_dir_name = os.path.basename(os.path.dirname(os.path.realpath(__file__)))
+        # extract plugin name from file with extention ".sublime-package":
+        # Electric Imp Developer.sublime-package
+        plugin_name, ext = os.path.splitext(plugin_dir_name)
+        # see https://www.sublimetext.com/docs/3/api_reference.html:
+        #       load_resource(name) - Loads the given resource.
+        #       The name should be in the format Packages/Default/Main.sublime-menu.
+        resource_path = '/'.join(["Packages", plugin_name, PR_TEMPLATE_DIR_NAME, resource_name])
         content = sublime.load_resource(resource_path)
+
+        dest_path = os.path.join(dest_path, resource_name) if os.path.isdir(dest_path) else dest_path
         with open(dest_path, 'a', encoding="utf-8") as f:
             f.write(content)
 
@@ -1028,8 +1056,8 @@ class ImpCreateModel(BaseElectricImpCommand):
 
         self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
 
-class ImpSelectModel(BaseElectricImpCommand):
 
+class ImpSelectModel(BaseElectricImpCommand):
     def run(self):
         self.init_env_and_settings()
 
@@ -1039,8 +1067,7 @@ class ImpSelectModel(BaseElectricImpCommand):
         self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
 
     def select_existing_model(self, need_to_confirm=True):
-        response = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL_V4 + "models").json()
+        response, code = HTTP.get(self.env.project_manager.get_build_api_key(), PL_BUILD_API_URL_V4 + "models")
         if len(response["models"]) > 0:
             if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
                 return
@@ -1059,7 +1086,7 @@ class ImpSelectModel(BaseElectricImpCommand):
 
         model_id, model_name = self.__tmp_all_models[index]
 
-        self.__tmp_all_models = None # We don't need it anymore
+        self.__tmp_all_models = None  # We don't need it anymore
         log_debug("Model selected id: " + model_id)
 
         # Save newly created model to the project settings
@@ -1082,17 +1109,16 @@ class ImpSelectModel(BaseElectricImpCommand):
         agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
-        revisions = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                       PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions").json()
+        revisions, code = HTTP.get(self.env.project_manager.get_build_api_key(),
+                                   PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions")
         if len(revisions["revisions"]) > 0:
             latest_revision_url = PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions/" + \
                                   str(revisions["revisions"][0]["version"])
-            code = HTTPConnection.get(self.env.project_manager.get_build_api_key(),
-                                      latest_revision_url).json()
+            source, code = HTTP.get(self.env.project_manager.get_build_api_key(), latest_revision_url)
             with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(code["revision"]["agent_code"])
+                file.write(source["revision"]["agent_code"])
             with open(device_file, "w", encoding="utf-8") as file:
-                file.write(code["revision"]["device_code"])
+                file.write(source["revision"]["device_code"])
         else:
             # Create initial source files
             with open(agent_file, "w", encoding="utf-8") as file:
@@ -1112,7 +1138,6 @@ class ImpAddDeviceToModel(BaseElectricImpCommand):
 
 
 class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
-
     def run(self):
         self.init_env_and_settings()
         self.check_settings(callback=self.prompt_model_to_remove_device)
@@ -1138,10 +1163,10 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
             sublime.message_dialog(STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE)
             return
 
-        response = HTTPConnection.put(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL_V4 + "devices/" + device_id,
-                                      '{"model_id": ""}')
-        if not HTTPConnection.is_response_valid(response):
+        response, code = HTTP.put(self.env.project_manager.get_build_api_key(),
+                                  PL_BUILD_API_URL_V4 + "devices/" + device_id,
+                                  '{"model_id": ""}')
+        if not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_MODEL_REMOVE_DEVICE_FAILED)
             return
 
@@ -1152,7 +1177,6 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
 
 
 class AnfNewProject(AdvancedNewFileNew):
-
     def __init__(self, window, capture="", on_path_provided=None):
         super(AnfNewProject, self).__init__(window)
         self.on_path_provided = on_path_provided
@@ -1180,7 +1204,6 @@ class AnfReplaceCommand(sublime_plugin.TextCommand):
 
 
 class ImpErrorProcessor(sublime_plugin.EventListener):
-
     CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\[CLICKABLE\]\s.*\((.*)\:(\d+)\)"
     CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\[CLICKABLE\]\s*(?:\S*)\s*(?:at|from)\s*.*\s+\((\S*):(\d+)\)\s*"
 
@@ -1199,7 +1222,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
         orig_line = None
 
         cp_match = cp_error_pattern.match(selected_line)
-        if cp_match: # Compilation error message
+        if cp_match:  # Compilation error message
             orig_file = cp_match.group(1)
             orig_line = int(cp_match.group(2)) - 1
         else:
@@ -1214,7 +1237,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
         if orig_file is not None and orig_line is not None:
 
             source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
-            file_name  = os.path.join(source_dir, orig_file)
+            file_name = os.path.join(source_dir, orig_file)
 
             if not os.path.exists(file_name):
                 return
@@ -1236,6 +1259,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
                                       icon="circle",
                                       flags=sublime.DRAW_SOLID_UNDERLINE)
                 file_view.show(error_region)
+
             attempt = 0
             max_attempts = 3
             while attempt < max_attempts:
@@ -1262,6 +1286,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
 
     def on_load(self, view):
         self.__update_status(view)
+
 
 def log_debug(text):
     global plugin_settings
@@ -1296,21 +1321,18 @@ class LogManager:
         if log_request_time:
             start = datetime.datetime.now()
 
-        try:
-            response = HTTPConnection.get(self.env.project_manager.get_build_api_key(), url, timeout=PL_LONG_POLL_TIMEOUT)
-        except requests.exceptions.ReadTimeout:
-            # Ignore the timeout exception
-            return None
+        response, code = HTTP.get(key=self.env.project_manager.get_build_api_key(),
+                                  url=url, timeout=PL_LONG_POLL_TIMEOUT)
 
         if log_request_time:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
         # There was an error while retrieving logs from the server
-        if not HTTPConnection.is_response_valid(response):
+        if not HTTP.is_response_code_valid(code):
             log_debug(STR_FAILED_TO_GET_LOGS)
             return None
-        return response.json()
+        return response
 
     @staticmethod
     def get_poll_url(logs_json):
@@ -1344,6 +1366,7 @@ class LogManager:
                 self.write_to_console(log)
                 self.last_shown_log = log
                 i += 1
+
         sublime.set_timeout_async(__update_logs, 0)
 
     def convert_line_numbers(self, log):
@@ -1386,6 +1409,7 @@ class LogManager:
     def reset(self):
         self.poll_url = None
         self.last_shown_log = None
+
 
 def update_log_windows(restart_timer=True):
     global project_env_map
