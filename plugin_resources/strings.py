@@ -31,6 +31,7 @@ STR_PRODUCT_SERVER_ERROR             = "Failed to extrac produc list"
 STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
 
 STR_DEVICEGROUP_CREATE_NEW           = "Create a new Device Group ..."
+STR_DEVICEGROUP_CONDITIONAL_RESTART  = "Request a conditional restart for the device group to apply the deployed source code"
 
 STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
 STR_MODEL_NAME                       = "New Model name:"

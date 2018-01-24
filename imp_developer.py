@@ -35,6 +35,7 @@ import urllib.parse
 import urllib.error
 import socket
 
+
 import sublime
 import sublime_plugin
 
@@ -153,9 +154,12 @@ class ProjectManager:
 
     def get_github_auth_info(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
-        builder_settings = auth_info[EI_BUILDER_SETTINGS]
-        if auth_info:
-            return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
+        if auth_info and EI_BUILDER_SETTINGS in auth_info:
+            builder_settings = auth_info[EI_BUILDER_SETTINGS]
+            if builder_settings and EI_GITHUB_USER in builder_settings and EI_GITHUB_TOKEN in builder_settings:
+                return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
+
+        return None, None
 
     def get_project_directory_path(self):
         return os.path.dirname(self.window.project_file_name())
@@ -282,17 +286,22 @@ class HTTP:
         return base64.b64encode(str.encode()).decode()
 
     @staticmethod
-    def __get_http_headers(key, content_type="application/json"):
+    def __get_http_headers(key, headers):
+        if headers:
+            headers["User-Agent"] = "imp-developer/sublime"
+            if key:
+                headers["Authorization"] = "Bearer " + key
+            return headers
 
         if not key:
             return {
-                "Content-Type": content_type,
+                "Content-Type": "application/json",
                 "User-Agent": "imp-developer/sublime"
             }
 
         return {
             "Authorization": "Bearer " + key, # HTTP.__base64_encode(key),
-            "Content-Type": content_type,
+            "Content-Type": "application/vnd.api+json",
             "User-Agent": "imp-developer/sublime"
         }
 
@@ -310,11 +319,11 @@ class HTTP:
 
 
     @staticmethod
-    def do_request(key, url, method, data=None, timeout=None, content_type="application/json"):
+    def do_request(key, url, method, data=None, timeout=None, headers=None):
         if data:
             data = data.encode('utf-8')
         req = urllib.request.Request(url,
-                                     headers=HTTP.__get_http_headers(key, content_type),
+                                     headers=HTTP.__get_http_headers(key, headers),
                                      data=data,
                                      method=method)
 
@@ -332,16 +341,16 @@ class HTTP:
         return result, code
 
     @staticmethod
-    def get(key, url, timeout=None):
-        return HTTP.do_request(key, url, "GET", timeout=timeout, content_type="application/vnd.api+json")
+    def get(key, url, timeout=None, data=None, headers=None):
+        return HTTP.do_request(key, url, "GET", timeout=timeout, data=data, headers=headers)
 
     @staticmethod
-    def post(key, url, data=None):
-        return HTTP.do_request(key, url, "POST", data)
+    def post(key, url, data=None, headers={"Content-Type": "application/json"}):
+        return HTTP.do_request(key, url, "POST", data, headers=headers)
 
     @staticmethod
-    def put(key, url, data=None):
-        return HTTP.do_request(key, url, "PUT", data)
+    def put(key, url, data=None, headers={"Content-Type": "application/vnd.api+json"}):
+        return HTTP.do_request(key, url, "PUT", data, headers=headers)
 
     @staticmethod
     def is_response_code_valid(code):
@@ -831,7 +840,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         settings[EI_MODEL_NAME] = response.get("model").get("name")
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
-        self.update_model_name_in_status(query_model_name=False)
+        self.update_status_message(query_data=False)
 
         # Reset the logs
         self.env.log_manager.reset()
@@ -970,22 +979,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def is_enabled(self):
         return ProjectManager.is_electric_imp_project_window(self.window)
 
-    def update_model_name_in_status(self, query_model_name=True):
-        if query_model_name:
-            settings = self.load_settings()
-            model_id = settings.get(EI_MODEL_ID)
-            if not model_id or not self.env.project_manager.get_refresh_token():
-                # Nothing to update
-                return
-            response, code = HTTP.get(self.env.project_manager.get_refresh_token(),
-                                      PL_BUILD_API_URL_V5 + "models/" + str(model_id))
-            if HTTP.is_response_code_valid(code):
-                model_name = response.get("model").get("name")
-                settings[EI_MODEL_NAME] = model_name
-                self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-            else:
-                log_debug("An error occurred while updating the Model name")
-        self.env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+    def update_status_message(self, query_data=True):
+        self.env.ui_manager.show_settings_value_in_status(EI_PRODUCT_ID, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
@@ -1021,13 +1016,23 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             device_code = self.read_file(device_filename)
 
             settings = self.load_settings()
-            url = PL_BUILD_API_URL_V5 + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
-            data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-            response, code = HTTP.post(self.env.project_manager.get_refresh_token(), url, data)
+            url = PL_BUILD_API_URL_V5 + "deployments"
+            data = ('{"data":{"type":"deployment",'
+                  ' "attributes": {'
+                  '  "description": "Sublime text"'
+                  ', "origin": "sublime"'
+                  ', "tags": []'
+                  ', "agent_code": ' + json.dumps(agent_code) +
+                  ', "device_code" : ' + json.dumps(device_code) +
+                  '},'
+                  '"relationships": {"devicegroup": {'
+                  ' "type": "development_devicegroup", "id": "' + settings.get(EI_DEVICEGROUP_ID) + '"}}'
+                  ' }}')
+            response, code = HTTP.post(self.env.project_manager.get_refresh_token(), url, data, headers={"Content-Type": "application/vnd.api+json"})
             self.handle_response(response, code)
 
         self.check_settings(callback=check_settings_callback)
-        # self.update_model_name_in_status()
+        self.update_status_message()
 
     def handle_response(self, response, code):
         settings = self.load_settings()
@@ -1036,10 +1041,11 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         update_log_windows(False)
 
         if HTTP.is_response_code_valid(code):
-            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response["revision"]["version"])))
+            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response["data"]["attributes"]["sha"])))
+            self.print_to_tty(STR_DEVICEGROUP_CONDITIONAL_RESTART)
 
-            # Not it's time to restart the Model
-            url = PL_BUILD_API_URL_V5 + "models/" + settings.get(EI_MODEL_ID) + "/restart"
+            # Not it's time to restart the code
+            url = PL_BUILD_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
             HTTP.post(self.env.project_manager.get_refresh_token(), url)
         else:
             # {
@@ -1102,7 +1108,7 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         self.init_env_and_settings()
         self.env.ui_manager.init_tty()
         self.check_settings()
-        self.update_model_name_in_status()
+        self.update_status_message()
         update_log_windows(False)
 
 
@@ -1301,7 +1307,7 @@ class ImpSelectModel(BaseElectricImpCommand):
         self.env.log_manager.reset()
 
         # Update the Model name in the status bar
-        self.update_model_name_in_status(query_model_name=False)
+        self.update_status_message(query_data=False)
 
         if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
             return
@@ -1509,14 +1515,33 @@ class LogManager:
 
     def query_logs(self):
         log_request_time = False
-        device_id = self.env.project_manager.load_settings().get(EI_DEVICE_ID)
-        if not device_id:
+        devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
+        if not devicegroup_id:
             # Nothing to do yet
             return
         if self.poll_url:
-            url = PL_BUILD_API_URL_BASE + self.poll_url
+            url = PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url
         else:
-            url = PL_BUILD_API_URL_V5 + "devices/" + device_id + "/logs"
+            devices, rcode = HTTP.get(key=self.env.project_manager.get_refresh_token(), url=PL_BUILD_API_URL_V5 + "devices", data='{"filter": "'+ devicegroup_id +'"}', headers={"Content-Type": "application/vnd.api+json"})
+            # there is no logs when there is no devices
+            if len(devices["data"]) == 0:
+                return
+            response, code = HTTP.post(key=self.env.project_manager.get_refresh_token(), url=PL_BUILD_API_URL_V5 + "logstream", headers={"Content-Type": "application/vnd.api+json"})
+
+            print(response)
+            if HTTP.is_response_code_valid(code):
+                self.poll_url = response["data"]["id"]
+                url = PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url
+            else:
+                return
+
+            response, code = HTTP.get(key=self.env.project_manager.get_refresh_token(),
+                url=url, headers={"Content-Type": "text/event-stream"})
+
+            print(response)
+
+            for device in devices["data"]:
+                response, code = HTTP.put(key=self.env.project_manager.get_refresh_token(), url=PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"], data="{}", headers={"Content-Type": "applicatios/vnd.api+json"})
 
         start = None
         if log_request_time:
@@ -1524,6 +1549,7 @@ class LogManager:
 
         response, code = HTTP.get(key=self.env.project_manager.get_refresh_token(),
                                   url=url, timeout=PL_LONG_POLL_TIMEOUT)
+        print(response)
 
         if log_request_time:
             elapsed = datetime.datetime.now() - start
@@ -1533,6 +1559,8 @@ class LogManager:
         if not HTTP.is_response_code_valid(code):
             log_debug(STR_FAILED_TO_GET_LOGS)
             return None
+
+
         return response
 
     @staticmethod
