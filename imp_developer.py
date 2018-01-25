@@ -34,7 +34,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 import socket
-
+import select
 
 import sublime
 import sublime_plugin
@@ -138,10 +138,19 @@ class ProjectManager:
     def load_settings(self):
         return self.load_settings_file(PR_SETTINGS_FILE)
 
-    def get_access_token(self):
+    def get_access_token_set(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
             return auth_info.get(EI_ACCEESS_TOKEN)
+
+    def get_access_token(self):
+        auth_info = self.load_settings_file(PR_SETTINGS_FILE)
+        if auth_info:
+            token = auth_info.get(EI_ACCEESS_TOKEN)
+            if token and "access_token" in token:
+                return token["access_token"]
+
+        return None
 
     def get_refresh_token(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
@@ -331,13 +340,22 @@ class HTTP:
         try:
             res = urllib.request.urlopen(req, timeout=None)
             code = res.getcode()
-            result = json.loads(res.read().decode('utf-8'))
+            pl = res.read().decode('utf-8')
+            if pl:
+                result = json.loads(pl)
         except socket.timeout:
             log_debug("Timeout error occurred for URL: " + url)
             result = code
         except urllib.error.HTTPError as err:
             code = err.code
             result = json.loads(err.read().decode('utf-8'))
+        except urllib.error.URLError as err:
+            code = 404
+            result = json.loads(err.reason.decode('utf-8'))
+        except urllib.error.ContentTooShortError as err:
+            code = 404
+            result = "Too short conent exception"
+
         return result, code
 
     @staticmethod
@@ -548,7 +566,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         else:
             selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
 
-        token = self.env.project_manager.get_access_token()
+        token = self.env.project_manager.get_access_token_set()
 
         # Perform the checks and prompts for appropriate settings
         #
@@ -712,12 +730,15 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def refresh_access_token(self, token):
         refresh_token = token["refresh_token"]
-        request, code = HTTP.post(None, PL_BUILD_API_URL_V5 + "/auth/token", '{"token":'+refresh_token+'}')
+        request, code = HTTP.post(token["access_token"], PL_BUILD_API_URL_V5 + "/auth/token", '{"token":'+refresh_token+'}')
         # Failed to refresh token reset credentials
         if not HTTP.is_response_code_valid(code):
+            print("FAILED TO REFRESH TOKEN")
             self._update_settings(EI_ACCEESS_TOKEN, None)
         else:
             # refresh token should not be updated during request
+            print("NEW TOKEN IS:")
+            print(request)
             if not request["refresh_token"]:
                 request["refresh_token"] = refresh_token
             self._update_settings(EI_ACCEESS_TOKEN, request)
@@ -754,7 +775,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
 
     def select_existing_product(self):
-        response, code = HTTP.get(self.env.project_manager.get_refresh_token(), PL_BUILD_API_URL_V5 + "products")
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "products")
         # Check that code is correct
         if not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
@@ -792,7 +813,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def select_existing_device_group(self):
         settings = self.load_settings()
-        response, code = HTTP.get(self.env.project_manager.get_refresh_token(), PL_BUILD_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
 
         # Check that code is correct
         if not HTTP.is_response_code_valid(code):
@@ -823,7 +844,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.window.show_input_panel(STR_MODEL_NAME, "", self.on_model_name_provided, None, None)
 
     def on_model_name_provided(self, name):
-        response, code = HTTP.post(self.env.project_manager.get_refresh_token(),
+        response, code = HTTP.post(self.env.project_manager.get_access_token(),
                                    PL_BUILD_API_URL_V5 + "models/", '{"name" : "' + name + '" }')
 
         if not HTTP.is_response_code_valid(code) \
@@ -856,7 +877,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         device_ids = input_device_ids if input_device_ids else []
         device_names = []
 
-        response, code = HTTP.get(self.env.project_manager.get_refresh_token(),
+        response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                   PL_BUILD_API_URL_V5 + "devices/")
         all_devices = response.get("devices")
 
@@ -889,7 +910,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         model = self.env.tmp_model
         device_id = self.env.tmp_device_ids[index]
 
-        response, code = HTTP.put(self.env.project_manager.get_refresh_token(),
+        response, code = HTTP.put(self.env.project_manager.get_access_token(),
                                   PL_BUILD_API_URL_V5 + "devices/" + device_id,
                                   '{"model_id": "' + model.get("id") + '"}')
         if not HTTP.is_response_code_valid(code):
@@ -906,7 +927,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_this_model(self):
         # We assume the model is set up already
         model_id = self.load_settings().get(EI_MODEL_ID)
-        response, code = HTTP.get(self.env.project_manager.get_refresh_token(),
+        response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                   PL_BUILD_API_URL_V5 + "models/" + str(model_id))
         if HTTP.is_response_code_valid(code):
             return response.get("model")
@@ -994,7 +1015,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             view.erase_regions(PL_ERROR_REGION_KEY)
 
         def check_settings_callback():
-            if self.env.project_manager.get_refresh_token() is None:
+            if self.env.project_manager.get_access_token() is None:
                 log_debug("The build API file is missing, please check the settings")
                 return
 
@@ -1028,7 +1049,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                   '"relationships": {"devicegroup": {'
                   ' "type": "development_devicegroup", "id": "' + settings.get(EI_DEVICEGROUP_ID) + '"}}'
                   ' }}')
-            response, code = HTTP.post(self.env.project_manager.get_refresh_token(), url, data, headers={"Content-Type": "application/vnd.api+json"})
+            response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=url, data=data, headers={"Content-Type": "application/vnd.api+json"})
             self.handle_response(response, code)
 
         self.check_settings(callback=check_settings_callback)
@@ -1046,7 +1067,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
             # Not it's time to restart the code
             url = PL_BUILD_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
-            HTTP.post(self.env.project_manager.get_refresh_token(), url)
+            HTTP.post(self.env.project_manager.get_access_token(), url)
         else:
             # {
             # 	'error': {
@@ -1083,7 +1104,10 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                             pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
                 return report
-            error = response["error"]
+            if "error" in response:
+                error = response["error"]
+            else:
+                error = "Unknown error"
             if error and error["code"] == "CompileFailed":
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
                 error_message += build_error_messages(error["details"]["agent_errors"], SourceType.AGENT, self.env)
@@ -1125,7 +1149,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
             settings = self.load_settings()
             if EI_DEVICE_ID in settings:
                 device_id = settings.get(EI_DEVICE_ID)
-                response, code = HTTP.get(self.env.project_manager.get_refresh_token(),
+                response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                           PL_BUILD_API_URL_V5 + "devices/" + device_id)
                 agent_id = response.get("device").get("agent_id")
                 agent_url = PL_AGENT_URL.format(agent_id)
@@ -1275,7 +1299,7 @@ class ImpSelectModel(BaseElectricImpCommand):
         self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
 
     def select_existing_model(self, need_to_confirm=True):
-        response, code = HTTP.get(self.env.project_manager.get_refresh_token(), PL_BUILD_API_URL_V5 + "models")
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "models")
         if len(response["models"]) > 0:
             if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
                 return
@@ -1317,12 +1341,12 @@ class ImpSelectModel(BaseElectricImpCommand):
         agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
-        revisions, code = HTTP.get(self.env.project_manager.get_refresh_token(),
+        revisions, code = HTTP.get(self.env.project_manager.get_access_token(),
                                    PL_BUILD_API_URL_V5 + "models/" + model_id + "/revisions")
         if len(revisions["revisions"]) > 0:
             latest_revision_url = PL_BUILD_API_URL_V5 + "models/" + model_id + "/revisions/" + \
                                   str(revisions["revisions"][0]["version"])
-            source, code = HTTP.get(self.env.project_manager.get_refresh_token(), latest_revision_url)
+            source, code = HTTP.get(self.env.project_manager.get_access_token(), latest_revision_url)
             with open(agent_file, "w", encoding="utf-8") as file:
                 file.write(source["revision"]["agent_code"])
             with open(device_file, "w", encoding="utf-8") as file:
@@ -1371,7 +1395,7 @@ class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
             sublime.message_dialog(STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE)
             return
 
-        response, code = HTTP.put(self.env.project_manager.get_refresh_token(),
+        response, code = HTTP.put(self.env.project_manager.get_access_token(),
                                   PL_BUILD_API_URL_V5 + "devices/" + device_id,
                                   '{"model_id": ""}')
         if not HTTP.is_response_code_valid(code):
@@ -1512,65 +1536,125 @@ class LogManager:
         self.env = env
         self.poll_url = None
         self.last_shown_log = None
+        self.sock = None
+        self.devices = []
+
+    def __read_logs(self):
+        if self.sock and type(self.sock) != None and self.sock.fp != None:
+            next_log = False
+            next_cmd = False
+            logs = []
+            while True:
+                rd, wd, ed = select.select([self.sock], [], [], 1)
+                if not rd:
+                    break
+                else:
+                    for line in self.sock:
+                        if next_log:
+                            next_log = False
+                            logs.append(line.decode("utf-8"))
+                        if next_cmd:
+                            next_cmd = False
+                            if line == b'data: closed\n':
+                                self.sock.close()
+                                self.sock = None
+                                logs.append("Connection closed ...")
+                                break
+
+                        if line == b'event: message\n':
+                            next_log = True
+
+                        if line == b'event: state_change\n':
+                            next_cmd = True
+                        if line == b'\n':
+                            break
+            return logs
+
 
     def query_logs(self):
         log_request_time = False
         devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
+
         if not devicegroup_id:
             # Nothing to do yet
-            return
-        if self.poll_url:
+            return None
+
+        if self.sock and type(self.sock) != None and self.sock.fp != None:
+            return {"logs": self.__read_logs()}
+
+        logs = []
+
+        # Request the list of the devices for the device group
+        # on first connection and cache it for future
+        if not self.poll_url:
+            devices, rcode = HTTP.get(key=self.env.project_manager.get_access_token(),
+                url=PL_BUILD_API_URL_V5 + "devices",
+                data='{"filter": "'+ devicegroup_id +'"}',
+                headers={"Content-Type": "application/vnd.api+json"})
+
+            # Suppose that there is no logs if there is no device
+            if not HTTP.is_response_code_valid(rcode) or len(devices["data"]) == 0:
+                print(devices)
+                return None
+
+            # cache device list
+            # it could be re-use on the next connection
+            # and uses for smart log output
+            self.devices = devices["data"]
+
+        # request a new logstream instance
+        response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=PL_BUILD_API_URL_V5 + "logstream", headers={"Content-Type": "application/vnd.api+json"})
+
+        if HTTP.is_response_code_valid(code):
+            self.poll_url = response["data"]["id"]
             url = PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url
         else:
-            devices, rcode = HTTP.get(key=self.env.project_manager.get_refresh_token(), url=PL_BUILD_API_URL_V5 + "devices", data='{"filter": "'+ devicegroup_id +'"}', headers={"Content-Type": "application/vnd.api+json"})
-            # there is no logs when there is no devices
-            if len(devices["data"]) == 0:
-                return
-            response, code = HTTP.post(key=self.env.project_manager.get_refresh_token(), url=PL_BUILD_API_URL_V5 + "logstream", headers={"Content-Type": "application/vnd.api+json"})
+            # TODO: handle connection error or access-token expired
+            return None
 
-            print(response)
-            if HTTP.is_response_code_valid(code):
-                self.poll_url = response["data"]["id"]
-                url = PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url
-            else:
-                return
+        hdr = {"Authorization": "Bearer " + self.env.project_manager.get_access_token(),
+            "Content-Type": "text/event-stream",
+            "User-Agent": "imp-developer/sublime"}
 
-            response, code = HTTP.get(key=self.env.project_manager.get_refresh_token(),
-                url=url, headers={"Content-Type": "text/event-stream"})
+        req1 = urllib.request.Request(url=url, headers=hdr, method="GET")
+        try:
+            self.sock = urllib.request.urlopen(req1, timeout=None)
+            logs = self.__read_logs()
+        except socket.timeout:
+            # open url timeout
+            self.sock = None
+        except urllib.error.HTTPError as err:
+            # TODO: - handle expired access token
+            #       - no internet connection
+            self.sock = None
 
-            print(response)
-
-            for device in devices["data"]:
-                response, code = HTTP.put(key=self.env.project_manager.get_refresh_token(), url=PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"], data="{}", headers={"Content-Type": "applicatios/vnd.api+json"})
-
+        # attache the devices from the device group to the logstream
+        for device in self.devices:
+            response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
+                url=PL_BUILD_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
+                data="{}")
         start = None
         if log_request_time:
             start = datetime.datetime.now()
-
-        response, code = HTTP.get(key=self.env.project_manager.get_refresh_token(),
-                                  url=url, timeout=PL_LONG_POLL_TIMEOUT)
-        print(response)
 
         if log_request_time:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
-        # There was an error while retrieving logs from the server
-        if not HTTP.is_response_code_valid(code):
-            log_debug(STR_FAILED_TO_GET_LOGS)
-            return None
+        logs = logs + (self.__read_logs());
+        return {"logs": logs}
 
-
-        return response
 
     @staticmethod
     def get_poll_url(logs_json):
-        if not logs_json:
-            return None
-        return logs_json["poll_url"] if "poll_url" in logs_json else None
+        return self.poll_url
 
     @staticmethod
     def logs_are_equal(first, second):
+        return first == second
+
+    @staticmethod
+    def logs_are_equal2(first, second):
         return first["type"] == second["type"] and \
                first["message"] == second["message"] and \
                first["timestamp"] == second["timestamp"]
@@ -1578,11 +1662,11 @@ class LogManager:
     def update_logs(self):
         def __update_logs():
             logs_json = self.query_logs()
+            # no logs available
             if not logs_json:
-                self.poll_url = None
                 return
-            self.poll_url = LogManager.get_poll_url(logs_json)
             logs_list = logs_json["logs"]
+
             i = len(logs_list) if logs_list else 0
             while i > 0:
                 i -= 1
@@ -1592,9 +1676,14 @@ class LogManager:
                     break
             while i < len(logs_list):
                 log = logs_list[i]
+                i += 1
+                # skip empty logs
+                if not log:
+                    continue
+
                 self.write_to_console(log)
                 self.last_shown_log = log
-                i += 1
+
 
         sublime.set_timeout_async(__update_logs, 0)
 
@@ -1618,22 +1707,33 @@ class LogManager:
                     pass  # Use original message if failed to translate the error location
         return message
 
+    def __parse_log(self, log):
+        res = {}
+        ms = log.split(" ")
+
+        if len(ms) < 5 or ms.pop(0) != "data:":
+            res["device"] = "sublime"
+            res["dt"] = datetime.datetime.now()
+            res["type"] = "sublime.log"
+            res["deployment"] = ""
+            res["message"] = log
+        else:
+            res["device"] = ms.pop(0)
+            res["dt"] = datetime.datetime.strptime(ms.pop(0), "%Y-%m-%dT%H:%M:%S.%fZ")
+            res["deployment"] = ms.pop(0)
+            res["type"] = ms.pop(0)
+            res["message"] = " ".join(ms)[:-1]
+
+        return res
+
     def write_to_console(self, log):
-        message = self.convert_line_numbers(log)
-        try:
-            log_type = {
-                "status": "[Server]",
-                "server.log": "[Device]",
-                "server.error": "[Device]",
-                "lastexitcode": "[Device]",
-                "agent.log": "[Agent] ",
-                "agent.error": "[Agent] "
-            }[log["type"]]
-        except KeyError:
-            log_debug("Unrecognized log type: " + log["type"])
-            log_type = "[Unrecognized]"
-        dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
-        self.env.ui_manager.write_to_console(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + log_type + " " + message)
+        message = self.__parse_log(log)
+        if not message:
+            return
+
+        # self.convert_line_numbers(log)
+        self.env.ui_manager.write_to_console(message["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
+            + " [" + message["device"] + "] " + message["type"] + " " + message["message"])
 
     def reset(self):
         self.poll_url = None
