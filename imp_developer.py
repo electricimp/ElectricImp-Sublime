@@ -590,6 +590,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # and try to update it
         #
         elif self.is_access_token_expired(token):
+            # re-login on refresh fail
             self.refresh_access_token(token)
         #
         # is product selected and available yet
@@ -722,24 +723,23 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         settings[index] = value
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
+
     ###
     ### Refresh access token if necessary
     ###
     def is_access_token_expired(self, token):
-        return datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ") <= datetime.datetime.now()
+        return datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ") <= datetime.datetime.utcnow()
 
     def refresh_access_token(self, token):
         refresh_token = token["refresh_token"]
-        request, code = HTTP.post(token["access_token"], PL_BUILD_API_URL_V5 + "/auth/token", '{"token":'+refresh_token+'}')
+        request, code = HTTP.post(None, PL_BUILD_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
         # Failed to refresh token reset credentials
         if not HTTP.is_response_code_valid(code):
-            print("FAILED TO REFRESH TOKEN")
             self._update_settings(EI_ACCEESS_TOKEN, None)
+            return
         else:
             # refresh token should not be updated during request
-            print("NEW TOKEN IS:")
-            print(request)
-            if not request["refresh_token"]:
+            if not "refresh_token" in request:
                 request["refresh_token"] = refresh_token
             self._update_settings(EI_ACCEESS_TOKEN, request)
 
