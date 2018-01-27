@@ -29,9 +29,12 @@ STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name an
 STR_PRODUCT_NAME                     = "Product name:"
 STR_PRODUCT_SERVER_ERROR             = "Failed to extrac produc list"
 STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
+STR_PROVIDE_PRODUCT_NAME             = "Please provide a new product name"
 
 STR_DEVICEGROUP_CREATE_NEW           = "Create a new Device Group ..."
 STR_DEVICEGROUP_CONDITIONAL_RESTART  = "Request a conditional restart for the device group to apply the deployed source code"
+STR_PROVIDE_DEVICEGROUP_NAME         = "Please provide a unique device group name"
+STR_DEVICEGROUP_NAME                  = "Device group name:"
 
 STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
 STR_MODEL_NAME                       = "New Model name:"

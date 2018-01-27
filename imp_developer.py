@@ -924,8 +924,36 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
     def action(self):
         self.select_existing_product()
 
-    def on_create_new_product(self, need_to_confirm=True):
-        print("HANDLE NEW PRODUCT CREATION")
+    def on_create_new_product(self, show_dialog=True):
+        # prompts a message_dialog
+        if show_dialog and not sublime.ok_cancel_dialog(STR_PROVIDE_PRODUCT_NAME):
+            return
+        self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_new_product_name_provided, None, None)
+
+    def on_new_product_name_provided(self, name):
+        token = self.env.project_manager.get_access_token()
+        url = PL_BUILD_API_URL_V5 + "products"
+        data = json.dumps({
+            "data": {
+                "type": "product",
+                "attributes": {
+                    "name": name,
+                    "description": "Product created from sublime plugin"
+                }
+            }
+        })
+        response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
+
+        if HTTP.is_response_code_valid(code):
+            print(response["data"])
+            self._update_settings(EI_PRODUCT_ID, response["data"]["id"])
+            self._update_settings(EI_DEVICEGROUP_ID, None)
+            self.on_action_complete()
+        else:
+            if not sublime.ok_cancel_dialog(response["errors"][0]["detail"]):
+                return
+            self.on_create_new_product(show_dialog=False)
+
 
     def on_product_name_provided(self, index, names):
         # prevent wrong index which should never happened
@@ -935,12 +963,11 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         # Create new product
         if index == 0:
             # Handle a new product creation process
-            self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_create_new_product, None, None)
+            self.on_create_new_product()
         else:
             # Save selected product in the settings file
             self._update_settings(EI_PRODUCT_ID, names[index-1][0])
             self.on_action_complete()
-
 
     def select_existing_product(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "products")
@@ -1001,13 +1028,49 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             return
 
         if index == 0:
-            print("CREATE NEW DEVICE GROUP")
+            self.on_create_new_devicegroup()
         else:
             # the list of items does not contain the "new device group"
             # selection option which has index == 0
             id = items[index-1][0]
             self._update_settings(EI_DEVICEGROUP_ID, id)
             self.on_action_complete()
+
+    def on_create_new_devicegroup(self, show_dialog=True):
+        # prompts a message_dialog
+        if show_dialog and not sublime.ok_cancel_dialog(STR_PROVIDE_DEVICEGROUP_NAME):
+            return
+        self.window.show_input_panel(STR_DEVICEGROUP_NAME, "", self.on_new_devicegroup_name_provided, None, None)
+
+    def on_new_devicegroup_name_provided(self, name):
+        token = self.env.project_manager.get_access_token()
+        url = PL_BUILD_API_URL_V5 + "devicegroups"
+        settings = self.load_settings()
+        data = json.dumps({
+            "data": {
+                "type": "development_devicegroup",
+                "attributes": {
+                    "name": name,
+                    "description": "Devicegroup created from sublime plugin"
+                },
+                "relationships": {
+                    "product": {
+                        "type": "product",
+                        "id": settings[EI_PRODUCT_ID]
+                    }
+                }
+            }
+        })
+        response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
+
+        if HTTP.is_response_code_valid(code):
+            print(response["data"])
+            self._update_settings(EI_DEVICEGROUP_ID, response["data"]["id"])
+            self.on_action_complete()
+        else:
+            if not sublime.ok_cancel_dialog(response["errors"][0]["detail"]):
+                return
+            self.on_create_new_devicegroup(show_dialog=False)
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
