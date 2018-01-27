@@ -76,8 +76,9 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
 EI_LOGIN_KEY             = "login-key"
-EI_REFRESH_TOKEN         = "refresh-token"
-EI_ACCEESS_TOKEN         = "access-token"
+EI_ACCEESS_TOKEN_SET     = "access-token-set"
+EI_ACCESS_TOKEN          = "access_token"
+EI_REFRESH_TOKEN         = "refresh_token"
 EI_PRODUCT_ID            = "product-id"
 EI_DEVICEGROUP_ID        = "device-group-id"
 
@@ -141,23 +142,23 @@ class ProjectManager:
     def get_access_token_set(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            return auth_info.get(EI_ACCEESS_TOKEN)
+            return auth_info.get(EI_ACCEESS_TOKEN_SET)
 
     def get_access_token(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            token = auth_info.get(EI_ACCEESS_TOKEN)
-            if token and "access_token" in token:
-                return token["access_token"]
+            token = auth_info.get(EI_ACCEESS_TOKEN_SET)
+            if token and EI_ACCESS_TOKEN in token:
+                return token[EI_ACCESS_TOKEN]
 
         return None
 
     def get_refresh_token(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            token = auth_info.get(EI_ACCEESS_TOKEN)
-            if token and "access_token" in token:
-                return token["access_token"]
+            token = auth_info.get(EI_ACCEESS_TOKEN_SET)
+            if token and EI_REFRESH_TOKEN in token:
+                return token[EI_REFRESH_TOKEN]
 
         return None
 
@@ -202,9 +203,6 @@ class Env:
         # Temp variables
         self.tmp_model = None
         self.tmp_device_ids = None
-
-        # Check settings callback
-        self.tmp_check_settings_callback = None
 
     @staticmethod
     def For(window):
@@ -517,7 +515,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     """The base class for all the Electric Imp Commands"""
 
     def init_env_and_settings(self):
-
         if not ProjectManager.is_electric_imp_project_window(self.window):
             # Do nothing if it's not an EI project
             return
@@ -554,286 +551,42 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_settings(self):
         return self.env.project_manager.load_settings()
 
-    def check_settings(self, callback=None, selecting_or_creating_model=None):
+    def on_action_complete(self, canceled=False):
+        if not canceled and self.cmd_on_complete != None:
+            self.window.run_command(self.cmd_on_complete)
+
+    def run(self, cmd_on_complete=None):
+        self.init_env_and_settings()
+        self.env.ui_manager.init_tty()
+        self.cmd_on_complete = cmd_on_complete
+
         # Setup pending callback
-        if callback:
-            self.env.tmp_check_settings_callback = callback
-        else:
-            callback = getattr(self.env, "tmp_check_settings_callback", None)
+        if cmd_on_complete:
+            # perform command on completion
+            self.action()
+            return
 
-        if selecting_or_creating_model is not None:
-            self.env.tmp_selecting_or_creating_model = selecting_or_creating_model
-        else:
-            selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
+        commands = [
+            {"command":"imp_check_nodejs_path", "method": ImpCheckNodejsPathCommand.check},
+            {"command":"imp_check_builder_path", "method": ImpCheckBuilderPathCommand.check},
+            {"command":"imp_auth", "method": ImpAuthCommand.check},
+            {"command":"imp_refresh_token", "method": ImpRefreshTokenCommand.check},
+            {"command":"imp_create_new_product", "method": ImpCreateNewProductCommand.check},
+            {"command":"imp_create_new_device_group", "method": ImpCreateNewDeviceGroupCommand.check}]
+        for x in commands:
+            if x["command"] == self.name():
+                break
 
-        token = self.env.project_manager.get_access_token_set()
-
-        # Perform the checks and prompts for appropriate settings
-        #
-        # Check the nodejs path which is required for the Builder
-        #
-        if self.is_missing_node_js_path():
-            self.prompt_for_node_js_path()
-        #
-        # Check the Builder path
-        # Builder uses for preprocessing libraries
-        #
-        elif self.is_missing_builder_cli_path():
-            self.prompt_for_builder_cli_path()
-        #
-        # check if tokens are available
-        #
-        elif not token or not token['refresh_token']:
-            self.prompt_for_user_password()
-        #
-        # check that token is not expired
-        # and try to update it
-        #
-        elif self.is_access_token_expired(token):
-            # re-login on refresh fail
-            self.refresh_access_token(token)
-        #
-        # is product selected and available yet
-        #
-        elif self.is_missing_product():
-            self.select_existing_product()
-        #
-        # is device group is selected and available yet
-        #
-        elif self.is_missing_device_group():
-            self.select_existing_device_group()
-        #
-        # Perform an original callback
-        # TODO: check if it is possible to save callback in the env
-        #       probably we can get troubles with parallel requests
-        #
-        else:
-            # All the checks passed, invoke the callback now
-            if callback:
-                callback()
-            self.env.tmp_check_settings_callback = None
-            self.env.tmp_selecting_or_creating_model = None
-
-    ###
-    ### Configure the nodejs path
-    ###
-
-    def is_missing_node_js_path(self):
-        settings = self.load_settings()
-        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
-        return EI_ST_PR_NODE_PATH not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_NODE_PATH])
-
-    def prompt_for_node_js_path(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_NODE_JS_PATH): return
-        AnfNewProject(self.window, STR_NODE_JS_PATH, self.on_node_js_path_provided).run("/")
-
-    def on_node_js_path_provided(self, path):
-        log_debug("Node.js path provided: " + path)
-        if os.path.exists(path):
-            log_debug("Node.js path is valid")
-            settings = self.load_settings()
-            if EI_BUILDER_SETTINGS not in settings:
-                settings[EI_BUILDER_SETTINGS] = {}
-            builder_settings = settings[EI_BUILDER_SETTINGS]
-            builder_settings[EI_ST_PR_NODE_PATH] = path
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-        else:
-            if sublime.ok_cancel_dialog(STR_INVALID_NODE_JS_PATH):
-                self.prompt_for_node_js_path(False)
-
-        # Loop back to the main settings check
-        self.check_settings()
-
-    ###
-    ### Configure the Builder cli.js
-    ###
-
-    def is_missing_builder_cli_path(self):
-        settings = self.load_settings()
-        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
-        return EI_ST_PR_BUILDER_CLI not in builder_settings or not os.path.exists(
-            builder_settings[EI_ST_PR_BUILDER_CLI])
-
-    def prompt_for_builder_cli_path(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH): return
-        AnfNewProject(self.window, STR_BUILDER_CLI_PATH, self.on_builder_cli_path_provided).run("/")
-
-    def on_builder_cli_path_provided(self, path):
-        log_debug("Builder CLI path provided: " + path)
-        if os.path.exists(path):
-            log_debug("Builder CLI path is valid")
-            settings = self.load_settings()
-            if EI_BUILDER_SETTINGS not in settings:
-                settings[EI_BUILDER_SETTINGS] = {}
-            builder_settings = settings[EI_BUILDER_SETTINGS]
-            builder_settings[EI_ST_PR_BUILDER_CLI] = path
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-        else:
-            if sublime.ok_cancel_dialog(STR_INVALID_BUILDER_CLI_PATH):
-                self.prompt_for_node_js_path(False)
-
-        # Loop back to the main settings check
-        self.check_settings()
-
-    ###
-    ### Check user credentials
-    ###
-
-    def prompt_for_user_password(self, need_to_confirm=True, user_name=None):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_USER_ID): return
-        if not user_name:
-            self.window.show_input_panel(STR_USER_ID, "", self.on_user_id_provided, None, None)
-        else:
-            ufunc = lambda pwd: self.on_user_id_provided(user_name, pwd)
-            self.window.show_input_panel(STR_PASSWORD, "", ufunc , None, None)
-
-    def on_user_id_provided(self, user_name, password=None):
-        if not password:
-            self.prompt_for_user_password(False, user_name)
-        else:
-            url = PL_BUILD_API_URL_V5 + "auth"
-            response, code = HTTP.post(None, url, '{"id": "' + user_name + '", "password": "' + password + '"}')
-            self.on_login_complete(code, response)
-
-    def on_login_complete(self, code, payload):
-        if not HTTP.is_response_code_valid(code):
-            # check if user wants to re-enter urename and password
-            # TODO: check the reason more carefully:
-            # 1. Invalid credentials
-            # 2. No internet access or internal server error
-            if need_to_confirm and not sublime.ok_cancel_dialog(STR_INVALID_CREDENTIALS): return
-            # try to re-enter login/password
-            self.prompt_for_user_password();
-        else:
-            # save the access token in cache and refresh token in the settings file
-            log_debug("Access token received")
-            settings = self.load_settings()
-            settings[EI_ACCEESS_TOKEN] = payload
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-            # check setting again
-            self.check_settings();
-
-    def reset_credentails(self):
-        settings = self.load_settings()
-        settings[EI_ACCEESS_TOKEN] = None
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+            if not x["method"](self):
+                self.window.run_command(x["command"], {"cmd_on_complete": self.name()})
+                return
+        # perform action of the current command
+        self.action()
 
     def _update_settings(self, index, value):
         settings = self.load_settings()
         settings[index] = value
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-
-
-    ###
-    ### Refresh access token if necessary
-    ###
-    def is_access_token_expired(self, token):
-        return datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ") <= datetime.datetime.utcnow()
-
-    def refresh_access_token(self, token):
-        refresh_token = token["refresh_token"]
-        request, code = HTTP.post(None, PL_BUILD_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
-        # Failed to refresh token reset credentials
-        if not HTTP.is_response_code_valid(code):
-            self._update_settings(EI_ACCEESS_TOKEN, None)
-            return
-        else:
-            # refresh token should not be updated during request
-            if not "refresh_token" in request:
-                request["refresh_token"] = refresh_token
-            self._update_settings(EI_ACCEESS_TOKEN, request)
-
-        # restart login process
-        self.check_settings();
-
-    ###
-    ### Check the product setting
-    ###
-    def is_missing_product(self):
-        settings = self.load_settings();
-        if EI_PRODUCT_ID not in settings or settings.get(EI_PRODUCT_ID) is None:
-            return True
-        # TODO: Check that project still available in the remote configuraiton
-        return False
-
-    def on_create_new_product(self, need_to_confirm=True):
-        print("HANDLE NEW PRODUCT CREATION")
-
-    def on_product_name_provided(self, index, names):
-        # prevent wrong index which should never happened
-        if (index < 0 or index > len(names)):
-            return
-
-        # Create new product
-        if index == 0:
-            # Handle a new product creation process
-            self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_create_new_product, None, None)
-        else:
-            # Save selected product in the settings file
-            self._update_settings(EI_PRODUCT_ID, names[index-1][0])
-            self.check_settings()
-
-
-    def select_existing_product(self):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "products")
-        # Check that code is correct
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
-            if code == 401:
-                self.reset_credentails()
-                self.check_settings()
-            return
-
-        # check that response has some payload
-        if len(response['data']) > 0:
-            all_names = [product["attributes"]["name"] for product in response['data']]
-            self.__tmp_all_models = [(product["id"], product["attributes"]["name"]) for product in response['data']]
-
-        # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
-
-    def is_missing_device_group(self):
-        settings = self.load_settings();
-        if EI_DEVICEGROUP_ID not in settings or settings.get(EI_DEVICEGROUP_ID) is None:
-            return True
-        # TODO: Check that project still available in the remote configuraiton
-        return False
-
-    def on_devicegroup_name_provided(self, index, items):
-        # prevent wrong index which should never happened
-        if (index < 0 or index > len(items)):
-            return
-
-        if index == 0:
-            print("CREATE NEW DEVICE GROUP")
-        else:
-            id = items[index-1][0]
-            self._update_settings(EI_DEVICEGROUP_ID, id)
-            self.check_settings()
-
-    def select_existing_device_group(self):
-        settings = self.load_settings()
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
-
-        # Check that code is correct
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
-            if code == 401:
-                self.reset_credentails()
-                self.check_settings()
-            return
-
-        # check that response has some payload
-        if len(response['data']) > 0:
-            all_names = []
-            self.__tmp_all_models = []
-            for product in response['data']:
-                if product["relationships"]["product"]["id"] == settings[EI_PRODUCT_ID]:
-                    self.__tmp_all_models += [(product["id"], product["attributes"]["name"])]
-                    all_names += [product["attributes"]["name"]]
-
-        # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_DEVICEGROUP_CREATE_NEW ] + all_names, lambda id: self.on_devicegroup_name_provided(id, self.__tmp_all_models))
 
     def is_missing_model(self):
         settings = self.load_settings()
@@ -1003,13 +756,267 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def update_status_message(self, query_data=True):
         self.env.ui_manager.show_settings_value_in_status(EI_PRODUCT_ID, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
 
+###
+### Configure the nodejs path
+###
+class ImpCheckNodejsPathCommand(BaseElectricImpCommand):
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
+        result = EI_ST_PR_NODE_PATH not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_NODE_PATH])
+        return not result
+
+    def action(self, skip_dialog=False):
+        if not skip_dialog and not sublime.ok_cancel_dialog(STR_PROVIDE_NODE_JS_PATH):
+            self.on_action_complete(canceled=True)
+            return
+        AnfNewProject(self.window, STR_NODE_JS_PATH, self.on_node_js_path_provided).run("/")
+
+    def on_node_js_path_provided(self, path):
+        log_debug("Node.js path provided: " + path)
+        if os.path.exists(path):
+            log_debug("Node.js path is valid")
+            settings = self.load_settings()
+            if EI_BUILDER_SETTINGS not in settings:
+                settings[EI_BUILDER_SETTINGS] = {}
+            builder_settings = settings[EI_BUILDER_SETTINGS]
+            builder_settings[EI_ST_PR_NODE_PATH] = path
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        else:
+            if sublime.ok_cancel_dialog(STR_INVALID_NODE_JS_PATH):
+                self.action(skip_dialog=True)
+
+        # Loop back to the main settings check
+        self.on_action_complete()
+
+#
+# Check the Builder path
+# Builder uses for preprocessing libraries
+#
+class ImpCheckBuilderPathCommand(BaseElectricImpCommand):
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
+        return EI_ST_PR_BUILDER_CLI in builder_settings and os.path.exists(
+            builder_settings[EI_ST_PR_BUILDER_CLI])
+
+    def action(self):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH):
+            self.on_action_complete(canceled=True)
+            return
+        self.callback = callback
+        AnfNewProject(self.window, STR_BUILDER_CLI_PATH, self.on_builder_cli_path_provided).run("/")
+
+    def on_builder_cli_path_provided(self, path):
+        log_debug("Builder CLI path provided: " + path)
+        if os.path.exists(path):
+            log_debug("Builder CLI path is valid")
+            settings = self.load_settings()
+            if EI_BUILDER_SETTINGS not in settings:
+                settings[EI_BUILDER_SETTINGS] = {}
+            builder_settings = settings[EI_BUILDER_SETTINGS]
+            builder_settings[EI_ST_PR_BUILDER_CLI] = path
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        else:
+            if sublime.ok_cancel_dialog(STR_INVALID_BUILDER_CLI_PATH):
+                self.prompt_for_node_js_path(False)
+
+        # Loop back to the main settings check
+        self.on_action_complete()
+
+###
+### Check user credentials
+###
+class ImpAuthCommand(BaseElectricImpCommand):
+    #
+    # check if tokens are available
+    #
+    @staticmethod
+    def check(base):
+        token = base.env.project_manager.get_access_token_set()
+        return token != None and token['refresh_token'] != None
+
+    def action(self):
+        self.prompt_for_user_password()
+
+    def prompt_for_user_password(self, need_to_confirm=True, user_name=None):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_USER_ID): return
+        if not user_name:
+            self.window.show_input_panel(STR_USER_ID, "", self.on_user_id_provided, None, None)
+        else:
+            ufunc = lambda pwd: self.on_user_id_provided(user_name, pwd)
+            self.window.show_input_panel(STR_PASSWORD, "", ufunc , None, None)
+
+    def on_user_id_provided(self, user_name, password=None):
+        if not password:
+            self.prompt_for_user_password(False, user_name)
+        else:
+            url = PL_BUILD_API_URL_V5 + "auth"
+            response, code = HTTP.post(None, url, '{"id": "' + user_name + '", "password": "' + password + '"}')
+            self.on_login_complete(code, response)
+
+    def on_login_complete(self, code, payload):
+        if not HTTP.is_response_code_valid(code):
+            # check if user wants to re-enter urename and password
+            # TODO: check the reason more carefully:
+            # 1. Invalid credentials
+            # 2. No internet access or internal server error
+            if need_to_confirm and not sublime.ok_cancel_dialog(STR_INVALID_CREDENTIALS): return
+            # try to re-enter login/password
+            self.prompt_for_user_password();
+        else:
+            # save the access token in cache and refresh token in the settings file
+            log_debug("Access token received")
+            settings = self.load_settings()
+            settings[EI_ACCEESS_TOKEN_SET] = payload
+            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+            # check setting again
+            self.on_action_complete();
+
+    def reset_credentails(self):
+        settings = self.load_settings()
+        settings[EI_ACCEESS_TOKEN_SET] = None
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+###
+### check that token is not expired
+### and try to update it
+###
+class ImpRefreshTokenCommand(BaseElectricImpCommand):
+    ###
+    ### Refresh access token if necessary
+    ###
+    @staticmethod
+    def check(base):
+        token = base.env.project_manager.get_access_token_set()
+        expires = datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        return expires > datetime.datetime.utcnow()
+
+    def action(self):
+        refresh_token = self.env.project_manager.get_refresh_token()
+        request, code = HTTP.post(None, PL_BUILD_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
+        # Failed to refresh token reset credentials
+        if not HTTP.is_response_code_valid(code):
+            self._update_settings(EI_ACCEESS_TOKEN_SET, None)
+            self.on_action_complete()
+            return
+        else:
+            # refresh token should not be updated during request
+            if not EI_REFRESH_TOKEN in request:
+                request[EI_REFRESH_TOKEN] = refresh_token
+            self._update_settings(EI_ACCEESS_TOKEN_SET, request)
+
+        # restart login process
+        self.on_action_complete();
+
+###
+### Check the product setting
+###
+class ImpCreateNewProductCommand(BaseElectricImpCommand):
+    @staticmethod
+    def check(base):
+        settings = base.load_settings();
+        return EI_PRODUCT_ID in settings and settings.get(EI_PRODUCT_ID) != None
+        # TODO: Check that project still available in the remote configuraiton
+
+    def action(self):
+        self.select_existing_product()
+
+    def on_create_new_product(self, need_to_confirm=True):
+        print("HANDLE NEW PRODUCT CREATION")
+
+    def on_product_name_provided(self, index, names):
+        # prevent wrong index which should never happened
+        if (index < 0 or index > len(names)):
+            return
+
+        # Create new product
+        if index == 0:
+            # Handle a new product creation process
+            self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_create_new_product, None, None)
+        else:
+            # Save selected product in the settings file
+            self._update_settings(EI_PRODUCT_ID, names[index-1][0])
+            self.on_action_complete()
+
+
+    def select_existing_product(self):
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "products")
+        # Check that code is correct
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
+            if code == 401:
+                self.reset_credentails()
+                self.on_action_complete()
+            return
+
+        # check that response has some payload
+        if len(response['data']) > 0:
+            all_names = [product["attributes"]["name"] for product in response['data']]
+            self.__tmp_all_models = [(product["id"], product["attributes"]["name"]) for product in response['data']]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+
+###
+### Check the device group or create a new one
+###
+class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
+    @staticmethod
+    def check(base):
+        settings = base.load_settings();
+        return EI_DEVICEGROUP_ID in settings and settings.get(EI_DEVICEGROUP_ID) != None
+        # TODO: Check that project still available in the remote configuraiton
+
+    def action(self):
+        settings = self.load_settings()
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
+
+        # Check that code is correct
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
+            if code == 401:
+                self.reset_credentails()
+                self.check_settings()
+            return
+
+        # check that response has some payload
+        if len(response['data']) > 0:
+            all_names = []
+            self.__tmp_all_models = []
+            for product in response['data']:
+                if product["relationships"]["product"]["id"] == settings[EI_PRODUCT_ID]:
+                    self.__tmp_all_models += [(product["id"], product["attributes"]["name"])]
+                    all_names += [product["attributes"]["name"]]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel([ STR_DEVICEGROUP_CREATE_NEW ] + all_names, lambda id: self.on_devicegroup_name_provided(id, self.__tmp_all_models))
+
+    def on_devicegroup_name_provided(self, index, items):
+        # prevent wrong index which should never happened
+        if (index < 0 or index > len(items)):
+            self.on_action_complete(canceled=True)
+            return
+
+        if index == 0:
+            print("CREATE NEW DEVICE GROUP")
+        else:
+            # the list of items does not contain the "new device group"
+            # selection option which has index == 0
+            id = items[index-1][0]
+            self._update_settings(EI_DEVICEGROUP_ID, id)
+            self.on_action_complete()
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
 
-    def run(self):
-        self.init_env_and_settings()
-        self.env.ui_manager.init_tty()
+    @staticmethod
+    def check(base):
+        return True
+
+    def action(self):
         # Clean up all the error marks first
         for view in self.window.views():
             view.erase_regions(PL_ERROR_REGION_KEY)
@@ -1052,8 +1059,8 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=url, data=data, headers={"Content-Type": "application/vnd.api+json"})
             self.handle_response(response, code)
 
-        self.check_settings(callback=check_settings_callback)
         self.update_status_message()
+        self.on_action_complete()
 
     def handle_response(self, response, code):
         settings = self.load_settings()
@@ -1128,40 +1135,26 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-        self.env.ui_manager.init_tty()
-        self.check_settings()
+    def action(self):
         self.update_status_message()
         update_log_windows(False)
 
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-        self.check_settings(callback=self.select_device)
+    def action(self):
+        self.select_device()
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-
-        def check_settings_callback():
-            settings = self.load_settings()
-            if EI_DEVICE_ID in settings:
-                device_id = settings.get(EI_DEVICE_ID)
-                response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                          PL_BUILD_API_URL_V5 + "devices/" + device_id)
-                agent_id = response.get("device").get("agent_id")
-                agent_url = PL_AGENT_URL.format(agent_id)
-                sublime.set_clipboard(agent_url)
-                sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
-
-        self.check_settings(callback=check_settings_callback)
-
-class ImpCreateNewProductCommand(BaseElectricImpCommand):
-    def run(self):
-        print("Create new product")
-
+    def action(self):
+        settings = self.load_settings()
+        if EI_DEVICE_ID in settings:
+            device_id = settings.get(EI_DEVICE_ID)
+            response, code = HTTP.get(self.env.project_manager.get_access_token(),
+                                      PL_BUILD_API_URL_V5 + "devices/" + device_id)
+            agent_id = response.get("device").get("agent_id")
+            agent_url = PL_AGENT_URL.format(agent_id)
+            sublime.set_clipboard(agent_url)
+            sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
     def run(self):
@@ -1278,15 +1271,6 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def is_enabled(self):
         return True
 
-
-class ImpCreateModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-
-        def check_settings_callback():
-            self.create_new_model()
-
-        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
 
 
 class ImpSelectModel(BaseElectricImpCommand):
@@ -1594,7 +1578,6 @@ class LogManager:
 
             # Suppose that there is no logs if there is no device
             if not HTTP.is_response_code_valid(rcode) or len(devices["data"]) == 0:
-                print(devices)
                 return None
 
             # cache device list
