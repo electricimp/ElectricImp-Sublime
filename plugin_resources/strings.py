@@ -29,20 +29,20 @@ STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name an
 STR_PRODUCT_NAME                     = "Product name:"
 STR_PRODUCT_SERVER_ERROR             = "Failed to extrac produc list"
 STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
-STR_PROVIDE_PRODUCT_NAME             = "Please provide a new product name"
+STR_PRODUCT_PROVIDE_NAME             = "Please provide a new product name"
 
 STR_DEVICEGROUP_CREATE_NEW           = "Create a new Device Group ..."
-STR_DEVICEGROUP_CONDITIONAL_RESTART  = "Request a conditional restart for the device group to apply the deployed source code"
-STR_PROVIDE_DEVICEGROUP_NAME         = "Please provide a unique device group name"
-STR_DEVICEGROUP_NAME                  = "Device group name:"
+STR_DEVICEGROUP_CONDITIONAL_RESTART  = "Requested the conditional restart for the device group to apply the deployed source code"
+STR_DEVICEGROUP_PROVIDE_NAME         = "Please provide a unique device group name"
+STR_DEVICEGROUP_NAME                 = "Device group name:"
+STR_DEVICEGROUP_CONFIRM_PULLING_CODE = "Do you want to pull the latest code revision from the DeviceGroup? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
 
-STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
-STR_MODEL_NAME                       = "New Model name:"
-STR_MODEL_NAME_EXISTS                = "The Model name already exists. Please try another one"
 STR_MODEL_HAS_NO_DEVICES             = "The model has no devices yet. Please add an existing device to the model (Tools -> Packages -> Electric Imp -> Add Device)"
 STR_MODEL_FAILED_TO_CREATE           = "Failed to create the model"
+
 STR_MODEL_ADD_DEVICE                 = "Please select a device to add to the model"
 STR_MODEL_ADDING_DEVICE_FAILED       = "Adding device to the model failed"
+
 STR_MODEL_IMP_REGISTERED             = "The Imp device is added to the Model and selected as active"
 STR_MODEL_REMOVE_DEVICE              = "Select a device to remove from the Model"
 STR_MODEL_NO_DEVICES_TO_REMOVE       = "The Model has no devices to remove"
@@ -52,7 +52,6 @@ STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from 
 STR_MODEL_NOT_ASSIGNED               = "The project doesn't have a model assigned. Please select or create one (Tools -> Packages -> Electric Imp -> Create/Select Model)."
 STR_MODEL_NO_MODELS_FOUND            = "No models available on the account. Please create one (Tools -> Packages -> Electric Imp -> Create Model)"
 STR_MODEL_SELECT_EXISTING_MODEL      = "Select existing Model"
-STR_MODEL_CONFIRM_PULLING_MODEL_CODE = "Do you want to pull the latest code revision from the Model? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
 
 STR_ERR_MESSAGE_LINE                 = "    ERROR: [CLICKABLE] {} ({}:{})\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "\nDeploy failed because of the following errors:\n"

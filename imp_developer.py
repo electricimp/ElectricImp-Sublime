@@ -81,6 +81,7 @@ EI_ACCESS_TOKEN          = "access_token"
 EI_REFRESH_TOKEN         = "refresh_token"
 EI_PRODUCT_ID            = "product-id"
 EI_DEVICEGROUP_ID        = "device-group-id"
+EI_DEPLOYMENT_ID         = "deployment-id"
 
 EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
@@ -572,7 +573,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             {"command":"imp_auth", "method": ImpAuthCommand.check},
             {"command":"imp_refresh_token", "method": ImpRefreshTokenCommand.check},
             {"command":"imp_create_new_product", "method": ImpCreateNewProductCommand.check},
-            {"command":"imp_create_new_device_group", "method": ImpCreateNewDeviceGroupCommand.check}]
+            {"command":"imp_create_new_device_group", "method": ImpCreateNewDeviceGroupCommand.check},
+            {"command":"imp_load_code", "method": ImpLoadCodeCommand.check}]
         for x in commands:
             if x["command"] == self.name():
                 break
@@ -587,44 +589,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         settings = self.load_settings()
         settings[index] = value
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-
-    def is_missing_model(self):
-        settings = self.load_settings()
-        return EI_MODEL_ID not in settings or settings.get(EI_MODEL_ID) is None
-
-    def create_new_model(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_PROVIDE_NAME): return
-        self.window.show_input_panel(STR_MODEL_NAME, "", self.on_model_name_provided, None, None)
-
-    def on_model_name_provided(self, name):
-        response, code = HTTP.post(self.env.project_manager.get_access_token(),
-                                   PL_BUILD_API_URL_V5 + "models/", '{"name" : "' + name + '" }')
-
-        if not HTTP.is_response_code_valid(code) \
-                and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
-            self.create_new_model(False)
-            return
-        elif not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
-            return
-
-        # Save newly created model to the project settings
-        settings = self.load_settings()
-        settings[EI_MODEL_ID] = response.get("model").get("id")
-        settings[EI_MODEL_NAME] = response.get("model").get("name")
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-
-        self.update_status_message(query_data=False)
-
-        # Reset the logs
-        self.env.log_manager.reset()
-
-        # Check settings
-        self.check_settings(selecting_or_creating_model=True)
-
-    def is_missing_device(self):
-        settings = self.load_settings()
-        return EI_DEVICE_ID not in settings or settings.get(EI_DEVICE_ID) is None
 
     def load_devices(self, input_device_ids=None, exclude_device_ids=None):
         device_ids = input_device_ids if input_device_ids else []
@@ -926,7 +890,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
 
     def on_create_new_product(self, show_dialog=True):
         # prompts a message_dialog
-        if show_dialog and not sublime.ok_cancel_dialog(STR_PROVIDE_PRODUCT_NAME):
+        if show_dialog and not sublime.ok_cancel_dialog(STR_PRODUCT_PROVIDE_NAME):
             return
         self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_new_product_name_provided, None, None)
 
@@ -1038,7 +1002,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def on_create_new_devicegroup(self, show_dialog=True):
         # prompts a message_dialog
-        if show_dialog and not sublime.ok_cancel_dialog(STR_PROVIDE_DEVICEGROUP_NAME):
+        if show_dialog and not sublime.ok_cancel_dialog(STR_DEVICEGROUP_PROVIDE_NAME):
             return
         self.window.show_input_panel(STR_DEVICEGROUP_NAME, "", self.on_new_devicegroup_name_provided, None, None)
 
@@ -1132,12 +1096,17 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         update_log_windows(False)
 
         if HTTP.is_response_code_valid(code):
+            # save the current deployment
+            self._update_settings(EI_DEPLOYMENT_ID, response["data"]["id"])
+            # print the deployment to the status
             self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response["data"]["attributes"]["sha"])))
+            # note user about conditionla restart request
             self.print_to_tty(STR_DEVICEGROUP_CONDITIONAL_RESTART)
 
             # Not it's time to restart the code
             url = PL_BUILD_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
             HTTP.post(self.env.project_manager.get_access_token(), url)
+            # TODO: Handle the conditional restart results
         else:
             # {
             # 	'error': {
@@ -1266,7 +1235,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             EI_DEVICE_FILE: os.path.join(PR_SOURCE_DIRECTORY, PR_DEVICE_FILE_NAME)
         })
 
-        # Pull the latest code revision from the server
+        # TODO: Pull the latest code revision from the server
         self.create_source_files_if_absent(path)
 
         try:
@@ -1334,18 +1303,72 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def is_enabled(self):
         return True
 
+class ImpLoadCodeCommand(BaseElectricImpCommand):
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        return EI_DEPLOYMENT_ID in settings and settings[EI_DEPLOYMENT_ID] != None
+
+    def action(self):
+        if not sublime.ok_cancel_dialog(STR_DEVICEGROUP_CONFIRM_PULLING_CODE):
+            return
+
+        settings = self.load_settings()
+        url = PL_BUILD_API_URL_V5 + "devicegroups/" + settings[EI_DEVICEGROUP_ID]
+        headers = {"Content-Type": "application/vnd.api+json"}
+        response, code = HTTP.get(self.env.project_manager.get_access_token(),
+                                   url=url, headers = headers)
+
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog("Failed to load devicegroup data")
+            return
+        print(response)
+        if response:
+            return
+        deployment = response["data"]["relationships"]["current_deployment"]["id"]
+        # TODO:
+        # Handle the use-case when there is no any deployment yet
+        # for example for a newly created group
 
 
-class ImpSelectModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
+        # for a one hand it is the same revision as should be
+        # in the local file but for another hand
+        # local files could be changed and user wants to revert them
+        # to the latest revision
+        #
+        # TODO: think about deployment select like in the IDE
+        if deployment == settings[EI_DEPLOYMENT_ID]:
+            log_debug("Everything up to date")
 
-        def check_settings_callback():
-            self.select_existing_model()
+        url = PL_BUILD_API_URL_V5 + "deployments/" + deployment
+        response, code = HTTP.get(self.env.project_manager.get_access_token(),
+                                   url=url, headers = headers)
 
-        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog("Failed to load the latest deployment")
+            return
 
-    def select_existing_model(self, need_to_confirm=True):
+        # Pull the latest code from the Model
+        source_dir = self.env.project_manager.get_source_directory_path()
+        agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
+        device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
+
+        if response["data"]["attributes"]:
+            source, code = HTTP.get(self.env.project_manager.get_access_token(), latest_revision_url)
+            with open(agent_file, "w", encoding="utf-8") as file:
+                file.write(response["data"]["attributes"]["agent_code"])
+            with open(device_file, "w", encoding="utf-8") as file:
+                file.write(response["data"]["attributes"]["device_code"])
+            # save the latest deployment id
+            self._update_settings(EI_DEPLOYMENT_ID, deployment)
+
+###
+### Request all registered devices and assign
+### one of that devices to the device group
+### Note: action should trigger logs restart
+###
+class ImpAssignDeviceCommand(BaseElectricImpCommand):
+    def action(self, need_to_confirm=True):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_BUILD_API_URL_V5 + "models")
         if len(response["models"]) > 0:
             if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
@@ -1380,43 +1403,11 @@ class ImpSelectModel(BaseElectricImpCommand):
         # Update the Model name in the status bar
         self.update_status_message(query_data=False)
 
-        if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
-            return
-
-        # Pull the latest code from the Model
-        source_dir = self.env.project_manager.get_source_directory_path()
-        agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
-        device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
-
-        revisions, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                   PL_BUILD_API_URL_V5 + "models/" + model_id + "/revisions")
-        if len(revisions["revisions"]) > 0:
-            latest_revision_url = PL_BUILD_API_URL_V5 + "models/" + model_id + "/revisions/" + \
-                                  str(revisions["revisions"][0]["version"])
-            source, code = HTTP.get(self.env.project_manager.get_access_token(), latest_revision_url)
-            with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(source["revision"]["agent_code"])
-            with open(device_file, "w", encoding="utf-8") as file:
-                file.write(source["revision"]["device_code"])
-        else:
-            # Create initial source files
-            with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
-            with open(device_file, "w", encoding="utf-8") as file:
-                file.write(STR_INITIAL_SRC_CONTENT.format("Device"))
-
-
-class ImpAddDeviceToModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-
-        def check_settings_callback():
-            self.add_device(need_to_confirm=False)
-
-        self.check_settings(callback=check_settings_callback)
-
-
-class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
+###
+### Remove device from the device group
+### and force to update console log stream
+###
+class ImpRemoveDeviceCommand(BaseElectricImpCommand):
     def run(self):
         self.init_env_and_settings()
         self.check_settings(callback=self.prompt_model_to_remove_device)
@@ -1617,7 +1608,6 @@ class LogManager:
                             break
             return logs
 
-
     def query_logs(self):
         log_request_time = False
         devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
@@ -1690,20 +1680,9 @@ class LogManager:
         logs = logs + (self.__read_logs());
         return {"logs": logs}
 
-
-    @staticmethod
-    def get_poll_url(logs_json):
-        return self.poll_url
-
     @staticmethod
     def logs_are_equal(first, second):
         return first == second
-
-    @staticmethod
-    def logs_are_equal2(first, second):
-        return first["type"] == second["type"] and \
-               first["message"] == second["message"] and \
-               first["timestamp"] == second["timestamp"]
 
     def update_logs(self):
         def __update_logs():
@@ -1756,7 +1735,8 @@ class LogManager:
     def __parse_log(self, log):
         res = {}
         ms = log.split(" ")
-
+        # is some case we could get wrong log format
+        # the following code is attemtion to handle such case
         if len(ms) < 5 or ms.pop(0) != "data:":
             res["device"] = "sublime"
             res["dt"] = datetime.datetime.now()
@@ -1764,6 +1744,7 @@ class LogManager:
             res["deployment"] = ""
             res["message"] = log
         else:
+            # date: deviceId timestamp deployment type log-string
             res["device"] = ms.pop(0)
             res["dt"] = datetime.datetime.strptime(ms.pop(0), "%Y-%m-%dT%H:%M:%S.%fZ")
             res["deployment"] = ms.pop(0)
@@ -1773,16 +1754,31 @@ class LogManager:
         return res
 
     def write_to_console(self, log):
+        # parse log string
+        # to extract log details
         message = self.__parse_log(log)
-        if not message:
-            return
 
-        # self.convert_line_numbers(log)
+        # maps the error details to the corresponding
+        # filename and line numbers
+        message = self.convert_line_numbers(message)
+        # impCentral provides its own format of the logs
+        # but it is not comfortable for user to read such logs
+        # therefore the following line just re-format the same log
         self.env.ui_manager.write_to_console(message["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
             + " [" + message["device"] + "] " + message["type"] + " " + message["message"])
 
     def reset(self):
+        # this action should force to close the log stream
+        # but on the next request of logs stream should be
+        # instatiated
+        if self.sock:
+            self.sock.close()
+            self.sock = None
+        # reset poll url to reopen socket
         self.poll_url = None
+        # last shown log could be different after device assing
+        # that's why log could be suplicated in the console
+        # after device assign/an-assign
         self.last_shown_log = None
 
 def update_log_windows(restart_timer=True):
