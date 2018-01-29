@@ -375,7 +375,7 @@ class HTTP:
 
     @staticmethod
     def is_response_code_valid(code):
-        return code in [200, 201, 202]
+        return code in [200, 201, 202, 204]
 
 
 class SourceType():
@@ -931,36 +931,51 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
     def action(self):
         self.select_existing_device()
 
-    def on_device_name_provided(self, index, names):
+    def on_device_name_provided(self, index, devices):
         # prevent wrong index which
         # happen on cancel
-        if (index < 0 or index >= len(names)):
+        if (index < 0 or index >= len(devices)):
             return
+
         # there is no option for create new device
-        # therefore index maps on the names correctly
-        device = names[index]
+        # therefore index maps on the devices correctly
+        device = devices[index]
+
         settings = self.load_settings()
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + setting.get(EI_DEVICEGROUP_ID)
+
+        # Check that device is not in the device group yet
+        # Note: devicegroup could be not defined
+        #       if device was not assigned to any device group
+        devgrp = device["relationships"].get("devicegroup")
+        if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
+            print("NO NEED TO ASSING DEVICE TO THE SAME DEV GROUP")
+            return
+
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/relationships/devices"
         data = json.dumps({
-                "data" : {
+                "data" : [{
                     "type": "device",
-                    "id": device[0]
-                }
+                    "id": device["id"]
+                }]
             })
+
         # Append the selected device to the device group
-        response, code = HTTP.put(self.env.project_manager.get_access_token(), url, data, headers)
+        headers = {"Content-Type": 'application/vnd.api+json'}
+        response, code = HTTP.post(self.env.project_manager.get_access_token(), url, data, headers=headers)
 
         # handle the respond
         if not HTTP.is_response_code_valid(code):
-            print("FAILED TO ADD DEVICE TO THE DEVICE GROUP")
-
-        # Request log stream reset to add the devive to the log
-        #
-        # Note: for another hand it is possible to attach the device
-        #       to the logstream without stream reset, but it is
-        #       expected that user should not use assign/unassign
-        #       devices frequently
-        self.env.log_manager.reset()
+            log_debug("Failed to add device to the group")
+        else:
+            # Request log stream reset to add the devive to the log
+            #
+            # Note: for another hand it is possible to attach the device
+            #       to the logstream without stream reset, but it is
+            #       expected that user should not use assign/unassign
+            #       devices frequently
+            # Note: push reset to the background thread to prevent
+            #       concurent access to the LogManager's fields
+            sublime.set_timeout_async(self.env.log_manager.reset, 0)
 
     def select_existing_device(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
@@ -974,12 +989,12 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # check that response has some payload
         # response should contain the list of devices
-        if len(response) > 0:
-            all_names = [device["attributes"]["name"] for device in response]
-            self.__tmp_all_models = [(device["id"], device["attributes"]["name"]) for device in response]
+        if len(response.get("data")) > 0:
+            print(response)
+            all_names = [device["attributes"]["name"] for device in response["data"]]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+        self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, response["data"]))
 
 ###
 ### Un-Assign device from the
@@ -990,32 +1005,33 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
     def action(self):
         self.select_existing_device()
 
-    def on_device_name_provided(self, index, names):
+    def on_device_name_provided(self, index, devices):
         # prevent wrong index which
         # happen on cancel
-        if (index < 0 or index >= len(names)):
+        if (index < 0 or index >= len(devices)):
             return
         # there is no option for create new device
         # therefore index maps on the names correctly
-        device = names[index]
+        device = devices[index]
         settings = self.load_settings()
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + setting.get(EI_DEVICEGROUP_ID)
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/relationships/devices"
         data = json.dumps({
-                "data" : {
+                "data" : [{
                     "type": "device",
-                    "id": device[0]
-                }
+                    "id": device["id"]
+                }]
             })
         # Append the selected device to the device group
-        response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data, headers)
+        response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data)
 
         # handle the respond
         if not HTTP.is_response_code_valid(code):
-            print("FAILED TO DELETE DEVICE FROM THE DEVICE GROUP")
-
-        # Request log stream reset to remove the devive from the log
-        self.env.log_manager.reset()
-
+            log_debug("Failed to remove device from the group")
+        else:
+            # Request log stream reset to remove the devive from the log
+            # Note: push to the background thread to prevent concurent access
+            #       to the logManager's fields
+            sublime.set_timeout_async(self.env.log_manager.reset, 0)
 
     def select_existing_device(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
@@ -1029,12 +1045,21 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
 
         # check that response has some payload
         # response should contain the list of devices
-        if len(response) > 0:
-            all_names = [device["attributes"]["name"] for device in response]
-            self.__tmp_all_models = [(device["id"], device["attributes"]["name"]) for device in response]
+        if len(response.get("data")) > 0:
+            # filter devices localy
+            devices = []
+            settings = self.load_settings()
+            for device in response["data"]:
+                devgrp = device["relationships"].get("devicegroup")
+                if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
+                    devices.append(device)
 
-        # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+            all_names = [device["attributes"]["name"] for device in devices]
+        if len(devices) > 0:
+            # make a new product creation option as a part of the product select menu
+            self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
+        else:
+            sublime.message_dialog("There is assigned no devices in the current device group")
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
@@ -1530,7 +1555,8 @@ class LogManager:
             return None
 
         if self.sock and type(self.sock) != None and self.sock.fp != None:
-            return {"logs": self.__read_logs()}
+            result = {"logs": self.__read_logs()}
+            return result
 
         logs = []
 
@@ -1578,6 +1604,10 @@ class LogManager:
             # TODO: - handle expired access token
             #       - no internet connection
             self.sock = None
+
+        if not self.sock:
+            self.reset()
+            return
 
         # attache the devices from the device group to the logstream
         for device in self.devices:
