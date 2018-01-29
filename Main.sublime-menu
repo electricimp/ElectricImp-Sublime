@@ -20,9 +20,14 @@
                                 "caption" : "Create Project",
                                 "command" : "imp_create_project"
                             },
+                            { "caption": "-" },
                             {
-                                "caption" : "Create New Product",
-                                "command" : "imp_create_new_product"
+                                "caption" : "Assign device",
+                                "command" : "imp_assign_device"
+                            },
+                            {
+                                "caption" : "Unassign device",
+                                "command" : "imp_unassign_device"
                             },
                             { "caption": "-" },
                             {

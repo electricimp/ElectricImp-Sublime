@@ -370,6 +370,10 @@ class HTTP:
         return HTTP.do_request(key, url, "PUT", data, headers=headers)
 
     @staticmethod
+    def delete(key, url, data=None, headers={"Content-Type": "application/vnd.api+json"}):
+        return HTTP.do_request(key, url, "DELETE", data, headers=headers)
+
+    @staticmethod
     def is_response_code_valid(code):
         return code in [200, 201, 202]
 
@@ -1033,6 +1037,109 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             if not sublime.ok_cancel_dialog(response["errors"][0]["detail"]):
                 return
             self.on_create_new_devicegroup(show_dialog=False)
+
+###
+### Assign one of the devices to the
+### current device group
+###
+class ImpAssignDeviceCommand(BaseElectricImpCommand):
+
+    def action(self):
+        self.select_existing_device()
+
+    def on_device_name_provided(self, index, names):
+        # prevent wrong index which
+        # happen on cancel
+        if (index < 0 or index >= len(names)):
+            return
+        # there is no option for create new device
+        # therefore index maps on the names correctly
+        device = names[index]
+        settings = self.load_settings()
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + setting.get(EI_DEVICEGROUP_ID)
+        data = json.dumps({
+                "data" : {
+                    "type": "device",
+                    "id": device[0]
+                }
+            })
+        # Append the selected device to the device group
+        response, code = HTTP.put(self.env.project_manager.get_access_token(), url, data, headers)
+
+        # handle the respond
+        if not HTTP.is_response_code_valid(code):
+            print("FAILED TO ADD DEVICE TO THE DEVICE GROUP")
+
+    def select_existing_device(self):
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
+        # Check that code is correct
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
+            if code == 401:
+                self.reset_credentails()
+                self.on_action_complete()
+            return
+
+        # check that response has some payload
+        # response should contain the list of devices
+        if len(response) > 0:
+            all_names = [device["attributes"]["name"] for device in response]
+            self.__tmp_all_models = [(device["id"], device["attributes"]["name"]) for device in response]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+
+###
+### Un-Assign device from the
+### current device group
+###
+class ImpUnassignDeviceCommand(BaseElectricImpCommand):
+
+    def action(self):
+        self.select_existing_device()
+
+    def on_device_name_provided(self, index, names):
+        # prevent wrong index which
+        # happen on cancel
+        if (index < 0 or index >= len(names)):
+            return
+        # there is no option for create new device
+        # therefore index maps on the names correctly
+        device = names[index]
+        settings = self.load_settings()
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + setting.get(EI_DEVICEGROUP_ID)
+        data = json.dumps({
+                "data" : {
+                    "type": "device",
+                    "id": device[0]
+                }
+            })
+        # Append the selected device to the device group
+        response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data, headers)
+
+        # handle the respond
+        if not HTTP.is_response_code_valid(code):
+            print("FAILED TO DELETE DEVICE FROM THE DEVICE GROUP")
+
+    def select_existing_device(self):
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
+        # Check that code is correct
+        if not HTTP.is_response_code_valid(code):
+            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
+            if code == 401:
+                self.reset_credentails()
+                self.on_action_complete()
+            return
+
+        # check that response has some payload
+        # response should contain the list of devices
+        if len(response) > 0:
+            all_names = [device["attributes"]["name"] for device in response]
+            self.__tmp_all_models = [(device["id"], device["attributes"]["name"]) for device in response]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
