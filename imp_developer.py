@@ -377,6 +377,40 @@ class HTTP:
     def is_response_code_valid(code):
         return code in [200, 201, 202, 204]
 
+    @staticmethod
+    def is_invalid_credentials(code, response):
+        if code in [403]:
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # it is possible to get more than one error
+                # but usually it is only one error
+                for error in errors:
+                    if error.get("detail") in ["Invalid credentials"]:
+                        return True
+        return False
+
+    @staticmethod
+    def is_wrong_input(code, response):
+        if code in [403]:
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # it is possible to get more than one error
+                # but usually it is only one error
+                for error in errors:
+                    if error.get("detail") in ["Wrong input"]:
+                        return error.get("detail")
+        return None
+
+    @staticmethod
+    def is_failure_request(response, code):
+        failure = None
+        if not HTTP.is_response_code_valid(code):
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # take only first error to show
+                failure = errors[0]["detail"]
+        # return the failure message
+        return failure
 
 class SourceType():
     AGENT = 0
@@ -607,6 +641,56 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def update_status_message(self, query_data=True):
         self.env.ui_manager.show_settings_value_in_status(EI_PRODUCT_ID, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
 
+    # Check HTTP response and force an action
+    # There are four use-cases are possible:
+    # 1. Code valid
+    # 2. Refresh token expired - invalid credentials
+    # 3. Wrong input (for example product name already exists)
+    # 4. All other failures
+    def handle_http_response(self, response, code, str_failed, str_retry, should_retry=True):
+        if HTTP.is_response_code_valid(code):
+            return True
+
+        # Handle invalid credentials use-case
+        if HTTP.is_invalid_credentials(code, response):
+            # check if token expired
+            if not ImpRefreshTokenCommand.check():
+                # token not expired but credentials are wrong
+                # force re-login procedure
+                self.reset_credentails()
+
+            # use an original command to refresh credentials
+            if self.cmd_on_complete:
+                # run an ariginal command
+                self.window.run_command(self.cmd_on_complete)
+            else:
+                # re-run current command
+                self.window.run_command(self.name())
+            return False
+
+        # handle wrong input use-case
+        error = HTTP.is_wrong_input(code, response)
+        if error:
+            # offer for the user to re-try current action
+            if should_retry and sublime.ok_cancel_dialog(error + "\n" + str_retry):
+                if self.cmd_on_complete:
+                    self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
+                else:
+                    self.window.run_command(self.name())
+            return False
+
+        # Handle failure use-case
+        failure = HTTP.is_failure_request(response, code)
+        if failure:
+            # offer for the user to re-try current action
+            if should_retry and str_failed and sublime.ok_cancel_dialog(error + "\n" + str_failed):
+                if self.cmd_on_complete:
+                    self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
+                else:
+                    self.window.run_command(self.name())
+
+        return False
+
 ###
 ### Configure the nodejs path
 ###
@@ -709,22 +793,16 @@ class ImpAuthCommand(BaseElectricImpCommand):
             self.on_login_complete(code, response)
 
     def on_login_complete(self, code, payload):
-        if not HTTP.is_response_code_valid(code):
-            # check if user wants to re-enter urename and password
-            # TODO: check the reason more carefully:
-            # 1. Invalid credentials
-            # 2. No internet access or internal server error
-            if need_to_confirm and not sublime.ok_cancel_dialog(STR_INVALID_CREDENTIALS): return
-            # try to re-enter login/password
-            self.prompt_for_user_password();
-        else:
-            # save the access token in cache and refresh token in the settings file
-            log_debug("Access token received")
-            settings = self.load_settings()
-            settings[EI_ACCEESS_TOKEN_SET] = payload
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-            # check setting again
-            self.on_action_complete();
+        if not self.handle_http_response(payload, code, "Failed to login", "Invalid username or password. Try again?"):
+            return
+
+        # save the access token in cache and refresh token in the settings file
+        log_debug("Access token received")
+        settings = self.load_settings()
+        settings[EI_ACCEESS_TOKEN_SET] = payload
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        # check setting again
+        self.on_action_complete();
 
     def reset_credentails(self):
         settings = self.load_settings()
@@ -749,7 +827,8 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
         refresh_token = self.env.project_manager.get_refresh_token()
         request, code = HTTP.post(None, PL_IMPCENTRAL_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
         # Failed to refresh token reset credentials
-        if not HTTP.is_response_code_valid(code):
+        # Do not need to show dialog which offer to refresh token
+        if not self.handle_http_response(request, code, None, None, False):
             self._update_settings(EI_ACCEESS_TOKEN_SET, None)
             self.on_action_complete()
             return
@@ -795,14 +874,13 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         })
         response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
 
-        if HTTP.is_response_code_valid(code):
-            self._update_settings(EI_PRODUCT_ID, response["data"]["id"])
-            self._update_settings(EI_DEVICEGROUP_ID, None)
-            self.on_action_complete()
-        else:
-            if not sublime.ok_cancel_dialog(response["errors"][0]["detail"]):
-                return
-            self.on_create_new_product(show_dialog=False)
+        if not self.handle_http_response(response, code,
+            "Failed to create new product: ", "Try to create product again ?"):
+            return
+
+        self._update_settings(EI_PRODUCT_ID, response["data"]["id"])
+        self._update_settings(EI_DEVICEGROUP_ID, None)
+        self.on_action_complete()
 
 
     def on_product_name_provided(self, index, names):
@@ -822,11 +900,8 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
     def select_existing_product(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "products")
         # Check that code is correct
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
-            if code == 401:
-                self.reset_credentails()
-                self.on_action_complete()
+        if not self.handle_http_response(response, code,
+            "Failed to extract products list.", "Try again ?"):
             return
 
         # check that response has some payload
@@ -852,11 +927,9 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
 
         # Check that code is correct
-        if not HTTP.is_response_code_valid(code):
+        if not self.handle_http_response(response, code,
+            "Failed to extract the device group list", "Retry to extract the list of devices ?"):
             sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
-            if code == 401:
-                self.reset_credentails()
-                self.on_action_complete()
             return
 
         # check that response has some payload
@@ -913,7 +986,8 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
         response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
 
-        if HTTP.is_response_code_valid(code):
+        if not self.handle_http_response(response, code,
+            "Failed to create device group: ", "Wrong device group name. Type again ?"):
             self._update_settings(EI_DEVICEGROUP_ID, response["data"]["id"])
             self.on_action_complete()
         else:
@@ -964,27 +1038,26 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         response, code = HTTP.post(self.env.project_manager.get_access_token(), url, data, headers=headers)
 
         # handle the respond
-        if not HTTP.is_response_code_valid(code):
+        if not self.handle_http_response(response, code,
+            "Failed to assign device: ", "Try to assign device again ?"):
             log_debug("Failed to add device to the group")
-        else:
-            # Request log stream reset to add the devive to the log
-            #
-            # Note: for another hand it is possible to attach the device
-            #       to the logstream without stream reset, but it is
-            #       expected that user should not use assign/unassign
-            #       devices frequently
-            # Note: push reset to the background thread to prevent
-            #       concurent access to the LogManager's fields
-            sublime.set_timeout_async(self.env.log_manager.reset, 0)
+            return
+
+        # Request log stream reset to add the devive to the log
+        #
+        # Note: for another hand it is possible to attach the device
+        #       to the logstream without stream reset, but it is
+        #       expected that user should not use assign/unassign
+        #       devices frequently
+        # Note: push reset to the background thread to prevent
+        #       concurent access to the LogManager's fields
+        sublime.set_timeout_async(self.env.log_manager.reset, 0)
 
     def select_existing_device(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
         # Check that code is correct
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
-            if code == 401:
-                self.reset_credentails()
-                self.on_action_complete()
+        if not self.handle_http_response(response, code,
+            "Failed to extract list of devices: ", None):
             return
 
         # check that response has some payload
@@ -1025,22 +1098,21 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data)
 
         # handle the respond
-        if not HTTP.is_response_code_valid(code):
+        if not self.handle_http_response(response, code,
+            "Failed to remove device from the group: ", None):
             log_debug("Failed to remove device from the group")
-        else:
-            # Request log stream reset to remove the devive from the log
-            # Note: push to the background thread to prevent concurent access
-            #       to the logManager's fields
-            sublime.set_timeout_async(self.env.log_manager.reset, 0)
+            return
+
+        # Request log stream reset to remove the devive from the log
+        # Note: push to the background thread to prevent concurent access
+        #       to the logManager's fields
+        sublime.set_timeout_async(self.env.log_manager.reset, 0)
 
     def select_existing_device(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
         # Check that code is correct
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
-            if code == 401:
-                self.reset_credentails()
-                self.on_action_complete()
+        if not self.handle_http_response(response, code,
+            "Failed to get the list of devices: ", None):
             return
 
         # check that response has some payload
@@ -1341,8 +1413,8 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                    url=url, headers = headers)
 
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog("Failed to load devicegroup data")
+        if not self.handle_http_response(response, code,
+            "Failed to extract source code", "Retry ?"):
             return
 
         # TODO:
@@ -1367,8 +1439,8 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                    url=url, headers = headers)
 
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog("Failed to load the latest deployment")
+        if not self.handle_http_response(response, code,
+            "Failed to load the latest deployment", None):
             return
 
         # Pull the latest code from the Model
