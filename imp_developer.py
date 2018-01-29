@@ -76,12 +76,14 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
 EI_LOGIN_KEY             = "login-key"
-EI_ACCEESS_TOKEN_SET     = "access-token-set"
+EI_ACCESS_TOKEN_SET     = "access-token-set"
 EI_ACCESS_TOKEN          = "access_token"
 EI_REFRESH_TOKEN         = "refresh_token"
 EI_PRODUCT_ID            = "product-id"
 EI_DEVICEGROUP_ID        = "device-group-id"
 EI_DEPLOYMENT_ID         = "deployment-id"
+
+EI_DEPLOYMENT_NEW        = "deployment-new"
 
 EI_DEVICE_FILE           = "device-file"
 EI_AGENT_FILE            = "agent-file"
@@ -143,12 +145,12 @@ class ProjectManager:
     def get_access_token_set(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            return auth_info.get(EI_ACCEESS_TOKEN_SET)
+            return auth_info.get(EI_ACCESS_TOKEN_SET)
 
     def get_access_token(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            token = auth_info.get(EI_ACCEESS_TOKEN_SET)
+            token = auth_info.get(EI_ACCESS_TOKEN_SET)
             if token and EI_ACCESS_TOKEN in token:
                 return token[EI_ACCESS_TOKEN]
 
@@ -157,7 +159,7 @@ class ProjectManager:
     def get_refresh_token(self):
         auth_info = self.load_settings_file(PR_SETTINGS_FILE)
         if auth_info:
-            token = auth_info.get(EI_ACCEESS_TOKEN_SET)
+            token = auth_info.get(EI_ACCESS_TOKEN_SET)
             if token and EI_REFRESH_TOKEN in token:
                 return token[EI_REFRESH_TOKEN]
 
@@ -379,32 +381,34 @@ class HTTP:
 
     @staticmethod
     def is_invalid_credentials(code, response):
-        if code in [403]:
+        if code in [401]:
             errors = response.get("errors")
             if errors and len(errors) > 0:
                 # it is possible to get more than one error
                 # but usually it is only one error
                 for error in errors:
-                    if error.get("detail") in ["Invalid credentials"]:
+                    if error.get("title") in ["'Invalid Credentials'"] or error.get("code") == "PX100":
                         return True
         return False
 
     @staticmethod
     def is_wrong_input(code, response):
-        if code in [403]:
+        if code in [400, 409]:
             errors = response.get("errors")
             if errors and len(errors) > 0:
                 # it is possible to get more than one error
                 # but usually it is only one error
                 for error in errors:
-                    if error.get("detail") in ["Wrong input"]:
-                        return error.get("detail")
-        return None
+                    if error.get("detail"):
+                        return error.get("detail"), error.get("title")
+        return None, None
 
     @staticmethod
     def is_failure_request(response, code):
         failure = None
         if not HTTP.is_response_code_valid(code):
+            if code == 404:
+                return "\n There is no Internet connection.\n Or requested resource not avialble."
             errors = response.get("errors")
             if errors and len(errors) > 0:
                 # take only first error to show
@@ -653,11 +657,13 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         # Handle invalid credentials use-case
         if HTTP.is_invalid_credentials(code, response):
-            # check if token expired
-            if not ImpRefreshTokenCommand.check():
-                # token not expired but credentials are wrong
-                # force re-login procedure
-                self.reset_credentails()
+            # force token update and restart command
+            settings = self.load_settings()
+            token = settings.get(EI_ACCESS_TOKEN_SET)
+            if EI_ACCESS_TOKEN in token:
+                # reset access token to force an update
+                token[EI_ACCESS_TOKEN] = None
+                self._update_settings(EI_ACCESS_TOKEN_SET, token)
 
             # use an original command to refresh credentials
             if self.cmd_on_complete:
@@ -669,10 +675,10 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             return False
 
         # handle wrong input use-case
-        error = HTTP.is_wrong_input(code, response)
+        error, title = HTTP.is_wrong_input(code, response)
         if error:
             # offer for the user to re-try current action
-            if should_retry and sublime.ok_cancel_dialog(error + "\n" + str_retry):
+            if should_retry and sublime.ok_cancel_dialog(error, "Try again"):
                 if self.cmd_on_complete:
                     self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
                 else:
@@ -683,13 +689,18 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         failure = HTTP.is_failure_request(response, code)
         if failure:
             # offer for the user to re-try current action
-            if should_retry and str_failed and sublime.ok_cancel_dialog(error + "\n" + str_failed):
+            if should_retry and str_failed and sublime.ok_cancel_dialog(str_failed + ":\n" + failure, "Try again"):
                 if self.cmd_on_complete:
                     self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
                 else:
                     self.window.run_command(self.name())
 
         return False
+
+    def reset_credentails(self):
+        settings = self.load_settings()
+        settings[EI_ACCESS_TOKEN_SET] = None
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
 ###
 ### Configure the nodejs path
@@ -799,15 +810,10 @@ class ImpAuthCommand(BaseElectricImpCommand):
         # save the access token in cache and refresh token in the settings file
         log_debug("Access token received")
         settings = self.load_settings()
-        settings[EI_ACCEESS_TOKEN_SET] = payload
+        settings[EI_ACCESS_TOKEN_SET] = payload
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
         # check setting again
         self.on_action_complete();
-
-    def reset_credentails(self):
-        settings = self.load_settings()
-        settings[EI_ACCEESS_TOKEN_SET] = None
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
 ###
 ### check that token is not expired
@@ -820,6 +826,8 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
     @staticmethod
     def check(base):
         token = base.env.project_manager.get_access_token_set()
+        if not token or not "expires_at" in token:
+            return False
         expires = datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
         return expires > datetime.datetime.utcnow()
 
@@ -829,14 +837,14 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
         # Failed to refresh token reset credentials
         # Do not need to show dialog which offer to refresh token
         if not self.handle_http_response(request, code, None, None, False):
-            self._update_settings(EI_ACCEESS_TOKEN_SET, None)
+            self._update_settings(EI_ACCESS_TOKEN_SET, None)
             self.on_action_complete()
             return
         else:
             # refresh token should not be updated during request
             if not EI_REFRESH_TOKEN in request:
                 request[EI_REFRESH_TOKEN] = refresh_token
-            self._update_settings(EI_ACCEESS_TOKEN_SET, request)
+            self._update_settings(EI_ACCESS_TOKEN_SET, request)
 
         # restart login process
         self.on_action_complete();
@@ -895,6 +903,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         else:
             # Save selected product in the settings file
             self._update_settings(EI_PRODUCT_ID, names[index-1][0])
+            self._update_settings(EI_DEVICEGROUP_ID, None)
             self.on_action_complete()
 
     def select_existing_product(self):
@@ -957,6 +966,8 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             # selection option which has index == 0
             id = items[index-1][0]
             self._update_settings(EI_DEVICEGROUP_ID, id)
+            # Force to propose code loading from the web
+            self._update_settings(EI_DEPLOYMENT_ID, None)
             self.on_action_complete()
 
     def on_create_new_devicegroup(self, show_dialog=True):
@@ -988,12 +999,10 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
         if not self.handle_http_response(response, code,
             "Failed to create device group: ", "Wrong device group name. Type again ?"):
-            self._update_settings(EI_DEVICEGROUP_ID, response["data"]["id"])
-            self.on_action_complete()
-        else:
-            if not sublime.ok_cancel_dialog(response["errors"][0]["detail"]):
-                return
-            self.on_create_new_devicegroup(show_dialog=False)
+            return
+        self._update_settings(EI_DEVICEGROUP_ID, response["data"]["id"])
+        self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+        self.on_action_complete()
 
 ###
 ### Request all registered devices and assign
@@ -1022,7 +1031,6 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         #       if device was not assigned to any device group
         devgrp = device["relationships"].get("devicegroup")
         if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
-            print("NO NEED TO ASSING DEVICE TO THE SAME DEV GROUP")
             return
 
         url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/relationships/devices"
@@ -1063,7 +1071,6 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         # check that response has some payload
         # response should contain the list of devices
         if len(response.get("data")) > 0:
-            print(response)
             all_names = [device["attributes"]["name"] for device in response["data"]]
 
         # make a new product creation option as a part of the product select menu
@@ -1401,7 +1408,8 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
     @staticmethod
     def check(base):
         settings = base.load_settings()
-        return EI_DEPLOYMENT_ID in settings and settings[EI_DEPLOYMENT_ID] != None
+        return (EI_DEPLOYMENT_ID in settings
+                and settings[EI_DEPLOYMENT_ID] != None)
 
     def action(self):
         if not sublime.ok_cancel_dialog(STR_DEVICEGROUP_CONFIRM_PULLING_CODE):
@@ -1417,11 +1425,13 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             "Failed to extract source code", "Retry ?"):
             return
 
-        # TODO:
         # Handle the use-case when there is no any deployment yet
-        # for example for a newly created group
+        # for example for a newly created group via IDE
         if not "current_deployment" in response["data"]["relationships"]:
             sublime.message_dialog("There is no any deployment yet")
+            # mark that there is no more deployments yet, to prevent
+            # permanent deployments requests
+            self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
             return
 
         deployment = response["data"]["relationships"]["current_deployment"]["id"]
@@ -1431,7 +1441,8 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         # local files could be changed and user wants to revert them
         # to the latest revision
         #
-        # TODO: think about deployment select like in the IDE
+        # TODO: think about deployment select in the same way
+        #       as it is done in the IDE
         if deployment == settings.get(EI_DEPLOYMENT_ID):
             log_debug("Everything up to date")
 
