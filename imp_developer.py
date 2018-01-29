@@ -310,7 +310,7 @@ class HTTP:
             }
 
         return {
-            "Authorization": "Bearer " + key, # HTTP.__base64_encode(key),
+            "Authorization": "Bearer " + key,
             "Content-Type": "application/vnd.api+json",
             "User-Agent": "imp-developer/sublime"
         }
@@ -660,7 +660,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             # force token update and restart command
             settings = self.load_settings()
             token = settings.get(EI_ACCESS_TOKEN_SET)
-            if EI_ACCESS_TOKEN in token:
+            if not token:
+                if (not should_retry or
+                    not sublime.ok_cancel_dialog(str_retry, "Try again")):
+                    return
+
+            if token and EI_ACCESS_TOKEN in token:
                 # reset access token to force an update
                 token[EI_ACCESS_TOKEN] = None
                 self._update_settings(EI_ACCESS_TOKEN_SET, token)
@@ -1638,7 +1643,6 @@ class LogManager:
             return None
 
         if self.sock and type(self.sock) != None and self.sock.fp != None:
-            result = {"logs": self.__read_logs()}
             return result
 
         logs = []
@@ -1699,7 +1703,6 @@ class LogManager:
                 response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
                     url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
                     data="{}")
-
         start = None
         if log_request_time:
             start = datetime.datetime.now()
