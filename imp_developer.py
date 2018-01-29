@@ -1694,9 +1694,12 @@ class LogManager:
 
         # attache the devices from the device group to the logstream
         for device in self.devices:
-            response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
-                url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
-                data="{}")
+            if ("devicegroup" in device["relationships"]
+                and devicegroup_id == device["relationships"]["devicegroup"]["id"]):
+                response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
+                    url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
+                    data="{}")
+
         start = None
         if log_request_time:
             start = datetime.datetime.now()
@@ -1705,7 +1708,6 @@ class LogManager:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
-        logs = logs + (self.__read_logs());
         return {"logs": logs}
 
     @staticmethod
