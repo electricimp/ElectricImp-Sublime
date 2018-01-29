@@ -315,14 +315,14 @@ class HTTP:
 
     @staticmethod
     def is_login_key_valid(key):
-        request, code = HTTP.get({type: "login_key", login_key: key}, PL_IMP_CENTRAL_API_URL_V5 + "/auth/token")
+        request, code = HTTP.get({type: "login_key", login_key: key}, PL_IMPCENTRAL_API_URL_V5 + "/auth/token")
         return code == 200
 
     @staticmethod
     def is_refresh_token_valid(token):
         if datetime.datetime.strptime(token.expires_at, "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now():
             return True
-        request, code = HTTP.post({token:token.value}, PL_IMP_CENTRAL_API_URL_V5 + "/auth/token")
+        request, code = HTTP.post({token:token.value}, PL_IMPCENTRAL_API_URL_V5 + "/auth/token")
         return code == 200
 
 
@@ -350,7 +350,7 @@ class HTTP:
             result = json.loads(err.read().decode('utf-8'))
         except urllib.error.URLError as err:
             code = 404
-            result = json.loads(err.reason.decode('utf-8'))
+            result = err.reason
         except urllib.error.ContentTooShortError as err:
             code = 404
             result = "Too short conent exception"
@@ -595,7 +595,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         device_names = []
 
         response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                  PL_IMP_CENTRAL_API_URL_V5 + "devices/")
+                                  PL_IMPCENTRAL_API_URL_V5 + "devices/")
         all_devices = response.get("devices")
 
         if exclude_device_ids is None:
@@ -628,7 +628,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         device_id = self.env.tmp_device_ids[index]
 
         response, code = HTTP.put(self.env.project_manager.get_access_token(),
-                                  PL_IMP_CENTRAL_API_URL_V5 + "devices/" + device_id,
+                                  PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id,
                                   '{"model_id": "' + model.get("id") + '"}')
         if not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_MODEL_ADDING_DEVICE_FAILED)
@@ -645,7 +645,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # We assume the model is set up already
         model_id = self.load_settings().get(EI_MODEL_ID)
         response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                  PL_IMP_CENTRAL_API_URL_V5 + "models/" + str(model_id))
+                                  PL_IMPCENTRAL_API_URL_V5 + "models/" + str(model_id))
         if HTTP.is_response_code_valid(code):
             return response.get("model")
 
@@ -817,7 +817,7 @@ class ImpAuthCommand(BaseElectricImpCommand):
         if not password:
             self.prompt_for_user_password(False, user_name)
         else:
-            url = PL_IMP_CENTRAL_API_URL_V5 + "auth"
+            url = PL_IMPCENTRAL_API_URL_V5 + "auth"
             response, code = HTTP.post(None, url, '{"id": "' + user_name + '", "password": "' + password + '"}')
             self.on_login_complete(code, response)
 
@@ -860,7 +860,7 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
 
     def action(self):
         refresh_token = self.env.project_manager.get_refresh_token()
-        request, code = HTTP.post(None, PL_IMP_CENTRAL_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
+        request, code = HTTP.post(None, PL_IMPCENTRAL_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
         # Failed to refresh token reset credentials
         if not HTTP.is_response_code_valid(code):
             self._update_settings(EI_ACCEESS_TOKEN_SET, None)
@@ -896,7 +896,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
 
     def on_new_product_name_provided(self, name):
         token = self.env.project_manager.get_access_token()
-        url = PL_IMP_CENTRAL_API_URL_V5 + "products"
+        url = PL_IMPCENTRAL_API_URL_V5 + "products"
         data = json.dumps({
             "data": {
                 "type": "product",
@@ -933,7 +933,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
             self.on_action_complete()
 
     def select_existing_product(self):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMP_CENTRAL_API_URL_V5 + "products")
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "products")
         # Check that code is correct
         if not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
@@ -962,7 +962,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def action(self):
         settings = self.load_settings()
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMP_CENTRAL_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
 
         # Check that code is correct
         if not HTTP.is_response_code_valid(code):
@@ -1007,7 +1007,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def on_new_devicegroup_name_provided(self, name):
         token = self.env.project_manager.get_access_token()
-        url = PL_IMP_CENTRAL_API_URL_V5 + "devicegroups"
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups"
         settings = self.load_settings()
         data = json.dumps({
             "data": {
@@ -1065,7 +1065,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         device_code = self.read_file(device_filename)
 
         settings = self.load_settings()
-        url = PL_IMP_CENTRAL_API_URL_V5 + "deployments"
+        url = PL_IMPCENTRAL_API_URL_V5 + "deployments"
         data = ('{"data":{"type":"deployment",'
               ' "attributes": {'
               '  "description": "Sublime text"'
@@ -1098,7 +1098,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             self.print_to_tty(STR_DEVICEGROUP_CONDITIONAL_RESTART)
 
             # Not it's time to restart the code
-            url = PL_IMP_CENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
+            url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
             HTTP.post(self.env.project_manager.get_access_token(), url)
             # TODO: Handle the conditional restart results
         else:
@@ -1176,7 +1176,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         if EI_DEVICE_ID in settings:
             device_id = settings.get(EI_DEVICE_ID)
             response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                      PL_IMP_CENTRAL_API_URL_V5 + "devices/" + device_id)
+                                      PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id)
             agent_id = response.get("device").get("agent_id")
             agent_url = PL_AGENT_URL.format(agent_id)
             sublime.set_clipboard(agent_url)
@@ -1308,7 +1308,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             return
 
         settings = self.load_settings()
-        url = PL_IMP_CENTRAL_API_URL_V5 + "devicegroups/" + settings[EI_DEVICEGROUP_ID]
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings[EI_DEVICEGROUP_ID]
         headers = {"Content-Type": "application/vnd.api+json"}
         response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                    url=url, headers = headers)
@@ -1335,7 +1335,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         if deployment == settings.get(EI_DEPLOYMENT_ID):
             log_debug("Everything up to date")
 
-        url = PL_IMP_CENTRAL_API_URL_V5 + "deployments/" + deployment
+        url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment
         response, code = HTTP.get(self.env.project_manager.get_access_token(),
                                    url=url, headers = headers)
 
@@ -1363,7 +1363,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
 ###
 class ImpAssignDeviceCommand(BaseElectricImpCommand):
     def action(self, need_to_confirm=True):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMP_CENTRAL_API_URL_V5 + "models")
+        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "models")
         if len(response["models"]) > 0:
             if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
                 return
@@ -1428,7 +1428,7 @@ class ImpRemoveDeviceCommand(BaseElectricImpCommand):
             return
 
         response, code = HTTP.put(self.env.project_manager.get_access_token(),
-                                  PL_IMP_CENTRAL_API_URL_V5 + "devices/" + device_id,
+                                  PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id,
                                   '{"model_id": ""}')
         if not HTTP.is_response_code_valid(code):
             sublime.message_dialog(STR_MODEL_REMOVE_DEVICE_FAILED)
@@ -1619,7 +1619,7 @@ class LogManager:
         # on first connection and cache it for future
         if not self.poll_url:
             devices, rcode = HTTP.get(key=self.env.project_manager.get_access_token(),
-                url=PL_IMP_CENTRAL_API_URL_V5 + "devices",
+                url= PL_IMPCENTRAL_API_URL_V5 + "devices",
                 data='{"filter": "'+ devicegroup_id +'"}',
                 headers={"Content-Type": "application/vnd.api+json"})
 
@@ -1633,11 +1633,13 @@ class LogManager:
             self.devices = devices["data"]
 
         # request a new logstream instance
-        response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=PL_IMP_CENTRAL_API_URL_V5 + "logstream", headers={"Content-Type": "application/vnd.api+json"})
+        response, code = HTTP.post(key=self.env.project_manager.get_access_token(),
+            url=PL_IMPCENTRAL_API_URL_V5 + "logstream",
+            headers={"Content-Type": "application/vnd.api+json"})
 
         if HTTP.is_response_code_valid(code):
             self.poll_url = response["data"]["id"]
-            url = PL_IMP_CENTRAL_API_URL_V5 + "logstream/" + self.poll_url
+            url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url
         else:
             # TODO: handle connection error or access-token expired
             return None
@@ -1661,7 +1663,7 @@ class LogManager:
         # attache the devices from the device group to the logstream
         for device in self.devices:
             response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
-                url=PL_IMP_CENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
+                url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
                 data="{}")
         start = None
         if log_request_time:
@@ -1750,16 +1752,17 @@ class LogManager:
     def write_to_console(self, log):
         # parse log string
         # to extract log details
-        message = self.__parse_log(log)
+        item = self.__parse_log(log)
 
         # maps the error details to the corresponding
         # filename and line numbers
-        message = self.convert_line_numbers(message)
+        item["message"] = self.convert_line_numbers(item)
         # impCentral provides its own format of the logs
         # but it is not comfortable for user to read such logs
         # therefore the following line just re-format the same log
-        self.env.ui_manager.write_to_console(message["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
-            + " [" + message["device"] + "] " + message["type"] + " " + message["message"])
+        self.env.ui_manager.write_to_console(
+            item["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
+            + " [" + item["device"] + "] " + item["type"] + " " + item["message"])
 
     def reset(self):
         # this action should force to close the log stream
