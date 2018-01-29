@@ -594,123 +594,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         settings[index] = value
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
-    def load_devices(self, input_device_ids=None, exclude_device_ids=None):
-        device_ids = input_device_ids if input_device_ids else []
-        device_names = []
-
-        response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                  PL_IMPCENTRAL_API_URL_V5 + "devices/")
-        all_devices = response.get("devices")
-
-        if exclude_device_ids is None:
-            exclude_device_ids = []
-
-        def get_device_display_name(device):
-            name = d.get("name")
-            return name if name else device.get("id")
-
-        if input_device_ids:
-            for d_id in input_device_ids:
-                for d in all_devices:
-                    if d.get("id") == d_id and d_id not in exclude_device_ids:
-                        device_names.append(get_device_display_name(d))
-                        break
-        else:
-            for d in all_devices:
-                if d.get("id") not in exclude_device_ids:
-                    device_ids.append(d.get("id"))
-                    device_names.append(get_device_display_name(d))
-
-        return device_ids, device_names
-
-    def on_device_to_add_selected(self, index):
-        # Selection was canceled, just return
-        if index == -1:
-            return
-
-        model = self.env.tmp_model
-        device_id = self.env.tmp_device_ids[index]
-
-        response, code = HTTP.put(self.env.project_manager.get_access_token(),
-                                  PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id,
-                                  '{"model_id": "' + model.get("id") + '"}')
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_MODEL_ADDING_DEVICE_FAILED)
-
-        # Once the device is registered, select this device
-        self.on_device_selected(index)
-
-        sublime.message_dialog(STR_MODEL_IMP_REGISTERED)
-
-        self.env.tmp_model = None
-        self.env.tmp_device_ids = None
-
-    def load_this_model(self):
-        # We assume the model is set up already
-        model_id = self.load_settings().get(EI_MODEL_ID)
-        response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                  PL_IMPCENTRAL_API_URL_V5 + "models/" + str(model_id))
-        if HTTP.is_response_code_valid(code):
-            return response.get("model")
-
-    def select_device(self, need_to_confirm=True):
-        model = self.load_this_model()
-        if not model:
-            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
-            return
-
-        device_ids = model.get("devices")
-        if not device_ids or not len(device_ids):
-            sublime.message_dialog(STR_MODEL_HAS_NO_DEVICES)
-            return
-
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
-        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
-        self.window.show_quick_panel(device_names, self.on_device_selected)
-
-    def add_device(self, need_to_confirm=True):
-        model = self.load_this_model()
-        if not model:
-            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
-            return
-
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_ADD_DEVICE): return
-
-        device_ids = model.get("devices")
-        (device_ids, device_names) = self.load_devices(exclude_device_ids=device_ids)
-
-        if len(device_ids) == 0:
-            sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
-            return
-
-        self.env.tmp_model = model
-        self.env.tmp_device_ids = device_ids
-        self.window.show_quick_panel(device_names, self.on_device_to_add_selected)
-
-    def on_device_selected(self, index):
-        # Selection was canceled, just return
-        if index == -1:
-            return
-        settings = self.load_settings()
-        new_device_id = Env.For(self.window).tmp_device_ids[index]
-        old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
-        if new_device_id != old_device_id:
-            log_debug("New device selected: saving new settings file and restarting the console...")
-            # Update the device id
-            settings[EI_DEVICE_ID] = Env.For(self.window).tmp_device_ids[index]
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-            # Clean up the terminal window
-            self.env.ui_manager.create_new_console()
-            self.env.ui_manager.show_console()
-        else:
-            log_debug("Newly selected device is the same as the old one. Nothing to do.")
-        # Clean up temporary variables
-        self.env.tmp_device_ids = None
-        # Loop back to the main settings check
-        self.check_settings()
-        # Reset the logs
-        self.env.log_manager.reset()
-
     def print_to_tty(self, text):
         env = Env.For(self.window)
         if env:
@@ -973,7 +856,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
             if code == 401:
                 self.reset_credentails()
-                self.check_settings()
+                self.on_action_complete()
             return
 
         # check that response has some payload
@@ -1039,8 +922,9 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             self.on_create_new_devicegroup(show_dialog=False)
 
 ###
-### Assign one of the devices to the
-### current device group
+### Request all registered devices and assign
+### one of that devices to the device group
+### Note: action should trigger logs restart
 ###
 class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
@@ -1069,6 +953,14 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         # handle the respond
         if not HTTP.is_response_code_valid(code):
             print("FAILED TO ADD DEVICE TO THE DEVICE GROUP")
+
+        # Request log stream reset to add the devive to the log
+        #
+        # Note: for another hand it is possible to attach the device
+        #       to the logstream without stream reset, but it is
+        #       expected that user should not use assign/unassign
+        #       devices frequently
+        self.env.log_manager.reset()
 
     def select_existing_device(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
@@ -1120,6 +1012,10 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # handle the respond
         if not HTTP.is_response_code_valid(code):
             print("FAILED TO DELETE DEVICE FROM THE DEVICE GROUP")
+
+        # Request log stream reset to remove the devive from the log
+        self.env.log_manager.reset()
+
 
     def select_existing_device(self):
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
@@ -1462,90 +1358,6 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
                 file.write(response["data"]["attributes"]["device_code"])
             # save the latest deployment id
             self._update_settings(EI_DEPLOYMENT_ID, deployment)
-
-###
-### Request all registered devices and assign
-### one of that devices to the device group
-### Note: action should trigger logs restart
-###
-class ImpAssignDeviceCommand(BaseElectricImpCommand):
-    def action(self, need_to_confirm=True):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "models")
-        if len(response["models"]) > 0:
-            if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
-                return
-            all_model_names = [model["name"] for model in response["models"]]
-            self.__tmp_all_models = [(model["id"], model["name"]) for model in response["models"]]
-        else:
-            sublime.message_dialog(STR_MODEL_NO_MODELS_FOUND)
-            return
-
-        self.window.show_quick_panel(all_model_names, self.on_model_selected)
-
-    def on_model_selected(self, index):
-        # Selection was canceled, nothing to do here
-        if index == -1:
-            return
-
-        model_id, model_name = self.__tmp_all_models[index]
-
-        self.__tmp_all_models = None  # We don't need it anymore
-        log_debug("Model selected id: " + model_id)
-
-        # Save newly created model to the project settings
-        settings = self.load_settings()
-        settings[EI_MODEL_ID] = model_id
-        settings[EI_MODEL_NAME] = model_name
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-
-        # Reset the logs
-        self.env.log_manager.reset()
-
-        # Update the Model name in the status bar
-        self.update_status_message(query_data=False)
-
-###
-### Remove device from the device group
-### and force to update console log stream
-###
-class ImpRemoveDeviceCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-        self.check_settings(callback=self.prompt_model_to_remove_device)
-
-    def prompt_model_to_remove_device(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REMOVE_DEVICE): return
-
-        model = self.load_this_model()
-        device_ids = model.get("devices") if model else None
-
-        if not device_ids or len(device_ids) == 0:
-            sublime.message_dialog(STR_MODEL_NO_DEVICES_TO_REMOVE)
-            return
-
-        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
-        self.window.show_quick_panel(device_names, self.on_remove_device_selected)
-
-    def on_remove_device_selected(self, index):
-        device_id = self.env.tmp_device_ids[index]
-        active_device_id = self.load_settings().get(EI_DEVICE_ID)
-
-        if device_id == active_device_id:
-            sublime.message_dialog(STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE)
-            return
-
-        response, code = HTTP.put(self.env.project_manager.get_access_token(),
-                                  PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id,
-                                  '{"model_id": ""}')
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_MODEL_REMOVE_DEVICE_FAILED)
-            return
-
-        sublime.message_dialog(STR_MODEL_DEVICE_REMOVED)
-
-        self.env.tmp_model = None
-        self.env.tmp_device_ids = None
-
 
 class AnfNewProject(AdvancedNewFileNew):
     def __init__(self, window, capture="", on_path_provided=None):
