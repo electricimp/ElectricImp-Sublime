@@ -909,7 +909,6 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
 
         if HTTP.is_response_code_valid(code):
-            print(response["data"])
             self._update_settings(EI_PRODUCT_ID, response["data"]["id"])
             self._update_settings(EI_DEVICEGROUP_ID, None)
             self.on_action_complete()
@@ -1023,12 +1022,11 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
                         "id": settings[EI_PRODUCT_ID]
                     }
                 }
-            }
-        })
+            }})
+
         response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
 
         if HTTP.is_response_code_valid(code):
-            print(response["data"])
             self._update_settings(EI_DEVICEGROUP_ID, response["data"]["id"])
             self.on_action_complete()
         else:
@@ -1048,43 +1046,39 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         for view in self.window.views():
             view.erase_regions(PL_ERROR_REGION_KEY)
 
-        def check_settings_callback():
-            if self.env.project_manager.get_access_token() is None:
-                log_debug("The build API file is missing, please check the settings")
-                return
+        # Save all the views first
+        self.save_all_current_window_views()
 
-            # Save all the views first
-            self.save_all_current_window_views()
+        # Preprocess the sources
+        agent_filename, device_filename = self.env.code_processor.preprocess(self.env)
 
-            # Preprocess the sources
-            agent_filename, device_filename = self.env.code_processor.preprocess(self.env)
+        if not agent_filename and not device_filename:
+            # Error happened during preprocessing, nothing to do.
+            log_debug("Preprocessing failed. Please, check the Builder errors")
+            return
 
-            if not agent_filename and not device_filename:
-                # Error happened during preprocessing, nothing to do.
-                return
+        if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
+            log_debug("Can't find preprocessed agent or device code file")
+            sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
 
-            if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
-                log_debug("Can't find code files")
-                sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
+        agent_code = self.read_file(agent_filename)
+        device_code = self.read_file(device_filename)
 
-            agent_code = self.read_file(agent_filename)
-            device_code = self.read_file(device_filename)
-
-            settings = self.load_settings()
-            url = PL_BUILD_API_URL_V5 + "deployments"
-            data = ('{"data":{"type":"deployment",'
-                  ' "attributes": {'
-                  '  "description": "Sublime text"'
-                  ', "origin": "sublime"'
-                  ', "tags": []'
-                  ', "agent_code": ' + json.dumps(agent_code) +
-                  ', "device_code" : ' + json.dumps(device_code) +
-                  '},'
-                  '"relationships": {"devicegroup": {'
-                  ' "type": "development_devicegroup", "id": "' + settings.get(EI_DEVICEGROUP_ID) + '"}}'
-                  ' }}')
-            response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=url, data=data, headers={"Content-Type": "application/vnd.api+json"})
-            self.handle_response(response, code)
+        settings = self.load_settings()
+        url = PL_BUILD_API_URL_V5 + "deployments"
+        data = ('{"data":{"type":"deployment",'
+              ' "attributes": {'
+              '  "description": "Sublime text"'
+              ', "origin": "sublime"'
+              ', "tags": []'
+              ', "agent_code": ' + json.dumps(agent_code) +
+              ', "device_code" : ' + json.dumps(device_code) +
+              '},'
+              '"relationships": {"devicegroup": {'
+              ' "type": "development_devicegroup", "id": "' + settings.get(EI_DEVICEGROUP_ID) + '"}}'
+              ' }}')
+        response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=url, data=data, headers={"Content-Type": "application/vnd.api+json"})
+        self.handle_response(response, code)
 
         self.update_status_message()
         self.on_action_complete()
@@ -1322,14 +1316,15 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         if not HTTP.is_response_code_valid(code):
             sublime.message_dialog("Failed to load devicegroup data")
             return
-        print(response)
-        if response:
-            return
-        deployment = response["data"]["relationships"]["current_deployment"]["id"]
+
         # TODO:
         # Handle the use-case when there is no any deployment yet
         # for example for a newly created group
+        if not "current_deployment" in response["data"]["relationships"]:
+            sublime.message_dialog("There is no any deployment yet")
+            return
 
+        deployment = response["data"]["relationships"]["current_deployment"]["id"]
 
         # for a one hand it is the same revision as should be
         # in the local file but for another hand
@@ -1337,7 +1332,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         # to the latest revision
         #
         # TODO: think about deployment select like in the IDE
-        if deployment == settings[EI_DEPLOYMENT_ID]:
+        if deployment == settings.get(EI_DEPLOYMENT_ID):
             log_debug("Everything up to date")
 
         url = PL_BUILD_API_URL_V5 + "deployments/" + deployment
@@ -1354,7 +1349,6 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
         if response["data"]["attributes"]:
-            source, code = HTTP.get(self.env.project_manager.get_access_token(), latest_revision_url)
             with open(agent_file, "w", encoding="utf-8") as file:
                 file.write(response["data"]["attributes"]["agent_code"])
             with open(device_file, "w", encoding="utf-8") as file:
