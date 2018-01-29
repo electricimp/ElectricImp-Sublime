@@ -316,11 +316,6 @@ class HTTP:
         }
 
     @staticmethod
-    def is_login_key_valid(key):
-        request, code = HTTP.get({type: "login_key", login_key: key}, PL_IMPCENTRAL_API_URL_V5 + "/auth/token")
-        return code == 200
-
-    @staticmethod
     def is_refresh_token_valid(token):
         if datetime.datetime.strptime(token.expires_at, "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now():
             return True
@@ -804,12 +799,16 @@ class ImpAuthCommand(BaseElectricImpCommand):
         if not password:
             self.prompt_for_user_password(False, user_name)
         else:
+            sublime.set_timeout_async(lambda: self.request_credentials(user_name, password), 0)
+
+    def request_credentials(self, user_name, password):
             url = PL_IMPCENTRAL_API_URL_V5 + "auth"
             response, code = HTTP.post(None, url, '{"id": "' + user_name + '", "password": "' + password + '"}')
             self.on_login_complete(code, response)
 
     def on_login_complete(self, code, payload):
-        if not self.handle_http_response(payload, code, "Failed to login", "Invalid username or password. Try again?"):
+        if not self.handle_http_response(payload, code,
+            "Failed to login", "Invalid username or password. Try again?"):
             return
 
         # save the access token in cache and refresh token in the settings file
@@ -862,16 +861,19 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
     def check(base):
         settings = base.load_settings();
         return EI_PRODUCT_ID in settings and settings.get(EI_PRODUCT_ID) != None
-        # TODO: Check that project still available in the remote configuraiton
 
     def action(self):
-        self.select_existing_product()
+        sublime.set_timeout_async(self.select_existing_product, 1)
 
     def on_create_new_product(self, show_dialog=True):
         # prompts a message_dialog
         if show_dialog and not sublime.ok_cancel_dialog(STR_PRODUCT_PROVIDE_NAME):
             return
-        self.window.show_input_panel(STR_PRODUCT_NAME, "", self.on_new_product_name_provided, None, None)
+        self.window.show_input_panel(STR_PRODUCT_NAME, "",
+            self.on_new_product_name_provided_async, None, None)
+
+    def on_new_product_name_provided_async(self, name):
+        sublime.set_timeout_async(lambda: self.on_new_product_name_provided(name), 0)
 
     def on_new_product_name_provided(self, name):
         token = self.env.project_manager.get_access_token()
@@ -921,10 +923,10 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         # check that response has some payload
         if len(response['data']) > 0:
             all_names = [product["attributes"]["name"] for product in response['data']]
-            self.__tmp_all_models = [(product["id"], product["attributes"]["name"]) for product in response['data']]
+            self.__tmp_add_groups = [(product["id"], product["attributes"]["name"]) for product in response['data']]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_all_models))
+        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_add_groups))
 
 ###
 ### Check the device group or create a new one
@@ -937,26 +939,32 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         # TODO: Check that project still available in the remote configuraiton
 
     def action(self):
+        sublime.set_timeout_async(self.select_device_group, 0)
+
+    def select_device_group(self):
         settings = self.load_settings()
         response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
 
         # Check that code is correct
         if not self.handle_http_response(response, code,
             "Failed to extract the device group list", "Retry to extract the list of devices ?"):
-            sublime.message_dialog(STR_PRODUCT_SERVER_ERROR + response["errors"][0]["detail"])
             return
 
         # check that response has some payload
         if len(response['data']) > 0:
             all_names = []
-            self.__tmp_all_models = []
+            self.__tmp_add_groups = []
             for product in response['data']:
                 if product["relationships"]["product"]["id"] == settings[EI_PRODUCT_ID]:
-                    self.__tmp_all_models += [(product["id"], product["attributes"]["name"])]
+                    self.__tmp_add_groups += [(product["id"], product["attributes"]["name"])]
                     all_names += [product["attributes"]["name"]]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_DEVICEGROUP_CREATE_NEW ] + all_names, lambda id: self.on_devicegroup_name_provided(id, self.__tmp_all_models))
+        self.window.show_quick_panel([ STR_DEVICEGROUP_CREATE_NEW ] + all_names,
+            lambda id: self.on_devicegroup_name_provided_async(id, self.__tmp_add_groups))
+
+    def on_devicegroup_name_provided_async(self, index, items):
+        sublime.set_timeout_async(lambda: self.on_devicegroup_name_provided(index, items), 0)
 
     def on_devicegroup_name_provided(self, index, items):
         # prevent wrong index which should never happened
@@ -1017,7 +1025,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
     def action(self):
-        self.select_existing_device()
+        sublime.set_timeout_async(self.select_existing_device, 0)
 
     def on_device_name_provided(self, index, devices):
         # prevent wrong index which
@@ -1643,6 +1651,7 @@ class LogManager:
             return None
 
         if self.sock and type(self.sock) != None and self.sock.fp != None:
+            result = {"logs": self.__read_logs()}
             return result
 
         logs = []
