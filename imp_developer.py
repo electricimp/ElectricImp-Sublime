@@ -1612,13 +1612,16 @@ class LogManager:
         self.last_shown_log = None
         self.sock = None
         self.devices = []
+        self.has_logs = False
 
     def __read_logs(self):
         if self.sock and type(self.sock) != None and self.sock.fp != None:
             next_log = False
             next_cmd = False
             logs = []
-            while True:
+            count = 30
+            while count > 0:
+                # lets read no more than coun logs per one loop
                 rd, wd, ed = select.select([self.sock], [], [], 0)
                 if not rd:
                     break
@@ -1632,15 +1635,20 @@ class LogManager:
                             if line == b'data: closed\n':
                                 self.sock.close()
                                 self.sock = None
+                                self.poll_url = None
                                 logs.append("Connection closed ...")
-                                break
+                                return logs
 
                         if line == b'event: message\n':
+                            count -= 1
                             next_log = True
 
                         if line == b'event: state_change\n':
+                            count -= 1
                             next_cmd = True
                         if line == b'\n':
+                            next_cmd = False
+                            next_log = False
                             break
             return logs
 
@@ -1652,7 +1660,8 @@ class LogManager:
             return None
 
         if self.sock and type(self.sock) != None and self.sock.fp != None:
-            return {"logs": self.__read_logs()}
+            result = {"logs": self.__read_logs()}
+            return result
 
         logs = []
 
@@ -1724,7 +1733,6 @@ class LogManager:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
-        log_debug("Log config done")
         return {"logs": logs}
 
     @staticmethod
@@ -1733,10 +1741,13 @@ class LogManager:
 
     def update_logs(self):
         def __update_logs():
+            self.has_logs = self.sock != None
+
             logs_json = self.query_logs()
             # no logs available
             if not logs_json:
                 return
+
             logs_list = logs_json["logs"]
 
             i = len(logs_list) if logs_list else 0
@@ -1757,6 +1768,8 @@ class LogManager:
                 self.last_shown_log = log
 
         sublime.set_timeout_async(__update_logs, 0)
+        # trigger one more log poll operation
+        return self.has_logs
 
     def convert_line_numbers(self, log):
         message = log["message"]
@@ -1831,6 +1844,8 @@ class LogManager:
 
 def update_log_windows(restart_timer=True):
     global project_env_map
+    time_start = datetime.datetime.now()
+    has_logs = False
     try:
         for (project_path, env) in list(project_env_map.items()):
             # Clean up project windows first
@@ -1839,7 +1854,13 @@ def update_log_windows(restart_timer=True):
                 del project_env_map[project_path]
                 log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
                 continue
-            env.log_manager.update_logs()
+            has_logs = env.log_manager.update_logs()
     finally:
         if restart_timer:
-            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)
+            # keep on reading logs while logs are available
+            # and keep on log polling once per second
+            ms = PL_LOGS_UPDATE_PERIOD
+            if has_logs:
+                ms = 300
+            sublime.set_timeout(update_log_windows, ms)
+    return True
