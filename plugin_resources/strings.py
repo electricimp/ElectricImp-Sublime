@@ -27,7 +27,7 @@ STR_PROVIDE_USER_ID                  = "Please signin to get an access to the El
 
 STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
 STR_PRODUCT_NAME                     = "Product name:"
-STR_PRODUCT_SERVER_ERROR             = "Failed to extrac produc list"
+STR_PRODUCT_SERVER_ERROR             = "Failed to extract product list"
 STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
 STR_PRODUCT_PROVIDE_NAME             = "Please provide a new product name"
 
