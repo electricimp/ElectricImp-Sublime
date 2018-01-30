@@ -1084,7 +1084,10 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         # check that response has some payload
         # response should contain the list of devices
         if len(response.get("data")) > 0:
-            all_names = [device["attributes"]["name"] for device in response["data"]]
+            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+                str(device["attributes"].get("name"))) for device in response["data"]]
+
+        print(response["data"])
 
         # make a new product creation option as a part of the product select menu
         self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, response["data"]))
@@ -1146,7 +1149,8 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
                 if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
                     devices.append(device)
 
-            all_names = [device["attributes"]["name"] for device in devices]
+            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+                str(device["attributes"]["name"])) for device in devices]
         if len(devices) > 0:
             # make a new product creation option as a part of the product select menu
             self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
