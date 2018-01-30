@@ -1025,7 +1025,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
     def action(self):
-        sublime.set_timeout_async(self.select_existing_device, 0)
+        sublime.set_timeout_async(lambda: self.select_existing_device(), 0)
 
     def on_device_name_provided(self, index, devices):
         # prevent wrong index which
@@ -1157,10 +1157,6 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
 
-    @staticmethod
-    def check(base):
-        return True
-
     def action(self):
         # Clean up all the error marks first
         for view in self.window.views():
@@ -1219,8 +1215,10 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
             # Not it's time to restart the code
             url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
-            HTTP.post(self.env.project_manager.get_access_token(), url)
-            # TODO: Handle the conditional restart results
+            response, code = HTTP.post(self.env.project_manager.get_access_token(), url, headers={"Content-Type": "application/vnd.api+json"})
+
+            if not self.handle_http_response(response, code, "Failed to perform the conditional restart", None):
+                return
         else:
             # {
             # 	'error': {
@@ -1617,7 +1615,7 @@ class LogManager:
             next_cmd = False
             logs = []
             while True:
-                rd, wd, ed = select.select([self.sock], [], [], 1)
+                rd, wd, ed = select.select([self.sock], [], [], 0)
                 if not rd:
                     break
                 else:
@@ -1645,20 +1643,19 @@ class LogManager:
     def query_logs(self):
         log_request_time = False
         devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
-
         if not devicegroup_id:
             # Nothing to do yet
             return None
 
         if self.sock and type(self.sock) != None and self.sock.fp != None:
-            result = {"logs": self.__read_logs()}
-            return result
+            return {"logs": self.__read_logs()}
 
         logs = []
 
         # Request the list of the devices for the device group
         # on first connection and cache it for future
         if not self.poll_url:
+            log_debug("Request devices")
             devices, rcode = HTTP.get(key=self.env.project_manager.get_access_token(),
                 url= PL_IMPCENTRAL_API_URL_V5 + "devices",
                 data='{"filter": "'+ devicegroup_id +'"}',
@@ -1673,6 +1670,7 @@ class LogManager:
             # and uses for smart log output
             self.devices = devices["data"]
 
+        log_debug("Request logstream")
         # request a new logstream instance
         response, code = HTTP.post(key=self.env.project_manager.get_access_token(),
             url=PL_IMPCENTRAL_API_URL_V5 + "logstream",
@@ -1689,6 +1687,7 @@ class LogManager:
             "Content-Type": "text/event-stream",
             "User-Agent": "imp-developer/sublime"}
 
+        log_debug("Open stream")
         req1 = urllib.request.Request(url=url, headers=hdr, method="GET")
         try:
             self.sock = urllib.request.urlopen(req1, timeout=None)
@@ -1705,6 +1704,7 @@ class LogManager:
             self.reset()
             return
 
+        log_debug("Attach devices")
         # attache the devices from the device group to the logstream
         for device in self.devices:
             if ("devicegroup" in device["relationships"]
@@ -1720,6 +1720,7 @@ class LogManager:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
+        log_debug("Log config done")
         return {"logs": logs}
 
     @staticmethod
@@ -1750,7 +1751,6 @@ class LogManager:
 
                 self.write_to_console(log)
                 self.last_shown_log = log
-
 
         sublime.set_timeout_async(__update_logs, 0)
 
@@ -1823,6 +1823,7 @@ class LogManager:
         # that's why log could be suplicated in the console
         # after device assign/an-assign
         self.last_shown_log = None
+
 
 def update_log_windows(restart_timer=True):
     global project_env_map
