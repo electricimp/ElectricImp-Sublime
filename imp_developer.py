@@ -288,6 +288,20 @@ class UIManager:
         else:
             log_debug("Property \"" + property_name + "\" is not found in the settings")
 
+class HttpHeaders():
+    DEFAULT = {
+        "Content-Type": "application/vnd.api+json",
+        "User-Agent" : "imp-developer/sublime"
+    }
+    STREAM = {
+        "Content-Type": "text/event-stream",
+        "User-Agent" : "imp-developer/sublime"
+    }
+    AUTH = {
+        "Content-Type": "application/json",
+        "User-Agent" : "imp-developer/sublime"
+    }
+
 
 class HTTP:
     """Implementation of all the Electric Imp connection functionality"""
@@ -348,27 +362,27 @@ class HTTP:
             result = json.loads(err.read().decode('utf-8'))
         except urllib.error.URLError as err:
             code = 404
-            result = err.reason
+            result = {"error" : err.reason}
         except urllib.error.ContentTooShortError as err:
             code = 404
-            result = "Too short conent exception"
+            result = {"error" : "Too short conent exception"}
 
         return result, code
 
     @staticmethod
-    def get(key, url, timeout=None, data=None, headers=None):
+    def get(key, url, timeout=None, data=None, headers=HttpHeaders.DEFAULT):
         return HTTP.do_request(key, url, "GET", timeout=timeout, data=data, headers=headers)
 
     @staticmethod
-    def post(key, url, data=None, headers={"Content-Type": "application/json"}):
+    def post(key, url, data=None, headers=HttpHeaders.DEFAULT):
         return HTTP.do_request(key, url, "POST", data, headers=headers)
 
     @staticmethod
-    def put(key, url, data=None, headers={"Content-Type": "application/vnd.api+json"}):
+    def put(key, url, data=None, headers=HttpHeaders.DEFAULT):
         return HTTP.do_request(key, url, "PUT", data, headers=headers)
 
     @staticmethod
-    def delete(key, url, data=None, headers={"Content-Type": "application/vnd.api+json"}):
+    def delete(key, url, data=None, headers=HttpHeaders.DEFAULT):
         return HTTP.do_request(key, url, "DELETE", data, headers=headers)
 
     @staticmethod
@@ -412,47 +426,84 @@ class HTTP:
         # return the failure message
         return failure
 
-
-class HttpHeaders():
-    DEFAULT = {
-        "Content-Type": "application/vnd.api+json",
-        "User-Agent" : "imp-developer/sublime"
-    }
-    STREAM = {
-        "Content-Type": "text/event-stream",
-        "User-Agent" : "imp-developer/sublime"
-    }
-    AUTH = {
-        "Content-Type": "application/json",
-        "User-Agent" : "imp-developer/sublime"
-    }
+class ImpRequest():
+    INVALID_CREDENTIALS = 1
+    WRONG_INPUT = 2
+    FAILURE = 3
 
 class ImpCentral:
 
     @staticmethod
-    def auth(login, password):
-        return [], None
+    def auth(user_name, password):
+        url = PL_IMPCENTRAL_API_URL_V5 + "auth"
+        response, code = HTTP.post(None, url,
+            '{"id": "' + user_name + '", "password": "' + password + '"}',
+            headers=HttpHeaders.AUTH)
+        error = ImpCentral.handle_http_response(response, code)
+        return response, error
 
     @staticmethod
-    def refresh_token(login, password):
-        return [], None
+    def refresh_access_token(refresh_token):
+        response, code = HTTP.post(None,
+            PL_IMPCENTRAL_API_URL_V5 + "/auth/token",
+            '{"token":"'+refresh_token+'"}')
+        error = ImpCentral.handle_http_response(response, code)
+        return response, error
 
     @staticmethod
     def list_products(token, owner=None):
-        response, code = HTTP.get(token, PL_IMPCENTRAL_API_URL_V5 + "products")
-        return response, code
+        # TODO: list all products
+        response, code = HTTP.get(token,
+            PL_IMPCENTRAL_API_URL_V5 + "products")
+        error = ImpCentral.handle_http_response(response, code)
+
+        return response["data"], error
 
     @staticmethod
-    def list_devicegroups(key, product_id):
-        return [], None
+    def list_devicegroups(token, product_id):
+        # TODO: list all elements
+        response, code = HTTP.get(token,
+            url=PL_IMPCENTRAL_API_URL_V5 + "devicegroups",
+            data='{"filter[product.id]": "' + product_id + '"}')
+
+        error = ImpCentral.handle_http_response(response, code)
+        return response["data"], error
 
     @staticmethod
-    def list_devices(key, devicegroup_id):
-        return [], None
+    def list_devices(token, devicegroup_id=None):
+        # TODO: list all elements
+        if devicegroup_id:
+            data='{"filter[devicegroup.id]": "' + devicegroup_id + '"}'
+        else:
+            data=None
+        response, code = HTTP.get(token,
+            url=PL_IMPCENTRAL_API_URL_V5 + "devices", data=data)
+
+        error = ImpCentral.handle_http_response(response, code)
+
+        return response['data'], error
 
     @staticmethod
-    def get_devicegroup(key, devicegroup_id):
-        return [], None
+    def get_devicegroup(token, devicegroup_id):
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + devicegroup_id
+        response, code = HTTP.get(token, url=url)
+        error = ImpCentral.handle_http_response(response, code)
+        return response["data"], error
+
+    @staticmethod
+    def get_deployment(token, deployment_id):
+        url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment_id
+        response, code = HTTP.get(token, url=url)
+        error = ImpCentral.handle_http_response(response, code)
+        return response["data"], error
+
+    @staticmethod
+    def get_device(token, device_id):
+        response, code = HTTP.get(token,
+            PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id)
+        error = ImpCentral.handle_http_response(response, error)
+        return response, error
+
 
     @staticmethod
     def create_product(token, product_name):
@@ -466,15 +517,147 @@ class ImpCentral:
                 }
             }
         })
-        response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
+        response, code = HTTP.post(token, url, data, headers=HttpHeaders.DEFAULT)
 
         error = ImpCentral.handle_http_response(response, code)
 
         return response, error
 
     @staticmethod
+    def create_devicegroup(token, product_id, devicegroup_name):
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups"
+        data = json.dumps({
+            "data": {
+                "type": "development_devicegroup",
+                "attributes": {
+                    "name": devicegroup_name,
+                    "description": "Devicegroup created from sublime plugin"
+                },
+                "relationships": {
+                    "product": {
+                        "type": "product",
+                        "id": product_id
+                    }
+                }
+            }})
+
+        response, code = HTTP.post(token, url, data)
+        error = ImpCentral.handle_http_response(respone, code)
+        return response, error
+
+    @staticmethod
+    def create_logstream(token):
+        response, code = HTTP.post(token,
+            url=PL_IMPCENTRAL_API_URL_V5 + "logstream")
+        error = ImpCentral.handle_http_response(response, code)
+        return response["data"], error
+
+    @staticmethod
+    def attach_device_to_logstream(token, logstream_id, device_id):
+        response, code = HTTP.put(token,
+            url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + logstream_id + "/" + device_id,
+            data="{}")
+        error = ImpCentral.handle_http_response(respone, code)
+        # Note: response in None in that case
+        return response, error
+
+
+    @staticmethod
+    def open_logstream(token, logstream_id):
+        response = None
+        url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + logstream_id
+        headers = HTTP.__get_http_headers(token, HttpHeaders.STREAM)
+        request = urllib.request.Request(
+            url=url, headers=headers, method="GET")
+        try:
+            response = urllib.request.urlopen(request, timeout=None)
+        except socket.timeout:
+            # open url timeout
+            response = None
+        except urllib.error.HTTPError as err:
+            # TODO: - handle expired access token
+            #       - no internet connection
+            response = None
+
+        return response
+
+    @staticmethod
+    def create_deployment(token, devicegroup_id, agent_code, device_code):
+        url = PL_IMPCENTRAL_API_URL_V5 + "deployments"
+        data = ('{"data":{"type":"deployment",'
+              ' "attributes": {'
+              '  "description": "Sublime text"'
+              ', "origin": "sublime"'
+              ', "tags": []'
+              ', "agent_code": ' + json.dumps(agent_code) +
+              ', "device_code" : ' + json.dumps(device_code) +
+              '},'
+              '"relationships": {"devicegroup": {'
+              ' "type": "development_devicegroup", "id": "' + devicegroup_id + '"}}'
+              ' }}')
+        ## create a new deployment
+        response, code = HTTP.post(token, url=url, data=data)
+        error = ImpCentral.handle_http_response(response, code)
+        return result["data"], error
+
+    @staticmethod
+    def assign_device(token, devicegroup_id, device_id):
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + devicegroup_id + "/relationships/devices"
+        data = json.dumps({
+                "data" : [{
+                    "type": "device",
+                    "id": device_id
+                }]
+            })
+
+        response, code = HTTP.post(token, url, data)
+        error = ImpCentral.handle_http_response(response, code)
+        return response, error
+
+    @staticmethod
+    def unassign_device(token, devicegroup_id, device_id):
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + devicegroup_id + "/relationships/devices"
+        data = json.dumps({
+                "data" : [{
+                    "type": "device",
+                    "id": device_id
+                }]
+            })
+        # Append the selected device to the device group
+        response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data)
+
+        error = ImpCentral.handle_http_response(response, code)
+        return response, error
+
+    @staticmethod
+    def conditional_restart(token, devicegroup_id):
+        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + devicegroup_id + "/conditional_restart"
+        response, code = HTTP.post(token, url)
+
+        error = ImpCentral.handle_http_response(response, code)
+        return response, error
+
+    @staticmethod
     def handle_http_response(response, code):
-        return True
+        if HTTP.is_response_code_valid(code):
+            return None
+
+        # Handle invalid credentials use-case
+        if HTTP.is_invalid_credentials(code, response):
+            return {"code": ImpRequest.INVALID_CREDENTIALS, "error": "Invalid Credentials"}
+
+        # handle wrong input use-case
+        error, title = HTTP.is_wrong_input(code, response)
+        if error:
+            # offer for the user to re-try current action
+            return {"code" : ImpRequest.WRONG_INPUT, "message": "Wrong Input"}
+
+        # Handle failure use-case
+        failure = HTTP.is_failure_request(response, code)
+        if failure:
+            return {"code": ImpRequest.FAILURE, "message": "Failure detailed message"}
+
+        return {"code": ImpRequest.FAILURE, "message": "Unhandled http error: " + str(code)}
 
     @staticmethod
     def open_logstream(key, devicegroup_id):
@@ -484,7 +667,6 @@ class ImpCentral:
     @staticmethod
     def read_logs(handler):
         return [], None
-
 
 class SourceType():
     AGENT = 0
@@ -772,6 +954,63 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         return False
 
+    # Check HTTP response and force an action
+    # There are four use-cases are possible:
+    # 1. Code valid
+    # 2. Refresh token expired - invalid credentials
+    # 3. Wrong input (for example product name already exists)
+    # 4. All other failures
+    def check_imp_error(self, error, str_failed, str_retry, should_retry=True):
+        if not error:
+            return False
+
+        # Handle invalid credentials use-case
+        if error["code"] == ImpRequest.INVALID_CREDENTIALS:
+            # force token update and restart command
+            settings = self.load_settings()
+            token = settings.get(EI_ACCESS_TOKEN_SET)
+            if not token:
+                if (not should_retry or
+                    not sublime.ok_cancel_dialog(str_retry, "Try again")):
+                    return True
+
+            if token and EI_ACCESS_TOKEN in token:
+                # reset access token to force an update
+                token[EI_ACCESS_TOKEN] = None
+                self._update_settings(EI_ACCESS_TOKEN_SET, token)
+
+            # use an original command to refresh credentials
+            if self.cmd_on_complete:
+                # run an ariginal command
+                self.window.run_command(self.cmd_on_complete)
+            else:
+                # re-run current command
+                self.window.run_command(self.name())
+            return False
+
+        # handle wrong input use-case
+        if error["code"] == ImpRequest.WRONG_INPUT:
+            # offer for the user to re-try current action
+            if should_retry and sublime.ok_cancel_dialog(error["message"], "Try again"):
+                if self.cmd_on_complete:
+                    self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
+                else:
+                    self.window.run_command(self.name())
+            return False
+
+        # Handle failure use-case
+        if error["code"] == ImpRequest.FAILURE:
+            # offer for the user to re-try current action
+            if (should_retry and str_failed
+                and sublime.ok_cancel_dialog(str_failed + ":\n" + error["message"], "Try again")):
+                if self.cmd_on_complete:
+                    self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
+                else:
+                    self.window.run_command(self.name())
+
+        return False
+
+
     def reset_credentails(self):
         settings = self.load_settings()
         settings[EI_ACCESS_TOKEN_SET] = None
@@ -877,12 +1116,11 @@ class ImpAuthCommand(BaseElectricImpCommand):
             sublime.set_timeout_async(lambda: self.request_credentials(user_name, password), 0)
 
     def request_credentials(self, user_name, password):
-            url = PL_IMPCENTRAL_API_URL_V5 + "auth"
-            response, code = HTTP.post(None, url, '{"id": "' + user_name + '", "password": "' + password + '"}')
-            self.on_login_complete(code, response)
+        response, error = ImpCentral.auth(user_name, password)
+        self.on_login_complete(response, error)
 
-    def on_login_complete(self, code, payload):
-        if not self.handle_http_response(payload, code,
+    def on_login_complete(self, payload, error):
+        if self.check_imp_error(error,
             "Failed to login", "Invalid username or password. Try again?"):
             return
 
@@ -914,10 +1152,11 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
 
     def action(self):
         refresh_token = self.env.project_manager.get_refresh_token()
-        request, code = HTTP.post(None, PL_IMPCENTRAL_API_URL_V5 + "/auth/token", '{"token":"'+refresh_token+'"}')
+        # request to refresh an access token
+        request, error = ImpCentral.refresh_access_token(None, refresh_token)
         # Failed to refresh token reset credentials
         # Do not need to show dialog which offer to refresh token
-        if not self.handle_http_response(request, code, None, None, False):
+        if self.check_imp_error(error, None, None, False):
             self._update_settings(EI_ACCESS_TOKEN_SET, None)
             self.on_action_complete()
             return
@@ -953,20 +1192,10 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: self.on_new_product_name_provided(name), 0)
 
     def on_new_product_name_provided(self, name):
-        token = self.env.project_manager.get_access_token()
-        url = PL_IMPCENTRAL_API_URL_V5 + "products"
-        data = json.dumps({
-            "data": {
-                "type": "product",
-                "attributes": {
-                    "name": name,
-                    "description": "Product created from sublime plugin"
-                }
-            }
-        })
-        response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
-
-        if not self.handle_http_response(response, code,
+        # request a new product creation
+        ImpCentral.create_product(self.env.project_manager.get_access_token(), name)
+        # handle possible errors, and force restart or show message dialog
+        if check_imp_error(error,
             "Failed to create new product: ", "Try to create product again ?"):
             return
 
@@ -991,19 +1220,23 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
             self.on_action_complete()
 
     def select_existing_product(self):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "products")
-        # Check that code is correct
-        if not self.handle_http_response(response, code,
+        products, error = ImpCentral.list_products(self.env.project_manager.get_access_token())
+        # Handle imp central request's error
+        if self.check_imp_error(error,
             "Failed to extract products list.", "Try again ?"):
             return
 
+        # work-around for an absolutely new user
+        # who do not have any products at all
+        all_names = []
+        details = []
         # check that response has some payload
-        if len(response['data']) > 0:
-            all_names = [product["attributes"]["name"] for product in response['data']]
-            self.__tmp_add_groups = [(product["id"], product["attributes"]["name"]) for product in response['data']]
+        if products and len(products) > 0:
+            all_names = [str(product["attributes"]["name"]) for product in products]
+            details = [(product["id"], str(product["attributes"]["name"])) for product in products]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, self.__tmp_add_groups))
+        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, details))
 
 ###
 ### Check the device group or create a new one
@@ -1020,25 +1253,32 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def select_device_group(self):
         settings = self.load_settings()
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devicegroups", '{"filter[product.id]": "'+settings[EI_PRODUCT_ID]+'"}')
+        product_id = settings[EI_PRODUCT_ID]
+        devicegroups, error = ImpCentral.list_devicegroups(
+            self.env.project_manager.get_access_token(), product_id)
 
         # Check that code is correct
-        if not self.handle_http_response(response, code,
-            "Failed to extract the device group list", "Retry to extract the list of devices ?"):
+        # In common case it is expected error==failure only
+        # But, if someone decide to drop product via IDE
+        # when user is selecting product in this plugin
+        # then the second error message should happen
+        if self.check_imp_error(error,
+            "Failed to extract the device group list: ",
+            "Something wend wrong, retry to extract the list of devicegroups ?"):
             return
 
         # check that response has some payload
-        if len(response['data']) > 0:
-            all_names = []
-            self.__tmp_add_groups = []
-            for product in response['data']:
-                if product["relationships"]["product"]["id"] == settings[EI_PRODUCT_ID]:
-                    self.__tmp_add_groups += [(product["id"], product["attributes"]["name"])]
-                    all_names += [product["attributes"]["name"]]
+        all_names = []
+        details = []
+        if len(devicegroups) > 0:
+            for dg in devicegroups:
+                if dg["relationships"]["product"]["id"] == product_id:
+                    all_names += [str(dg["attributes"]["name"])]
+                    details += [(dg["id"], str(dg["attributes"]["name"]))]
 
         # make a new product creation option as a part of the product select menu
         self.window.show_quick_panel([ STR_DEVICEGROUP_CREATE_NEW ] + all_names,
-            lambda id: self.on_devicegroup_name_provided_async(id, self.__tmp_add_groups))
+            lambda id: self.on_devicegroup_name_provided_async(id, details))
 
     def on_devicegroup_name_provided_async(self, index, items):
         sublime.set_timeout_async(lambda: self.on_devicegroup_name_provided(index, items), 0)
@@ -1068,29 +1308,16 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def on_new_devicegroup_name_provided(self, name):
         token = self.env.project_manager.get_access_token()
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups"
-        settings = self.load_settings()
-        data = json.dumps({
-            "data": {
-                "type": "development_devicegroup",
-                "attributes": {
-                    "name": name,
-                    "description": "Devicegroup created from sublime plugin"
-                },
-                "relationships": {
-                    "product": {
-                        "type": "product",
-                        "id": settings[EI_PRODUCT_ID]
-                    }
-                }
-            }})
+        # request a new device group creation
+        devicegroup, error = ImpCentral.create_devicegroup(
+            token, settings[EI_PRODUCT_ID], name)
 
-        response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
-
-        if not self.handle_http_response(response, code,
-            "Failed to create device group: ", "Wrong device group name. Type again ?"):
+        if self.check_imp_error(error,
+            "Failed to create device group: ",
+            "Wrong device group name. Type again ?"):
             return
-        self._update_settings(EI_DEVICEGROUP_ID, response["data"]["id"])
+
+        self._update_settings(EI_DEVICEGROUP_ID, devicegroup["id"])
         self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
         self.on_action_complete()
 
@@ -1123,21 +1350,14 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
             return
 
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/relationships/devices"
-        data = json.dumps({
-                "data" : [{
-                    "type": "device",
-                    "id": device["id"]
-                }]
-            })
-
-        # Append the selected device to the device group
-        headers = {"Content-Type": 'application/vnd.api+json'}
-        response, code = HTTP.post(self.env.project_manager.get_access_token(), url, data, headers=headers)
+        response, error = ImpCentral.assign_device(
+            self.env.project_manager.get_access_token(),
+            settings.get(EI_DEVICEGROUP_ID),
+            device["id"])
 
         # handle the respond
-        if not self.handle_http_response(response, code,
-            "Failed to assign device: ", "Try to assign device again ?"):
+        if self.check_imp_error(error,
+            "Failed to assign device: "):
             log_debug("Failed to add device to the group")
             return
 
@@ -1152,20 +1372,25 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(self.env.log_manager.reset, 0)
 
     def select_existing_device(self):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
+        devices, error = ImpCentral.list_devices(self.env.project_manager.get_access_token())
+
         # Check that code is correct
-        if not self.handle_http_response(response, code,
-            "Failed to extract list of devices: ", None):
+        if self.check_imp_error(error,
+            "Failed to extract list of devices: "):
+            return
+
+        if not devices or len(devices) == 0:
+            sublime.message_dialog("The device list is empty, please register device first.")
             return
 
         # check that response has some payload
         # response should contain the list of devices
-        if len(response.get("data")) > 0:
+        if len(devices) > 0:
             all_names = [(str(device["attributes"].get("mac_address")) + " - " +
-                str(device["attributes"].get("name"))) for device in response["data"]]
-
-        # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, response["data"]))
+                str(device["attributes"].get("name"))) for device in devices]
+            # make a new product creation option as a part of the product select menu
+            self.window.show_quick_panel(all_names,
+                lambda id: self.on_device_name_provided(id, devices))
 
 ###
 ### Un-Assign device from the
@@ -1185,19 +1410,19 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # therefore index maps on the names correctly
         device = devices[index]
         settings = self.load_settings()
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/relationships/devices"
-        data = json.dumps({
-                "data" : [{
-                    "type": "device",
-                    "id": device["id"]
-                }]
-            })
-        # Append the selected device to the device group
-        response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data)
+
+        # Remove the selected device from the devicegroup
+        response, error = ImpCentral.unassign_device(
+            self.env.project_manager.get_access_token(),
+            settings.get(EI_DEVICEGROUP_ID),
+            device["id"])
 
         # handle the respond
-        if not self.handle_http_response(response, code,
-            "Failed to remove device from the group: ", None):
+        # the second error should happen if someone drop
+        # the device group via IDE
+        if self.check_imp_error(error,
+            "Failed to remove device from the group: ",
+            "Something went wrong with device unassing from the device group.\n\n Try again ?"):
             log_debug("Failed to remove device from the group")
             return
 
@@ -1207,30 +1432,28 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(self.env.log_manager.reset, 0)
 
     def select_existing_device(self):
-        response, code = HTTP.get(self.env.project_manager.get_access_token(), PL_IMPCENTRAL_API_URL_V5 + "devices")
+        settings = self.load_settings()
+
+        # list devices for the current device group
+        devices, error = ImpCentral.list_devices(
+            self.env.project_manager.get_access_token(),
+            settings[EI_DEVICEGROUP_ID])
+
         # Check that code is correct
-        if not self.handle_http_response(response, code,
+        if self.check_imp_error(error,
             "Failed to get the list of devices: ", None):
             return
 
         # check that response has some payload
         # response should contain the list of devices
-        if len(response.get("data")) > 0:
+        if len(devices) > 0:
             # filter devices localy
-            devices = []
-            settings = self.load_settings()
-            for device in response["data"]:
-                devgrp = device["relationships"].get("devicegroup")
-                if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
-                    devices.append(device)
-
             all_names = [(str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"]["name"])) for device in devices]
-        if len(devices) > 0:
             # make a new product creation option as a part of the product select menu
             self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
         else:
-            sublime.message_dialog("There is assigned no devices in the current device group")
+            sublime.message_dialog("There is no assigned devices in the current device group")
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
@@ -1260,43 +1483,39 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         device_code = self.read_file(device_filename)
 
         settings = self.load_settings()
-        url = PL_IMPCENTRAL_API_URL_V5 + "deployments"
-        data = ('{"data":{"type":"deployment",'
-              ' "attributes": {'
-              '  "description": "Sublime text"'
-              ', "origin": "sublime"'
-              ', "tags": []'
-              ', "agent_code": ' + json.dumps(agent_code) +
-              ', "device_code" : ' + json.dumps(device_code) +
-              '},'
-              '"relationships": {"devicegroup": {'
-              ' "type": "development_devicegroup", "id": "' + settings.get(EI_DEVICEGROUP_ID) + '"}}'
-              ' }}')
-        response, code = HTTP.post(key=self.env.project_manager.get_access_token(), url=url, data=data, headers={"Content-Type": "application/vnd.api+json"})
-        self.handle_response(response, code)
+
+        # post a new deployment into the current devicegroup
+        deployment, error = ImpCentral.create_deployment(
+            self.env.project_manager.get_access_token(),
+            settings.get(EI_DEVICEGROUP_ID),
+            agent_code,
+            device_code)
+
+        self.handle_deployment(deployment, error)
 
         self.update_status_message()
         self.on_action_complete()
 
-    def handle_response(self, response, code):
+    # Handle deployment errors more carefull
+    def handle_deployment(self, error):
         settings = self.load_settings()
 
         # Update the logs first
         update_log_windows(False)
 
-        if HTTP.is_response_code_valid(code):
+        if not error:
             # save the current deployment
-            self._update_settings(EI_DEPLOYMENT_ID, response["data"]["id"])
+            self._update_settings(EI_DEPLOYMENT_ID, deployment["id"])
             # print the deployment to the status
-            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response["data"]["attributes"]["sha"])))
+            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(deployment["attributes"]["sha"])))
             # note user about conditionla restart request
             self.print_to_tty(STR_DEVICEGROUP_CONDITIONAL_RESTART)
 
-            # Not it's time to restart the code
-            url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings.get(EI_DEVICEGROUP_ID) + "/conditional_restart"
-            response, code = HTTP.post(self.env.project_manager.get_access_token(), url, headers={"Content-Type": "application/vnd.api+json"})
+            # Now it's time to restart code on agent and devices
+            response, error = ImpCentral.conditional_restart(
+                self.env.project_manager.get_access_token(), settings.get(EI_DEVICEGROUP_ID))
 
-            if not self.handle_http_response(response, code, "Failed to perform the conditional restart", None):
+            if self.check_imp_error(error, "Failed to perform the conditional restart", None):
                 return
         else:
             # {
@@ -1393,9 +1612,15 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         settings = self.load_settings()
         if EI_DEVICE_ID in settings:
             device_id = settings.get(EI_DEVICE_ID)
-            response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                      PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id)
-            agent_id = response.get("device").get("agent_id")
+            # get current device details
+            response, error = ImpCentral.get_device(
+                self.env.project_manager.get_access_token(), device_id)
+
+            if self.check_imp_error(error,
+                "Failed to get aget url for some device"):
+                return
+
+            agent_id = device["attributes"].get("agent_id")
             agent_url = PL_AGENT_URL.format(agent_id)
             sublime.set_clipboard(agent_url)
             sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
@@ -1527,25 +1752,22 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             return
 
         settings = self.load_settings()
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + settings[EI_DEVICEGROUP_ID]
-        headers = {"Content-Type": "application/vnd.api+json"}
-        response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                   url=url, headers = headers)
+        devicegroup, error = ImpCentral.get_devicegroup(
+            self.env.project_manager.get_access_token(), settings[EI_DEVICEGROUP_ID])
 
-        if not self.handle_http_response(response, code,
-            "Failed to extract source code", "Retry ?"):
+        if self.check_imp_error(error, "Failed to extract source code", "Retry ?"):
             return
 
         # Handle the use-case when there is no any deployment yet
         # for example for a newly created group via IDE
-        if not "current_deployment" in response["data"]["relationships"]:
+        if not "current_deployment" in devicegroup["relationships"]:
             sublime.message_dialog("There is no any deployment yet")
             # mark that there is no more deployments yet, to prevent
             # permanent deployments requests
             self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
             return
 
-        deployment = response["data"]["relationships"]["current_deployment"]["id"]
+        deployment = devicegroup["relationships"]["current_deployment"]["id"]
 
         # for a one hand it is the same revision as should be
         # in the local file but for another hand
@@ -1558,11 +1780,11 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             log_debug("Everything up to date")
 
         url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment
-        response, code = HTTP.get(self.env.project_manager.get_access_token(),
-                                   url=url, headers = headers)
+        deployment, error = ImpCentral.get_deployment(
+            self.env.project_manager.get_access_token(), deployment)
 
-        if not self.handle_http_response(response, code,
-            "Failed to load the latest deployment", None):
+        if self.check_imp_error(error,
+            "Failed to load the latest deployment: ", None):
             return
 
         # Pull the latest code from the Model
@@ -1570,11 +1792,11 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
-        if response["data"]["attributes"]:
+        if deployment and deployment["attributes"]:
             with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(response["data"]["attributes"]["agent_code"])
+                file.write(deployment["attributes"]["agent_code"])
             with open(device_file, "w", encoding="utf-8") as file:
-                file.write(response["data"]["attributes"]["device_code"])
+                file.write(deployment["attributes"]["device_code"])
             # save the latest deployment id
             self._update_settings(EI_DEPLOYMENT_ID, deployment)
 
@@ -1736,17 +1958,19 @@ class LogManager:
             self.state = self.FAIL
         else:
             self.state = self.IDLE
+    #
+    def check_imp_error(self, error):
+        if not error:
+            return False
 
-    def handle_http_response(self, response, code):
-        if HTTP.is_response_code_valid(code):
-            return True
-
-        # Handle invalid credentials use-case
-        if HTTP.is_invalid_credentials(code, response):
+        # Handle invalid credentials use-case only
+        # the following string should restart logs via command
+        # which lead to access token renew
+        if error["code"] == ImpRequest.INVALID_CREDENTIALS:
             sublime.set_timeout_async(
                 lambda: self.env.window.run_command("imp_show_console", {"cmd_on_complete": "auth"}), 0)
 
-        return False
+        return True
 
 
     def __read_logs(self):
@@ -1803,52 +2027,37 @@ class LogManager:
         # on first connection and cache it for future
         if not self.poll_url:
             log_debug("Request devices")
-            devices, rcode = HTTP.get(key=self.env.project_manager.get_access_token(),
-                url= PL_IMPCENTRAL_API_URL_V5 + "devices",
-                data='{"filter": "'+ devicegroup_id +'"}',
-                headers={"Content-Type": "application/vnd.api+json"})
+            devices, error = ImpCentral.get_devicegroup(
+                self.env.project_manager.get_access_token(),
+                devicegroup_id)
 
             # Suppose that there is no logs if there is no device
-            if not self.handle_http_response(devices, rcode):
+            if self.check_imp_error(error):
                 return None
 
-            if len(devices["data"]) == 0:
-                sublime.message_dialog("There is no devices in current device group. Please assign some device to start logging.")
+            if len(devices) == 0:
+                self.write_to_console("There is no devices in current device group. Please assign some device to start logging.")
                 return None
 
             # cache device list
             # it could be re-use on the next connection
             # and uses for smart log output
-            self.devices = devices["data"]
+            self.devices = devices
 
         log_debug("Request logstream")
         # request a new logstream instance
-        response, code = HTTP.post(key=self.env.project_manager.get_access_token(),
-            url=PL_IMPCENTRAL_API_URL_V5 + "logstream",
-            headers={"Content-Type": "application/vnd.api+json"})
+        logstream, error = ImpCentral.create_logstream(
+            self.env.project_manager.get_access_token())
 
-        if not self.handle_http_response(response, code):
+        if self.check_imp_error(error):
             return None
 
-        self.poll_url = response["data"]["id"]
-        url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url
-
-        hdr = {"Authorization": "Bearer " + self.env.project_manager.get_access_token(),
-            "Content-Type": "text/event-stream",
-            "User-Agent": "imp-developer/sublime"}
+        self.poll_url = logstream["id"]
 
         log_debug("Open stream")
-        req1 = urllib.request.Request(url=url, headers=hdr, method="GET")
-        try:
-            self.sock = urllib.request.urlopen(req1, timeout=None)
-        except socket.timeout:
-            # open url timeout
-            self.sock = None
-        except urllib.error.HTTPError as err:
-            # TODO: - handle expired access token
-            #       - no internet connection
-            self.sock = None
+        self.sock = ImpCentral.open_logstream(token, self.poll_url)
 
+        # something went wrong, reset current state
         if not self.sock:
             return None
 
@@ -1857,13 +2066,17 @@ class LogManager:
         for device in self.devices:
             if ("devicegroup" in device["relationships"]
                 and devicegroup_id == device["relationships"]["devicegroup"]["id"]):
-                response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
-                    url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
-                    data="{}")
-                if not self.handle_http_response(response, code):
+
+                response, error = ImpCentral.attach_device_to_logstream(
+                    self.env.project_manager.get_access_token(),
+                    self.poll_url,
+                    device["id"])
+
+                if self.check_imp_error(error):
                     return None
 
         log_debug("Logstream config done, start polling")
+
         self.state = self.POLL
 
         start = None
