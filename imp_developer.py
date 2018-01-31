@@ -60,6 +60,7 @@ PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 PL_LONG_POLL_TIMEOUT     = 5 # sec
 PL_LOGS_UPDATE_LONG_PERIOD = 1000 # ms
 PL_LOGS_UPDATE_SHORT_PERIOD = 300 # ms
+PL_LOGS_MAX_PER_REQUEST  = 30
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -311,24 +312,13 @@ class HTTP:
         return base64.b64encode(str.encode()).decode()
 
     @staticmethod
-    def __get_http_headers(key, headers):
-        if headers:
-            headers["User-Agent"] = "imp-developer/sublime"
-            if key:
-                headers["Authorization"] = "Bearer " + key
-            return headers
+    def get_http_headers(key, headers):
+        if not headers:
+            headers = {}
+        if key:
+            headers["Authorization"] = "Bearer " + key
 
-        if not key:
-            return {
-                "Content-Type": "application/json",
-                "User-Agent": "imp-developer/sublime"
-            }
-
-        return {
-            "Authorization": "Bearer " + key,
-            "Content-Type": "application/vnd.api+json",
-            "User-Agent": "imp-developer/sublime"
-        }
+        return headers
 
     @staticmethod
     def is_refresh_token_valid(token):
@@ -343,7 +333,7 @@ class HTTP:
         if data:
             data = data.encode('utf-8')
         req = urllib.request.Request(url,
-                                     headers=HTTP.__get_http_headers(key, headers),
+                                     headers=HTTP.get_http_headers(key, headers),
                                      data=data,
                                      method=method)
 
@@ -446,7 +436,8 @@ class ImpCentral:
     def refresh_access_token(refresh_token):
         response, code = HTTP.post(None,
             PL_IMPCENTRAL_API_URL_V5 + "/auth/token",
-            '{"token":"'+refresh_token+'"}')
+            '{"token":"'+refresh_token+'"}',
+            headers=HttpHeaders.AUTH)
         error = ImpCentral.handle_http_response(response, code)
         return response, error
 
@@ -457,7 +448,7 @@ class ImpCentral:
             PL_IMPCENTRAL_API_URL_V5 + "products")
         error = ImpCentral.handle_http_response(response, code)
 
-        return response["data"], error
+        return response.get("data"), error
 
     @staticmethod
     def list_devicegroups(token, product_id):
@@ -467,7 +458,7 @@ class ImpCentral:
             data='{"filter[product.id]": "' + product_id + '"}')
 
         error = ImpCentral.handle_http_response(response, code)
-        return response["data"], error
+        return response.get("data"), error
 
     @staticmethod
     def list_devices(token, devicegroup_id=None):
@@ -488,14 +479,14 @@ class ImpCentral:
         url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + devicegroup_id
         response, code = HTTP.get(token, url=url)
         error = ImpCentral.handle_http_response(response, code)
-        return response["data"], error
+        return response.get("data"), error
 
     @staticmethod
     def get_deployment(token, deployment_id):
         url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment_id
         response, code = HTTP.get(token, url=url)
         error = ImpCentral.handle_http_response(response, code)
-        return response["data"], error
+        return response.get("data"), error
 
     @staticmethod
     def get_device(token, device_id):
@@ -550,14 +541,14 @@ class ImpCentral:
         response, code = HTTP.post(token,
             url=PL_IMPCENTRAL_API_URL_V5 + "logstream")
         error = ImpCentral.handle_http_response(response, code)
-        return response["data"], error
+        return response.get("data"), error
 
     @staticmethod
     def attach_device_to_logstream(token, logstream_id, device_id):
         response, code = HTTP.put(token,
             url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + logstream_id + "/" + device_id,
             data="{}")
-        error = ImpCentral.handle_http_response(respone, code)
+        error = ImpCentral.handle_http_response(response, code)
         # Note: response in None in that case
         return response, error
 
@@ -566,7 +557,8 @@ class ImpCentral:
     def open_logstream(token, logstream_id):
         response = None
         url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + logstream_id
-        headers = HTTP.__get_http_headers(token, HttpHeaders.STREAM)
+        headers = HTTP.get_http_headers(token, HttpHeaders.STREAM)
+        # open socket to start polling
         request = urllib.request.Request(
             url=url, headers=headers, method="GET")
         try:
@@ -578,6 +570,8 @@ class ImpCentral:
             # TODO: - handle expired access token
             #       - no internet connection
             response = None
+        if not response:
+            respone = None
 
         return response
 
@@ -598,7 +592,7 @@ class ImpCentral:
         ## create a new deployment
         response, code = HTTP.post(token, url=url, data=data)
         error = ImpCentral.handle_http_response(response, code)
-        return result["data"], error
+        return response.get("data"), error
 
     @staticmethod
     def assign_device(token, devicegroup_id, device_id):
@@ -624,7 +618,7 @@ class ImpCentral:
                 }]
             })
         # Append the selected device to the device group
-        response, code = HTTP.delete(self.env.project_manager.get_access_token(), url, data)
+        response, code = HTTP.delete(token, url, data)
 
         error = ImpCentral.handle_http_response(response, code)
         return response, error
@@ -658,11 +652,6 @@ class ImpCentral:
             return {"code": ImpRequest.FAILURE, "message": "Failure detailed message"}
 
         return {"code": ImpRequest.FAILURE, "message": "Unhandled http error: " + str(code)}
-
-    @staticmethod
-    def open_logstream(key, devicegroup_id):
-        handle = None
-        return handle, None
 
     @staticmethod
     def read_logs(handler):
@@ -857,6 +846,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         # Setup pending callback
         if cmd_on_complete:
+            # prevent an infinite loop in case of error
+            if cmd_on_complete == self.name():
+                return
             # perform command on completion
             self.action()
             return
@@ -869,6 +861,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             {"command":"imp_create_new_product", "method": ImpCreateNewProductCommand.check},
             {"command":"imp_create_new_device_group", "method": ImpCreateNewDeviceGroupCommand.check},
             {"command":"imp_load_code", "method": ImpLoadCodeCommand.check}]
+
         for x in commands:
             if x["command"] == self.name():
                 break
@@ -876,7 +869,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             if not x["method"](self):
                 self.window.run_command(x["command"], {"cmd_on_complete": self.name()})
                 return
-        # perform action of the current command
+        # perform an action of the current command
         self.action()
 
     def _update_settings(self, index, value):
@@ -903,57 +896,6 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     # 2. Refresh token expired - invalid credentials
     # 3. Wrong input (for example product name already exists)
     # 4. All other failures
-    def handle_http_response(self, response, code, str_failed, str_retry, should_retry=True):
-        if HTTP.is_response_code_valid(code):
-            return True
-
-        # Handle invalid credentials use-case
-        if HTTP.is_invalid_credentials(code, response):
-            # force token update and restart command
-            settings = self.load_settings()
-            token = settings.get(EI_ACCESS_TOKEN_SET)
-            if not token:
-                if (not should_retry or
-                    not sublime.ok_cancel_dialog(str_retry, "Try again")):
-                    return
-
-            if token and EI_ACCESS_TOKEN in token:
-                # reset access token to force an update
-                token[EI_ACCESS_TOKEN] = None
-                self._update_settings(EI_ACCESS_TOKEN_SET, token)
-
-            # use an original command to refresh credentials
-            if self.cmd_on_complete:
-                # run an ariginal command
-                self.window.run_command(self.cmd_on_complete)
-            else:
-                # re-run current command
-                self.window.run_command(self.name())
-            return False
-
-        # handle wrong input use-case
-        error, title = HTTP.is_wrong_input(code, response)
-        if error:
-            # offer for the user to re-try current action
-            if should_retry and sublime.ok_cancel_dialog(error, "Try again"):
-                if self.cmd_on_complete:
-                    self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
-                else:
-                    self.window.run_command(self.name())
-            return False
-
-        # Handle failure use-case
-        failure = HTTP.is_failure_request(response, code)
-        if failure:
-            # offer for the user to re-try current action
-            if should_retry and str_failed and sublime.ok_cancel_dialog(str_failed + ":\n" + failure, "Try again"):
-                if self.cmd_on_complete:
-                    self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
-                else:
-                    self.window.run_command(self.name())
-
-        return False
-
     # Check HTTP response and force an action
     # There are four use-cases are possible:
     # 1. Code valid
@@ -1010,7 +952,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         return False
 
-
+    # reset current credentials
+    # which trigger login/pwd procedure on next command
     def reset_credentails(self):
         settings = self.load_settings()
         settings[EI_ACCESS_TOKEN_SET] = None
@@ -1153,7 +1096,7 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
     def action(self):
         refresh_token = self.env.project_manager.get_refresh_token()
         # request to refresh an access token
-        request, error = ImpCentral.refresh_access_token(None, refresh_token)
+        request, error = ImpCentral.refresh_access_token(refresh_token)
         # Failed to refresh token reset credentials
         # Do not need to show dialog which offer to refresh token
         if self.check_imp_error(error, None, None, False):
@@ -1357,7 +1300,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # handle the respond
         if self.check_imp_error(error,
-            "Failed to assign device: "):
+            "Failed to assign device: ", None):
             log_debug("Failed to add device to the group")
             return
 
@@ -1376,7 +1319,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # Check that code is correct
         if self.check_imp_error(error,
-            "Failed to extract list of devices: "):
+            "Failed to extract list of devices: ", "Failed XXXXXXXXXXXx"):
             return
 
         if not devices or len(devices) == 0:
@@ -1497,7 +1440,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         self.on_action_complete()
 
     # Handle deployment errors more carefull
-    def handle_deployment(self, error):
+    def handle_deployment(self, deployment, error):
         settings = self.load_settings()
 
         # Update the logs first
@@ -1978,7 +1921,7 @@ class LogManager:
             next_log = False
             next_cmd = False
             logs = []
-            count = 30
+            count = PL_LOGS_MAX_PER_REQUEST
             while count > 0:
                 # lets read no more than coun logs per one loop
                 rd, wd, ed = select.select([self.sock], [], [], 0)
@@ -1994,6 +1937,8 @@ class LogManager:
                             if line == b'data: closed\n':
                                 self.reset()
                                 return logs
+                            if line != b'\n':
+                                logs.append(line.decode("utf-8"))
 
                         if line == b'event: message\n':
                             count -= 1
@@ -2012,6 +1957,7 @@ class LogManager:
         log_request_time = False
         devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
         self.error = None
+
         if not devicegroup_id:
             # Nothing to do yet
             self.error = "No device group"
@@ -2022,14 +1968,13 @@ class LogManager:
             return result
 
         logs = []
+        token = self.env.project_manager.get_access_token()
 
         # Request the list of the devices for the device group
         # on first connection and cache it for future
         if not self.poll_url:
             log_debug("Request devices")
-            devices, error = ImpCentral.get_devicegroup(
-                self.env.project_manager.get_access_token(),
-                devicegroup_id)
+            devices, error = ImpCentral.list_devices(token, devicegroup_id)
 
             # Suppose that there is no logs if there is no device
             if self.check_imp_error(error):
@@ -2046,8 +1991,7 @@ class LogManager:
 
         log_debug("Request logstream")
         # request a new logstream instance
-        logstream, error = ImpCentral.create_logstream(
-            self.env.project_manager.get_access_token())
+        logstream, error = ImpCentral.create_logstream(token)
 
         if self.check_imp_error(error):
             return None
@@ -2068,9 +2012,7 @@ class LogManager:
                 and devicegroup_id == device["relationships"]["devicegroup"]["id"]):
 
                 response, error = ImpCentral.attach_device_to_logstream(
-                    self.env.project_manager.get_access_token(),
-                    self.poll_url,
-                    device["id"])
+                    token, self.poll_url, device["id"])
 
                 if self.check_imp_error(error):
                     return None
@@ -2157,7 +2099,7 @@ class LogManager:
             res["dt"] = datetime.datetime.now()
             res["type"] = "sublime.log"
             res["deployment"] = ""
-            res["message"] = log
+            res["message"] = log[:-1]
         else:
             # date: deviceId timestamp deployment type log-string
             res["device"] = ms.pop(0)
