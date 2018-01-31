@@ -429,6 +429,10 @@ class ImpCentral:
         response, code = HTTP.post(None, url,
             '{"id": "' + user_name + '", "password": "' + password + '"}',
             headers=HttpHeaders.AUTH)
+        print("AAAAAAAAAAAAAAAAA")
+        print(code)
+        print(response)
+
         error = ImpCentral.handle_http_response(response, code)
         return response, error
 
@@ -512,7 +516,7 @@ class ImpCentral:
 
         error = ImpCentral.handle_http_response(response, code)
 
-        return response, error
+        return response.get("data"), error
 
     @staticmethod
     def create_devicegroup(token, product_id, devicegroup_name):
@@ -533,8 +537,8 @@ class ImpCentral:
             }})
 
         response, code = HTTP.post(token, url, data)
-        error = ImpCentral.handle_http_response(respone, code)
-        return response, error
+        error = ImpCentral.handle_http_response(response, code)
+        return response.get("data"), error
 
     @staticmethod
     def create_logstream(token):
@@ -644,12 +648,12 @@ class ImpCentral:
         error, title = HTTP.is_wrong_input(code, response)
         if error:
             # offer for the user to re-try current action
-            return {"code" : ImpRequest.WRONG_INPUT, "message": "Wrong Input"}
+            return {"code" : ImpRequest.WRONG_INPUT, "message": error}
 
         # Handle failure use-case
         failure = HTTP.is_failure_request(response, code)
         if failure:
-            return {"code": ImpRequest.FAILURE, "message": "Failure detailed message"}
+            return {"code": ImpRequest.FAILURE, "message": failure}
 
         return {"code": ImpRequest.FAILURE, "message": "Unhandled http error: " + str(code)}
 
@@ -911,6 +915,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             # force token update and restart command
             settings = self.load_settings()
             token = settings.get(EI_ACCESS_TOKEN_SET)
+
             if not token:
                 if (not should_retry or
                     not sublime.ok_cancel_dialog(str_retry, "Try again")):
@@ -928,7 +933,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             else:
                 # re-run current command
                 self.window.run_command(self.name())
-            return False
+            return True
 
         # handle wrong input use-case
         if error["code"] == ImpRequest.WRONG_INPUT:
@@ -938,7 +943,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
                     self.window.run_command(self.name(), {"cmd_on_complete" : self.cmd_on_complete})
                 else:
                     self.window.run_command(self.name())
-            return False
+            return True
 
         # Handle failure use-case
         if error["code"] == ImpRequest.FAILURE:
@@ -950,7 +955,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
                 else:
                     self.window.run_command(self.name())
 
-        return False
+        return True
 
     # reset current credentials
     # which trigger login/pwd procedure on next command
@@ -1039,7 +1044,7 @@ class ImpAuthCommand(BaseElectricImpCommand):
     @staticmethod
     def check(base):
         token = base.env.project_manager.get_access_token_set()
-        return token != None and token['refresh_token'] != None
+        return token != None and token.get('refresh_token') != None
 
     def action(self):
         self.prompt_for_user_password()
@@ -1118,8 +1123,8 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
 class ImpCreateNewProductCommand(BaseElectricImpCommand):
     @staticmethod
     def check(base):
-        settings = base.load_settings();
-        return EI_PRODUCT_ID in settings and settings.get(EI_PRODUCT_ID) != None
+        settings = base.load_settings()
+        return settings.get(EI_PRODUCT_ID) != None
 
     def action(self):
         sublime.set_timeout_async(self.select_existing_product, 1)
@@ -1136,13 +1141,13 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
 
     def on_new_product_name_provided(self, name):
         # request a new product creation
-        ImpCentral.create_product(self.env.project_manager.get_access_token(), name)
+        product, error = ImpCentral.create_product(self.env.project_manager.get_access_token(), name)
         # handle possible errors, and force restart or show message dialog
-        if check_imp_error(error,
+        if self.check_imp_error(error,
             "Failed to create new product: ", "Try to create product again ?"):
             return
 
-        self._update_settings(EI_PRODUCT_ID, response["data"]["id"])
+        self._update_settings(EI_PRODUCT_ID, product["id"])
         self._update_settings(EI_DEVICEGROUP_ID, None)
         self.on_action_complete()
 
@@ -1251,6 +1256,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def on_new_devicegroup_name_provided(self, name):
         token = self.env.project_manager.get_access_token()
+        settings = self.load_settings()
         # request a new device group creation
         devicegroup, error = ImpCentral.create_devicegroup(
             token, settings[EI_PRODUCT_ID], name)
@@ -1741,7 +1747,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             with open(device_file, "w", encoding="utf-8") as file:
                 file.write(deployment["attributes"]["device_code"])
             # save the latest deployment id
-            self._update_settings(EI_DEPLOYMENT_ID, deployment)
+            self._update_settings(EI_DEPLOYMENT_ID, deployment["id"])
 
 class AnfNewProject(AdvancedNewFileNew):
     def __init__(self, window, capture="", on_path_provided=None):
