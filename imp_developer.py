@@ -825,13 +825,15 @@ class ImpAuthCommand(BaseElectricImpCommand):
 ### and try to update it
 ###
 class ImpRefreshTokenCommand(BaseElectricImpCommand):
+
     ###
     ### Refresh access token if necessary
     ###
     @staticmethod
     def check(base):
         token = base.env.project_manager.get_access_token_set()
-        if not token or not "expires_at" in token:
+        if (not token or not "expires_at" in token
+            or not EI_ACCESS_TOKEN in token or not token[EI_ACCESS_TOKEN]):
             return False
         expires = datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
         return expires > datetime.datetime.utcnow()
@@ -1302,10 +1304,9 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
                 token[EI_ACCESS_TOKEN] = None
                 self._update_settings(EI_ACCESS_TOKEN_SET, token)
 
-                # run an ariginal command
-                self.window.run_command(self.name())
-                return
-
+            # run an ariginal command
+            self.window.run_command(self.name())
+            return
         update_log_windows(False)
 
 
@@ -1634,21 +1635,33 @@ class LogManager:
         self.sock = None
         self.devices = []
         self.has_logs = False
-        self.started = False
+        # Suported states:
+        self.IDLE = 0
+        self.INIT = 1
+        self.POLL = 2
+        self.FAIL = 3
+        # set initial state
+        self.state = self.IDLE
+        # prevent multiple requests when http is pending
         self.update_log_started = False
 
-    def is_started(self):
-        return self.started;
-
     def start(self):
-        self.started = True
-
-    def stop(self):
-        if self.started:
-            self.started = False
-            self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
+        if self.state == self.IDLE:
+            self.state = self.INIT
         else:
+            log_debug("Unexpected log manger state")
+
+    def stop(self, is_fail=False):
+        if self.state == self.POLL:
+            self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
+        elif self.state == self.INIT:
             self.write_to_console("Realtime logging not started. Please refresh to enable it again.")
+
+        # change current state depends on initial
+        if is_fail:
+            self.state = self.FAIL
+        else:
+            self.state = self.IDLE
 
     def handle_http_response(self, response, code):
         if HTTP.is_response_code_valid(code):
@@ -1656,7 +1669,10 @@ class LogManager:
 
         # Handle invalid credentials use-case
         if HTTP.is_invalid_credentials(code, response):
-            self.env.window.run_command("imp_show_console", {"cmd_on_complete": "auth"})
+            sublime.set_timeout_async(
+                lambda: self.env.window.run_command("imp_show_console", {"cmd_on_complete": "auth"}), 0)
+
+        return False
 
 
     def __read_logs(self):
@@ -1678,10 +1694,7 @@ class LogManager:
                         if next_cmd:
                             next_cmd = False
                             if line == b'data: closed\n':
-                                self.sock.close()
-                                self.sock = None
-                                self.poll_url = None
-                                self.stop()
+                                self.reset()
                                 return logs
 
                         if line == b'event: message\n':
@@ -1722,12 +1735,10 @@ class LogManager:
                 headers={"Content-Type": "application/vnd.api+json"})
 
             # Suppose that there is no logs if there is no device
-            if self.handle_http_response(response, rcode):
-                self.error = "Can't read the list of devices"
+            if not self.handle_http_response(devices, rcode):
                 return None
 
             if len(devices["data"]) == 0:
-                self.error = "There is no any device in group"
                 sublime.message_dialog("There is no devices in current device group. Please assign some device to start logging.")
                 return None
 
@@ -1742,13 +1753,11 @@ class LogManager:
             url=PL_IMPCENTRAL_API_URL_V5 + "logstream",
             headers={"Content-Type": "application/vnd.api+json"})
 
-        if HTTP.is_response_code_valid(code):
-            self.poll_url = response["data"]["id"]
-            url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url
-        else:
-            # TODO: handle connection error or access-token expired
-            self.error = "Failed to request logstream"
+        if not self.handle_http_response(response, code):
             return None
+
+        self.poll_url = response["data"]["id"]
+        url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url
 
         hdr = {"Authorization": "Bearer " + self.env.project_manager.get_access_token(),
             "Content-Type": "text/event-stream",
@@ -1768,8 +1777,7 @@ class LogManager:
             self.sock = None
 
         if not self.sock:
-            self.reset()
-            return
+            return None
 
         log_debug("Attach devices")
         # attache the devices from the device group to the logstream
@@ -1779,6 +1787,11 @@ class LogManager:
                 response, code = HTTP.put(key=self.env.project_manager.get_access_token(),
                     url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url + "/" + device["id"],
                     data="{}")
+                if not self.handle_http_response(response, code):
+                    return None
+
+        log_debug("Logstream config done, start polling")
+
         start = None
         if log_request_time:
             start = datetime.datetime.now()
@@ -1796,13 +1809,11 @@ class LogManager:
     def update_logs(self):
         def __update_logs():
             self.update_log_started = True
-            self.has_logs = self.sock != None
 
             logs_json = self.query_logs()
             # no logs available
             if not logs_json:
                 self.reset()
-                self.stop()
                 self.update_log_started = False
                 return
 
@@ -1828,8 +1839,6 @@ class LogManager:
 
         if not self.update_log_started:
             sublime.set_timeout_async(__update_logs, 0)
-        # trigger one more log poll operation
-        return self.has_logs
 
     def convert_line_numbers(self, log):
         message = log["message"]
@@ -1900,8 +1909,8 @@ class LogManager:
         # that's why log could be suplicated in the console
         # after device assign/an-assign
         self.last_shown_log = None
-        # reset polling timeout to long inteval
-        self.has_logs = False
+        # reset current state to idle
+        self.stop()
 
 
 def update_log_windows(restart_timer=True):
@@ -1917,14 +1926,14 @@ def update_log_windows(restart_timer=True):
                 log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
                 continue
 
-            # waiting for a log UI command to start
-            # logstream. It could Build&Run or show_console
-            if not restart_timer:
-                env.log_manager.start()
-
-            # request logs if it is required only
-            if env.log_manager.is_started():
-                has_logs = env.log_manager.update_logs()
+            # there are two use-cases when it is possible to get logs
+            # on first start on transition from (IDLE -> INIT -> POLL)
+            # and on  POLL
+            if (env.log_manager.state == env.log_manager.POLL
+                or (env.log_manager.state == env.log_manager.IDLE and not restart_timer)):
+                env.log_manager.update_logs()
+                has_logs = True
+            # skip logs request for the IDLE and FAIL states
     finally:
         if restart_timer:
             # keep on reading logs while logs are available
