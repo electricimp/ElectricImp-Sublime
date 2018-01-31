@@ -1767,7 +1767,6 @@ class LogManager:
         req1 = urllib.request.Request(url=url, headers=hdr, method="GET")
         try:
             self.sock = urllib.request.urlopen(req1, timeout=None)
-            logs = self.__read_logs()
         except socket.timeout:
             # open url timeout
             self.sock = None
@@ -1791,6 +1790,7 @@ class LogManager:
                     return None
 
         log_debug("Logstream config done, start polling")
+        self.state = self.POLL
 
         start = None
         if log_request_time:
@@ -1800,7 +1800,7 @@ class LogManager:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
-        return {"logs": logs}
+        return {"logs": []}
 
     @staticmethod
     def logs_are_equal(first, second):
@@ -1929,8 +1929,11 @@ def update_log_windows(restart_timer=True):
             # there are two use-cases when it is possible to get logs
             # on first start on transition from (IDLE -> INIT -> POLL)
             # and on  POLL
-            if (env.log_manager.state == env.log_manager.POLL
-                or (env.log_manager.state == env.log_manager.IDLE and not restart_timer)):
+            if env.log_manager.state == env.log_manager.POLL:
+                env.log_manager.update_logs()
+                has_logs = True
+            elif env.log_manager.state == env.log_manager.IDLE and not restart_timer:
+                env.log_manager.start()
                 env.log_manager.update_logs()
                 has_logs = True
             # skip logs request for the IDLE and FAIL states
