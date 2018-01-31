@@ -412,6 +412,80 @@ class HTTP:
         # return the failure message
         return failure
 
+
+class HttpHeaders():
+    DEFAULT = {
+        "Content-Type": "application/vnd.api+json",
+        "User-Agent" : "imp-developer/sublime"
+    }
+    STREAM = {
+        "Content-Type": "text/event-stream",
+        "User-Agent" : "imp-developer/sublime"
+    }
+    AUTH = {
+        "Content-Type": "application/json",
+        "User-Agent" : "imp-developer/sublime"
+    }
+
+class ImpCentral:
+
+    @staticmethod
+    def auth(login, password):
+        return [], None
+
+    @staticmethod
+    def refresh_token(login, password):
+        return [], None
+
+    @staticmethod
+    def list_products(token, owner=None):
+        response, code = HTTP.get(token, PL_IMPCENTRAL_API_URL_V5 + "products")
+        return response, code
+
+    @staticmethod
+    def list_devicegroups(key, product_id):
+        return [], None
+
+    @staticmethod
+    def list_devices(key, devicegroup_id):
+        return [], None
+
+    @staticmethod
+    def get_devicegroup(key, devicegroup_id):
+        return [], None
+
+    @staticmethod
+    def create_product(token, product_name):
+        url = PL_IMPCENTRAL_API_URL_V5 + "products"
+        data = json.dumps({
+            "data": {
+                "type": "product",
+                "attributes": {
+                    "name": product_name,
+                    "description": "Product created from sublime plugin"
+                }
+            }
+        })
+        response, code = HTTP.post(token, url, data, headers={"Content-Type": "application/vnd.api+json"})
+
+        error = ImpCentral.handle_http_response(response, code)
+
+        return response, error
+
+    @staticmethod
+    def handle_http_response(response, code):
+        return True
+
+    @staticmethod
+    def open_logstream(key, devicegroup_id):
+        handle = None
+        return handle, None
+
+    @staticmethod
+    def read_logs(handler):
+        return [], None
+
+
 class SourceType():
     AGENT = 0
     DEVICE = 1
