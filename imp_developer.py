@@ -58,7 +58,8 @@ PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_MODEL_STATUS_KEY      = "model-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 PL_LONG_POLL_TIMEOUT     = 5 # sec
-PL_LOGS_UPDATE_PERIOD    = 1000 # ms
+PL_LOGS_UPDATE_LONG_PERIOD = 1000 # ms
+PL_LOGS_UPDATE_SHORT_PERIOD = 300 # ms
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -1087,8 +1088,6 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
             all_names = [(str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"].get("name"))) for device in response["data"]]
 
-        print(response["data"])
-
         # make a new product creation option as a part of the product select menu
         self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, response["data"]))
 
@@ -1259,17 +1258,20 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                             pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
                 return report
-            if "error" in response:
+            if code == 404:
+                error = {"code" : "There is no internet connection"}
+            elif response.get("error"):
                 error = response["error"]
             else:
-                error = "Unknown error"
+                error = {"code" : "Unknown error"}
             if error and error["code"] == "CompileFailed":
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
                 error_message += build_error_messages(error["details"]["agent_errors"], SourceType.AGENT, self.env)
                 error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE, self.env)
                 self.print_to_tty(error_message)
             else:
-                log_debug("Code deploy failed because of the error: {}".format(str(response["error"]["code"])))
+                log_debug("Code deploy failed because of the error: {}".format(str(error["code"])))
+                self.print_to_tty("Code deploy failed because of the error: {}".format(str(error["code"])))
 
     def save_all_current_window_views(self):
         log_debug("Saving all views...")
@@ -1285,6 +1287,25 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 class ImpShowConsoleCommand(BaseElectricImpCommand):
     def action(self):
         self.update_status_message()
+        #
+        # Handle failure in the logs thread
+        # when logs fail the corresponding
+        # event should happen
+        #
+        if self.cmd_on_complete == "auth":
+            self.cmd_on_complete = None
+            settings = self.load_settings()
+            token = settings.get(EI_ACCESS_TOKEN_SET)
+
+            if token and EI_ACCESS_TOKEN in token:
+                # reset access token to force an update
+                token[EI_ACCESS_TOKEN] = None
+                self._update_settings(EI_ACCESS_TOKEN_SET, token)
+
+                # run an ariginal command
+                self.window.run_command(self.name())
+                return
+
         update_log_windows(False)
 
 
@@ -1456,8 +1477,8 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         # local files could be changed and user wants to revert them
         # to the latest revision
         #
-        # TODO: think about deployment select in the same way
-        #       as it is done in the IDE
+        # Note: There is no way to select the deployment version
+        #       only the latest version available for user
         if deployment == settings.get(EI_DEPLOYMENT_ID):
             log_debug("Everything up to date")
 
@@ -1613,6 +1634,30 @@ class LogManager:
         self.sock = None
         self.devices = []
         self.has_logs = False
+        self.started = False
+        self.update_log_started = False
+
+    def is_started(self):
+        return self.started;
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        if self.started:
+            self.started = False
+            self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
+        else:
+            self.write_to_console("Realtime logging not started. Please refresh to enable it again.")
+
+    def handle_http_response(self, response, code):
+        if HTTP.is_response_code_valid(code):
+            return True
+
+        # Handle invalid credentials use-case
+        if HTTP.is_invalid_credentials(code, response):
+            self.env.window.run_command("imp_show_console", {"cmd_on_complete": "auth"})
+
 
     def __read_logs(self):
         if self.sock and type(self.sock) != None and self.sock.fp != None:
@@ -1636,7 +1681,7 @@ class LogManager:
                                 self.sock.close()
                                 self.sock = None
                                 self.poll_url = None
-                                logs.append("Connection closed ...")
+                                self.stop()
                                 return logs
 
                         if line == b'event: message\n':
@@ -1655,8 +1700,10 @@ class LogManager:
     def query_logs(self):
         log_request_time = False
         devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
+        self.error = None
         if not devicegroup_id:
             # Nothing to do yet
+            self.error = "No device group"
             return None
 
         if self.sock and type(self.sock) != None and self.sock.fp != None:
@@ -1675,7 +1722,13 @@ class LogManager:
                 headers={"Content-Type": "application/vnd.api+json"})
 
             # Suppose that there is no logs if there is no device
-            if not HTTP.is_response_code_valid(rcode) or len(devices["data"]) == 0:
+            if self.handle_http_response(response, rcode):
+                self.error = "Can't read the list of devices"
+                return None
+
+            if len(devices["data"]) == 0:
+                self.error = "There is no any device in group"
+                sublime.message_dialog("There is no devices in current device group. Please assign some device to start logging.")
                 return None
 
             # cache device list
@@ -1694,6 +1747,7 @@ class LogManager:
             url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + self.poll_url
         else:
             # TODO: handle connection error or access-token expired
+            self.error = "Failed to request logstream"
             return None
 
         hdr = {"Authorization": "Bearer " + self.env.project_manager.get_access_token(),
@@ -1741,11 +1795,15 @@ class LogManager:
 
     def update_logs(self):
         def __update_logs():
+            self.update_log_started = True
             self.has_logs = self.sock != None
 
             logs_json = self.query_logs()
             # no logs available
             if not logs_json:
+                self.reset()
+                self.stop()
+                self.update_log_started = False
                 return
 
             logs_list = logs_json["logs"]
@@ -1766,8 +1824,10 @@ class LogManager:
 
                 self.write_to_console(log)
                 self.last_shown_log = log
+            self.update_log_started = False
 
-        sublime.set_timeout_async(__update_logs, 0)
+        if not self.update_log_started:
+            sublime.set_timeout_async(__update_logs, 0)
         # trigger one more log poll operation
         return self.has_logs
 
@@ -1833,13 +1893,15 @@ class LogManager:
         # instatiated
         if self.sock:
             self.sock.close()
-            self.sock = None
+        self.sock = None
         # reset poll url to reopen socket
         self.poll_url = None
         # last shown log could be different after device assing
         # that's why log could be suplicated in the console
         # after device assign/an-assign
         self.last_shown_log = None
+        # reset polling timeout to long inteval
+        self.has_logs = False
 
 
 def update_log_windows(restart_timer=True):
@@ -1854,13 +1916,22 @@ def update_log_windows(restart_timer=True):
                 del project_env_map[project_path]
                 log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
                 continue
-            has_logs = env.log_manager.update_logs()
+
+            # waiting for a log UI command to start
+            # logstream. It could Build&Run or show_console
+            if not restart_timer:
+                env.log_manager.start()
+
+            # request logs if it is required only
+            if env.log_manager.is_started():
+                has_logs = env.log_manager.update_logs()
     finally:
         if restart_timer:
             # keep on reading logs while logs are available
             # and keep on log polling once per second
-            ms = PL_LOGS_UPDATE_PERIOD
+            ms = PL_LOGS_UPDATE_LONG_PERIOD
             if has_logs:
-                ms = 300
+                ms = PL_LOGS_UPDATE_SHORT_PERIOD
+
             sublime.set_timeout(update_log_windows, ms)
     return True
