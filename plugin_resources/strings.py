@@ -61,6 +61,7 @@ STR_ERR_PREPROCESSING_ERROR          = "\nPreprocessing failed because of the fo
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
 STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
-STR_STATUS_ACTIVE_MODEL              = "Model: {}"
+STR_STATUS_ACTIVE_PRODUCT            = "Product: {}"
+STR_STATUS_ACTION                    = "Command: {}"
 
 STR_INITIAL_SRC_CONTENT              = "// {} source code goes here\n\n"

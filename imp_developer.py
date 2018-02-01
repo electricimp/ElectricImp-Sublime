@@ -55,7 +55,8 @@ PL_AGENT_URL             = "https://agent.electricimp.com/{}"
 PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
 PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
 PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
-PL_MODEL_STATUS_KEY      = "model-status-key"
+PL_ACTION_STATUS_KEY     = "action-status-key"
+PL_PRODUCT_STATUS_KEY    = "product-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
 PL_LONG_POLL_TIMEOUT     = 5 # sec
 PL_LOGS_UPDATE_LONG_PERIOD = 1000 # ms
@@ -275,6 +276,14 @@ class UIManager:
         views = self.window.views()
         for v in views:
             v.erase_status(key)
+
+    def show_action_value_in_status(self, status, action_name, formatted_string):
+        env = Env.For(self.window)
+        if action_name:
+            env.ui_manager.set_status_message(
+                status, formatted_string.format(action_name))
+        else:
+            env.ui_manager.erase_status_message(status)
 
     def show_settings_value_in_status(self, property_name, status_key, formatted_string):
         env = Env.For(self.window)
@@ -915,6 +924,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             {"command":"imp_load_code", "method": ImpLoadCodeCommand.check}]
 
         for x in commands:
+            self.show_action_status(x["command"])
             if x["command"] == self.name():
                 break
 
@@ -922,7 +932,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
                 self.window.run_command(x["command"], {"cmd_on_complete": self.name()})
                 return
         # perform an action of the current command
+        self.show_action_status(self.name())
         self.action()
+        self.show_action_status()
 
     def _update_settings(self, index, value):
         settings = self.load_settings()
@@ -940,7 +952,12 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         return ProjectManager.is_electric_imp_project_window(self.window)
 
     def update_status_message(self, query_data=True):
-        self.env.ui_manager.show_settings_value_in_status(EI_PRODUCT_ID, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+        self.env.ui_manager.show_settings_value_in_status(
+            EI_PRODUCT_ID, PL_PRODUCT_STATUS_KEY, STR_STATUS_ACTIVE_PRODUCT)
+
+    def show_action_status(self, action=None):
+        self.env.ui_manager.show_action_value_in_status(
+            PL_ACTION_STATUS_KEY, action, STR_STATUS_ACTION)
 
     # Check HTTP response and force an action
     # There are four use-cases are possible:
@@ -1751,6 +1768,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
 
     def action(self):
         if not sublime.ok_cancel_dialog(STR_DEVICEGROUP_CONFIRM_PULLING_CODE):
+            self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
             return
 
         settings = self.load_settings()
@@ -1904,7 +1922,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
         env = Env.For(window)
         if not env:
             env = Env.get_existing_or_create_env_for(window)
-        # env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+        env.ui_manager.show_settings_value_in_status(EI_PRODUCT_ID, PL_PRODUCT_STATUS_KEY, STR_STATUS_ACTIVE_PRODUCT)
 
     def on_new(self, view):
         self.__update_status(view)
