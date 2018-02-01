@@ -1397,7 +1397,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # Check that code is correct
         if self.check_imp_error(error,
-            "Failed to extract list of devices: ", "Failed XXXXXXXXXXXx"):
+            "Failed to extract list of devices: ", None):
             return
 
         if not devices or len(devices) == 0:
@@ -1769,6 +1769,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
     def action(self):
         if not sublime.ok_cancel_dialog(STR_DEVICEGROUP_CONFIRM_PULLING_CODE):
             self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+            self.on_action_complete()
             return
 
         settings = self.load_settings()
