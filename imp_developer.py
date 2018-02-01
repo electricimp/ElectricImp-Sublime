@@ -419,7 +419,8 @@ class HTTP:
 class ImpRequest():
     INVALID_CREDENTIALS = 1
     WRONG_INPUT = 2
-    FAILURE = 3
+    COMPILE_FAIL = 3
+    FAILURE = 4
 
 class ImpCentral:
 
@@ -504,7 +505,7 @@ class ImpCentral:
 
         error = ImpCentral.handle_http_response(response, code)
 
-        return response['data'], error
+        return response.get('data'), error
 
     @staticmethod
     def get_devicegroup(token, devicegroup_id):
@@ -1537,20 +1538,18 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                             pass  # Do nothing - use read values
                         report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
                 return report
-            if code == 404:
-                error = {"code" : "There is no internet connection"}
-            elif response.get("error"):
-                error = response["error"]
-            else:
-                error = {"code" : "Unknown error"}
-            if error and error["code"] == "CompileFailed":
+            if error["code"] == ImpRequest.INVALID_CREDENTIALS:
+                self.check_imp_error(error, None, None)
+                return
+
+            if error["code"] == ImpRequest.COMPILE_FAIL:
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
                 error_message += build_error_messages(error["details"]["agent_errors"], SourceType.AGENT, self.env)
                 error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE, self.env)
                 self.print_to_tty(error_message)
             else:
-                log_debug("Code deploy failed because of the error: {}".format(str(error["code"])))
-                self.print_to_tty("Code deploy failed because of the error: {}".format(str(error["code"])))
+                log_debug("Code deploy failed because of the error: {}".format(str(error["message"])))
+                self.print_to_tty("Code deploy failed because of the error: {}".format(str(error["message"])))
 
     def save_all_current_window_views(self):
         log_debug("Saving all views...")
