@@ -429,9 +429,6 @@ class ImpCentral:
         response, code = HTTP.post(None, url,
             '{"id": "' + user_name + '", "password": "' + password + '"}',
             headers=HttpHeaders.AUTH)
-        print("AAAAAAAAAAAAAAAAA")
-        print(code)
-        print(response)
 
         error = ImpCentral.handle_http_response(response, code)
         return response, error
@@ -446,11 +443,32 @@ class ImpCentral:
         return response, error
 
     @staticmethod
-    def list_products(token, owner=None):
-        # TODO: list all products
+    def account(token):
         response, code = HTTP.get(token,
-            PL_IMPCENTRAL_API_URL_V5 + "products")
+            PL_IMPCENTRAL_API_URL_V5 + "/accounts/me")
         error = ImpCentral.handle_http_response(response, code)
+        return response.get("data"), error
+
+
+    @staticmethod
+    def list_products(token, owner_id=None):
+        ImpCentral.account(token)
+        # TODO: list all products
+        if owner_id:
+            data='{"filter[owner.id]:"' + owner_id + '"}'
+        else:
+            data=None
+
+        response, code = HTTP.get(token,
+            PL_IMPCENTRAL_API_URL_V5 + "products", data=data)
+        error = ImpCentral.handle_http_response(response, code)
+
+        if not error:
+            products = []
+            for product in response.get("data"):
+                if product["relationships"]["owner"]["id"] == owner_id:
+                    products.append(product)
+            return products, error
 
         return response.get("data"), error
 
@@ -459,9 +477,19 @@ class ImpCentral:
         # TODO: list all elements
         response, code = HTTP.get(token,
             url=PL_IMPCENTRAL_API_URL_V5 + "devicegroups",
-            data='{"filter[product.id]": "' + product_id + '"}')
+            data='{"filter[product.id]:"' + product_id + '"}')
 
         error = ImpCentral.handle_http_response(response, code)
+        # Note: backend filters should work properly, but they do not
+        #       it should not be so critical because user select
+        #       device group only once per project
+        if not error:
+            devicegroups = []
+            for devicegroup in response.get("data"):
+                if devicegroup["relationships"]["product"]["id"] == product_id:
+                    devicegroups.append(devicegroup)
+            return devicegroups, error
+
         return response.get("data"), error
 
     @staticmethod
@@ -1168,10 +1196,17 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
             self.on_action_complete()
 
     def select_existing_product(self):
-        products, error = ImpCentral.list_products(self.env.project_manager.get_access_token())
+        token = self.env.project_manager.get_access_token()
+        # get current account details
+        account, error = ImpCentral.account(token)
+        if self.check_imp_error(error,
+            "Failed to account details:", "Try again ?"):
+            return
+
+        products, error = ImpCentral.list_products(token, account["id"])
         # Handle imp central request's error
         if self.check_imp_error(error,
-            "Failed to extract products list.", "Try again ?"):
+            "Failed to extract products list:", "Try again ?"):
             return
 
         # work-around for an absolutely new user
