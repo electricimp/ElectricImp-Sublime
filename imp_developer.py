@@ -460,52 +460,71 @@ class ImpCentral:
         else:
             data=None
 
-        response, code = HTTP.get(token,
-            PL_IMPCENTRAL_API_URL_V5 + "products", data=data)
-        error = ImpCentral.handle_http_response(response, code)
+        link = PL_IMPCENTRAL_API_URL_V5 + "products"
+        products = []
 
-        if not error:
-            products = []
-            for product in response.get("data"):
-                if product["relationships"]["owner"]["id"] == owner_id:
-                    products.append(product)
-            return products, error
+        while link != None:
+            response, code = HTTP.get(token, link, data=data)
+            error = ImpCentral.handle_http_response(response, code)
+            data = None
 
-        return response.get("data"), error
+            if not error:
+                for product in response.get("data"):
+                    if product["relationships"]["owner"]["id"] == owner_id:
+                        products.append(product)
+                link = response["links"].get("next")
+            else:
+                return response, error
+
+        return products, error
 
     @staticmethod
     def list_devicegroups(token, product_id):
-        # TODO: list all elements
-        response, code = HTTP.get(token,
-            url=PL_IMPCENTRAL_API_URL_V5 + "devicegroups",
-            data='{"filter[product.id]:"' + product_id + '"}')
+        devicegroups = []
+        link = PL_IMPCENTRAL_API_URL_V5 + "devicegroups"
+        data = '{"filter[product.id]:"' + product_id + '"}'
+        error = None
 
-        error = ImpCentral.handle_http_response(response, code)
-        # Note: backend filters should work properly, but they do not
-        #       it should not be so critical because user select
-        #       device group only once per project
-        if not error:
-            devicegroups = []
-            for devicegroup in response.get("data"):
-                if devicegroup["relationships"]["product"]["id"] == product_id:
-                    devicegroups.append(devicegroup)
-            return devicegroups, error
+        while link != None:
+            response, code = HTTP.get(token, link, data=data)
+            error = ImpCentral.handle_http_response(response, code)
+            data = None
 
-        return response.get("data"), error
+            if not error:
+                for devicegroup in response.get("data"):
+                    if devicegroup["relationships"]["product"]["id"] == product_id:
+                        devicegroups.append(devicegroup)
+                    link = response["links"].get("next")
+            else:
+                return response, error
+
+        return devicegroups, error
 
     @staticmethod
     def list_devices(token, devicegroup_id=None):
-        # TODO: list all elements
+        link = PL_IMPCENTRAL_API_URL_V5 + "devices"
+        devices = []
+        # filter by group id or not
         if devicegroup_id:
             data='{"filter[devicegroup.id]": "' + devicegroup_id + '"}'
         else:
             data=None
-        response, code = HTTP.get(token,
-            url=PL_IMPCENTRAL_API_URL_V5 + "devices", data=data)
 
-        error = ImpCentral.handle_http_response(response, code)
+        while link != None:
+            response, code = HTTP.get(token, url=link, data=data)
+            error = ImpCentral.handle_http_response(response, code)
+            data = None
+            if not error:
+                for device in response.get('data'):
+                    devgrp = device["relationships"].get("devicegroup")
+                    if (devicegroup_id == None
+                        or (devgrp and devgrp["id"] == devicegroup_id)):
+                        devices.append(device)
+                link = response["links"].get("next")
+            else:
+                return respone, error
 
-        return response.get('data'), error
+        return devices, error
 
     @staticmethod
     def get_devicegroup(token, devicegroup_id):
