@@ -58,6 +58,7 @@ PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_ACTION_STATUS_KEY     = "action-status-key"
 PL_PRODUCT_STATUS_KEY    = "product-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
+PL_KEEP_ALIVE_TIMEOUT    = 35 # api timeout is 30 seconds
 PL_LONG_POLL_TIMEOUT     = 5 # sec
 PL_LOGS_UPDATE_LONG_PERIOD = 1000 # ms
 PL_LOGS_UPDATE_SHORT_PERIOD = 300 # ms
@@ -1154,7 +1155,6 @@ class ImpAuthCommand(BaseElectricImpCommand):
 
             self.prompt_for_user_password(False, user_name, self.pwd)
         else:
-            print("PASSWORD IS: " + password)
             chg = password.replace("*", "")
             if  len(password)-len(chg) < len(self.pwd):
                 self.pwd = self.pwd[:(len(password)-len(chg))] + chg
@@ -2035,6 +2035,8 @@ class LogManager:
         self.state = self.IDLE
         # prevent multiple requests when http is pending
         self.update_log_started = False
+        # no timer on start-up
+        self.keep_alive = None
 
     def start(self):
         if self.state == self.IDLE:
@@ -2047,9 +2049,13 @@ class LogManager:
         if self.state == self.POLL:
             if is_restart:
                 self.write_to_console("Realtime logging restart requested.")
-                self.start()
-            else:
-                self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
+                # set current state to idle
+                self.state = self.IDLE
+                # and then trigger log start
+                sublime.set_timeout_async(lambda: update_log_windows(False), 0)
+                return
+            # stop logs
+            self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
         elif self.state == self.INIT:
             self.write_to_console("Realtime logging not started. Please refresh to enable it again.")
 
@@ -2086,29 +2092,54 @@ class LogManager:
                         if next_log:
                             next_log = False
                             logs.append(line.decode("utf-8"))
-                        if next_cmd:
+                        elif next_cmd:
                             next_cmd = False
                             if line == b'data: closed\n':
                                 self.reset()
+                                logs.appned("Stream was closed by server event.\n")
+                                return logs
+                            if line == b'data: opened\n':
+                                self.keep_alive = datetime.datetime.now()
                                 return logs
                             if line != b'\n':
                                 logs.append(line.decode("utf-8"))
 
-                        if line == b'event: message\n':
+                        elif line == b'event: message\n':
                             count -= 1
                             next_log = True
 
-                        if line == b'event: state_change\n':
+                        elif line == b'event: state_change\n':
                             count -= 1
                             next_cmd = True
-                        if line == b'\n':
+                        elif line == b'\n':
                             next_cmd = False
                             next_log = False
                             break
+                        elif line == b': keep-alive\n':
+                            self.keep_alive = datetime.datetime.now()
+                        else:
+                            log_debug("Unhandled command:" + str(line.decode("utf-8")))
+
+            # check that stream was not dropped
+            if self.keep_alive != None and len(logs) == 0:
+                delta = datetime.datetime.now() - self.keep_alive
+                if delta.seconds > PL_KEEP_ALIVE_TIMEOUT:
+                    log_debug("Did not get keep alive ontime. Trigger log reset.")
+                    self.reset(is_restart=True)
+
             return logs
 
     def query_logs(self):
         log_request_time = False
+
+        # check if it is polling procedure
+        if self.sock and type(self.sock) != None and self.sock.fp != None:
+            result = {"logs": self.__read_logs()}
+            return result
+
+        ###
+        ### Initialize logstream for the device group
+        ###
         devicegroup_id = self.env.project_manager.load_settings().get(EI_DEVICEGROUP_ID)
         self.error = None
 
@@ -2116,10 +2147,6 @@ class LogManager:
             # Nothing to do yet
             self.error = "No device group"
             return None
-
-        if self.sock and type(self.sock) != None and self.sock.fp != None:
-            result = {"logs": self.__read_logs()}
-            return result
 
         logs = []
         token = self.env.project_manager.get_access_token()
@@ -2134,9 +2161,9 @@ class LogManager:
             if self.check_imp_error(error):
                 return None
 
-            if len(devices) == 0:
-                self.write_to_console("There is no devices in current device group. Please assign some device to start logging.")
-                return None
+            #if len(devices) == 0:
+            #    self.write_to_console("There is no devices in current device group. Please assign some device to start logging.")
+            #    return None
 
             # cache device list
             # it could be re-use on the next connection
@@ -2293,6 +2320,8 @@ class LogManager:
         # that's why log could be suplicated in the console
         # after device assign/an-assign
         self.last_shown_log = None
+        # stop traking timer
+        self.keep_alive = None
         # reset current state to idle
         self.stop(is_restart)
 
