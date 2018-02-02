@@ -143,6 +143,7 @@ class ProjectManager:
         if path and os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 return json.load(f)
+        return {}
 
     def load_settings(self):
         return self.load_settings_file(PR_SETTINGS_FILE)
@@ -535,7 +536,7 @@ class ImpCentral:
                         devices.append(device)
                 link = response["links"].get("next")
             else:
-                return respone, error
+                return response, error
 
         return devices, error
 
@@ -636,7 +637,7 @@ class ImpCentral:
             #       - no internet connection
             response = None
         if not response:
-            respone = None
+            response = None
 
         return response
 
@@ -901,7 +902,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         return self.env.project_manager.load_settings()
 
     def load_auth_settings(self):
-        return self.env.project_manager.load_settings_file(PR_AUTH_INFO_FILE)
+        return self.env.project_manager.load_auth_settings()
 
     def on_action_complete(self, canceled=False):
         if not canceled and self.cmd_on_complete != None:
