@@ -1142,21 +1142,22 @@ class ImpAuthCommand(BaseElectricImpCommand):
     def on_user_id_provided(self, user_name, password=None, is_partial=False):
         if not password or is_partial:
             if is_partial:
-
                 chg = password.replace("*", "")
-                # work-around to prevent infinite recursion
-                if chg == "":
-                    return
 
-                if  len(password) < len(self.pwd):
-                    self.pwd = self.pwd[:len(password)]
+                if  len(password)-len(chg) < len(self.pwd):
+                    self.pwd = self.pwd[:(len(password)-len(chg))] + chg
                 else:
+                    # work-around to prevent infinite recursion
+                    if chg == "":
+                        return
                     self.pwd = self.pwd + chg
+
             self.prompt_for_user_password(False, user_name, self.pwd)
         else:
+            print("PASSWORD IS: " + password)
             chg = password.replace("*", "")
-            if  len(password) < len(self.pwd):
-                self.pwd = self.pwd[:len(password)]
+            if  len(password)-len(chg) < len(self.pwd):
+                self.pwd = self.pwd[:(len(password)-len(chg))] + chg
             else:
                 self.pwd = self.pwd + chg
             sublime.set_timeout_async(lambda: self.request_credentials(user_name, self.pwd), 0)
