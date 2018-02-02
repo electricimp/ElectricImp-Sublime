@@ -1177,14 +1177,14 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
         # Failed to refresh token reset credentials
         # Do not need to show dialog which offer to refresh token
         if self.check_imp_error(error, None, None, False):
-            self.update_settings(EI_ACCESS_TOKEN_SET, None)
+            self.update_auth_settings(EI_ACCESS_TOKEN_SET, None)
             self.on_action_complete()
             return
         else:
             # refresh token should not be updated during request
             if not EI_REFRESH_TOKEN in request:
                 request[EI_REFRESH_TOKEN] = refresh_token
-            self.update_settings(EI_ACCESS_TOKEN_SET, request)
+            self.update_auth_settings(EI_ACCESS_TOKEN_SET, request)
 
         # restart login process
         self.on_action_complete();
@@ -1375,6 +1375,8 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         #       if device was not assigned to any device group
         devgrp = device["relationships"].get("devicegroup")
         if devgrp and devgrp["id"] == settings.get(EI_DEVICEGROUP_ID):
+            # trigger restart if user assign the same device
+            sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
             return
 
         response, error = ImpCentral.assign_device(
@@ -1396,7 +1398,9 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         #       devices frequently
         # Note: push reset to the background thread to prevent
         #       concurent access to the LogManager's fields
-        sublime.set_timeout_async(self.env.log_manager.reset, 0)
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+        # force log restart, but we need to reset current log first
+        sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
     def select_existing_device(self):
         devices, error = ImpCentral.list_devices(self.env.project_manager.get_access_token())
@@ -1432,6 +1436,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # prevent wrong index which
         # happen on cancel
         if (index < 0 or index >= len(devices)):
+            log_debug("There is no device selected")
             return
         # there is no option for create new device
         # therefore index maps on the names correctly
@@ -1456,7 +1461,10 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # Request log stream reset to remove the devive from the log
         # Note: push to the background thread to prevent concurent access
         #       to the logManager's fields
-        sublime.set_timeout_async(self.env.log_manager.reset, 0)
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+        # force log restart, but we need to reset current log first
+        if len(devices) > 1:
+            sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
     def select_existing_device(self):
         settings = self.load_settings()
@@ -1481,7 +1489,6 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
             self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
         else:
             sublime.message_dialog("There is no assigned devices in the current device group")
-
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
@@ -1634,21 +1641,49 @@ class ImpSelectDeviceCommand(BaseElectricImpCommand):
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
     def action(self):
+        self.select_existing_device()
+
+    def on_device_name_provided(self, index, devices):
+        # prevent wrong index which
+        # happen on cancel
+        if (index < 0 or index >= len(devices)):
+            log_debug("There is no device selected")
+            return
+
+        # get device by index in the list
+        device = devices[index]
+
+        agent_id = device["attributes"].get("agent_id")
+        agent_url = PL_AGENT_URL.format(agent_id)
+        sublime.set_clipboard(agent_url)
+        sublime.message_dialog(STR_AGENT_URL_COPIED.format(device["id"], agent_url))
+
+    def select_existing_device(self):
         settings = self.load_settings()
-        if EI_DEVICE_ID in settings:
-            device_id = settings.get(EI_DEVICE_ID)
-            # get current device details
-            response, error = ImpCentral.get_device(
-                self.env.project_manager.get_access_token(), device_id)
 
-            if self.check_imp_error(error,
-                STR_FAILED_TO_GET_DEVICE_AGENT_URL, None):
-                return
+        # list devices for the current device group
+        devices, error = ImpCentral.list_devices(
+            self.env.project_manager.get_access_token(),
+            settings[EI_DEVICEGROUP_ID])
 
-            agent_id = device["attributes"].get("agent_id")
-            agent_url = PL_AGENT_URL.format(agent_id)
-            sublime.set_clipboard(agent_url)
-            sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
+        # Check that code is correct
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEVICELIST, None):
+            return
+
+        # check that response has some payload
+        # response should contain the list of devices
+        if len(devices) > 0:
+            # filter devices localy
+            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+                str(device["attributes"]["name"])) for device in devices]
+            # make a new product creation option as a part of the product select menu
+            if len(devices) == 1:
+                self.on_device_name_provided(0, devices)
+            else:
+                self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
+        else:
+            sublime.message_dialog("There is no assigned devices in the current device group")
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
     def run(self):
@@ -1793,6 +1828,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             # mark that there is no more deployments yet, to prevent
             # permanent deployments requests
             self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+            self.on_action_complete()
             return
 
         deployment = devicegroup["relationships"]["current_deployment"]["id"]
@@ -1827,6 +1863,9 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
                 file.write(deployment["attributes"]["device_code"])
             # save the latest deployment id
             self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
+        # trigger an original event on complete
+        # it could be build and run or assign/unassing device
+        self.on_action_complete()
 
 class AnfNewProject(AdvancedNewFileNew):
     def __init__(self, window, capture="", on_path_provided=None):
@@ -1972,20 +2011,22 @@ class LogManager:
     def start(self):
         if self.state == self.IDLE:
             self.state = self.INIT
+            self.write_to_console("Log stream start requested ...\n")
         else:
             log_debug("Unexpected log manger state")
 
-    def stop(self, is_fail=False):
+    def stop(self, is_restart=False):
         if self.state == self.POLL:
-            self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
+            if is_restart:
+                self.write_to_console("Realtime logging restart requested.")
+                self.start()
+            else:
+                self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
         elif self.state == self.INIT:
             self.write_to_console("Realtime logging not started. Please refresh to enable it again.")
 
         # change current state depends on initial
-        if is_fail:
-            self.state = self.FAIL
-        else:
-            self.state = self.IDLE
+        self.state = self.IDLE
     #
     def check_imp_error(self, error):
         if not error:
@@ -2105,6 +2146,7 @@ class LogManager:
         log_debug("Logstream config done, start polling")
 
         self.state = self.POLL
+        self.write_to_console("Logstream started.")
 
         start = None
         if log_request_time:
@@ -2210,7 +2252,7 @@ class LogManager:
             item["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
             + " [" + item["device"] + "] " + item["type"] + " " + item["message"])
 
-    def reset(self):
+    def reset(self, is_restart=False):
         # this action should force to close the log stream
         # but on the next request of logs stream should be
         # instatiated
@@ -2224,7 +2266,7 @@ class LogManager:
         # after device assign/an-assign
         self.last_shown_log = None
         # reset current state to idle
-        self.stop()
+        self.stop(is_restart)
 
 
 def update_log_windows(restart_timer=True):
