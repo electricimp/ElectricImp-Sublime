@@ -1175,6 +1175,14 @@ class ImpAuthCommand(BaseElectricImpCommand):
         # save the access token in cache and refresh token in the settings file
         log_debug("Access token received")
         self.update_auth_settings(EI_ACCESS_TOKEN_SET, payload)
+        auth = self.load_auth_settings()
+        # initialize builder settings on initialization
+        if not auth.get(EI_BUILDER_SETTINGS):
+            self.update_auth_settings(EI_BUILDER_SETTINGS,
+                {
+                    EI_GITHUB_USER: None,
+                    EI_GITHUB_TOKEN: None
+                })
         # check setting again
         self.on_action_complete();
 
