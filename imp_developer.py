@@ -79,9 +79,10 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
 EI_LOGIN_KEY             = "login-key"
-EI_ACCESS_TOKEN_SET     = "access-token-set"
+EI_ACCESS_TOKEN_SET      = "access-token-set"
 EI_ACCESS_TOKEN          = "access_token"
 EI_REFRESH_TOKEN         = "refresh_token"
+EI_EXPIRES_AT            = "expires_at"
 EI_PRODUCT_ID            = "product-id"
 EI_DEVICEGROUP_ID        = "device-group-id"
 EI_DEPLOYMENT_ID         = "deployment-id"
@@ -145,13 +146,16 @@ class ProjectManager:
     def load_settings(self):
         return self.load_settings_file(PR_SETTINGS_FILE)
 
+    def load_auth_settings(self):
+        return self.load_settings_file(PR_AUTH_INFO_FILE)
+
     def get_access_token_set(self):
-        auth_info = self.load_settings_file(PR_SETTINGS_FILE)
+        auth_info = self.load_auth_settings()
         if auth_info:
             return auth_info.get(EI_ACCESS_TOKEN_SET)
 
     def get_access_token(self):
-        auth_info = self.load_settings_file(PR_SETTINGS_FILE)
+        auth_info = self.load_auth_settings()
         if auth_info:
             token = auth_info.get(EI_ACCESS_TOKEN_SET)
             if token and EI_ACCESS_TOKEN in token:
@@ -160,7 +164,7 @@ class ProjectManager:
         return None
 
     def get_refresh_token(self):
-        auth_info = self.load_settings_file(PR_SETTINGS_FILE)
+        auth_info = self.load_auth_settings();
         if auth_info:
             token = auth_info.get(EI_ACCESS_TOKEN_SET)
             if token and EI_REFRESH_TOKEN in token:
@@ -207,7 +211,6 @@ class Env:
         self.log_manager = LogManager(self)
 
         # Temp variables
-        self.tmp_model = None
         self.tmp_device_ids = None
 
     @staticmethod
@@ -331,7 +334,7 @@ class HTTP:
 
     @staticmethod
     def is_refresh_token_valid(token):
-        if datetime.datetime.strptime(token.expires_at, "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now():
+        if datetime.datetime.strptime(token.get(EI_EXPIRES_AT), "%Y-%m-%dT%H:%M:%S.%fZ") > datetime.now():
             return True
         request, code = HTTP.post({token:token.value}, PL_IMPCENTRAL_API_URL_V5 + "/auth/token")
         return code == 200
@@ -896,6 +899,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_settings(self):
         return self.env.project_manager.load_settings()
 
+    def load_auth_settings(self):
+        return self.env.project_manager.load_settings_file(PR_AUTH_INFO_FILE)
+
     def on_action_complete(self, canceled=False):
         if not canceled and self.cmd_on_complete != None:
             self.window.run_command(self.cmd_on_complete)
@@ -936,10 +942,15 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         self.action()
         self.show_action_status()
 
-    def _update_settings(self, index, value):
+    def update_settings(self, index, value):
         settings = self.load_settings()
         settings[index] = value
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+
+    def update_auth_settings(self, index, value):
+        settings = self.load_auth_settings()
+        settings[index] = value
+        self.env.project_manager.save_settings(PR_AUTH_INFO_FILE, settings)
 
     def print_to_tty(self, text):
         env = Env.For(self.window)
@@ -978,8 +989,8 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
         # Handle invalid credentials use-case
         if error["code"] == ImpRequest.INVALID_CREDENTIALS:
             # force token update and restart command
-            settings = self.load_settings()
-            token = settings.get(EI_ACCESS_TOKEN_SET)
+            auth = self.load_auth_settings()
+            token = auth.get(EI_ACCESS_TOKEN_SET)
 
             if not token:
                 if (not should_retry or
@@ -989,7 +1000,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             if token and EI_ACCESS_TOKEN in token:
                 # reset access token to force an update
                 token[EI_ACCESS_TOKEN] = None
-                self._update_settings(EI_ACCESS_TOKEN_SET, token)
+                self.update_auth_settings(EI_ACCESS_TOKEN_SET, token)
 
             # use an original command to refresh credentials
             if self.cmd_on_complete:
@@ -1025,9 +1036,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     # reset current credentials
     # which trigger login/pwd procedure on next command
     def reset_credentails(self):
-        settings = self.load_settings()
-        settings[EI_ACCESS_TOKEN_SET] = None
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        self.update_auth_settings(EI_ACCESS_TOKEN_SET, None)
 
 ###
 ### Configure the nodejs path
@@ -1134,14 +1143,12 @@ class ImpAuthCommand(BaseElectricImpCommand):
 
     def on_login_complete(self, payload, error):
         if self.check_imp_error(error,
-            "Failed to login", "Invalid username or password. Try again?"):
+            STR_FAILED_TO_LOGIN, STR_INVALID_USER_OR_PASSWORD):
             return
 
         # save the access token in cache and refresh token in the settings file
         log_debug("Access token received")
-        settings = self.load_settings()
-        settings[EI_ACCESS_TOKEN_SET] = payload
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        self.update_auth_settings(EI_ACCESS_TOKEN_SET, payload)
         # check setting again
         self.on_action_complete();
 
@@ -1157,10 +1164,10 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
     @staticmethod
     def check(base):
         token = base.env.project_manager.get_access_token_set()
-        if (not token or not "expires_at" in token
+        if (not token or not EI_EXPIRES_AT in token
             or not EI_ACCESS_TOKEN in token or not token[EI_ACCESS_TOKEN]):
             return False
-        expires = datetime.datetime.strptime(token["expires_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        expires = datetime.datetime.strptime(token.get(EI_EXPIRES_AT), "%Y-%m-%dT%H:%M:%S.%fZ")
         return expires > datetime.datetime.utcnow()
 
     def action(self):
@@ -1170,14 +1177,14 @@ class ImpRefreshTokenCommand(BaseElectricImpCommand):
         # Failed to refresh token reset credentials
         # Do not need to show dialog which offer to refresh token
         if self.check_imp_error(error, None, None, False):
-            self._update_settings(EI_ACCESS_TOKEN_SET, None)
+            self.update_settings(EI_ACCESS_TOKEN_SET, None)
             self.on_action_complete()
             return
         else:
             # refresh token should not be updated during request
             if not EI_REFRESH_TOKEN in request:
                 request[EI_REFRESH_TOKEN] = refresh_token
-            self._update_settings(EI_ACCESS_TOKEN_SET, request)
+            self.update_settings(EI_ACCESS_TOKEN_SET, request)
 
         # restart login process
         self.on_action_complete();
@@ -1209,11 +1216,11 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         product, error = ImpCentral.create_product(self.env.project_manager.get_access_token(), name)
         # handle possible errors, and force restart or show message dialog
         if self.check_imp_error(error,
-            "Failed to create new product: ", "Try to create product again ?"):
+            STR_FAILED_TO_CREATE_PRODUCT, STR_RETRY_CREATE_PRODUCT):
             return
 
-        self._update_settings(EI_PRODUCT_ID, product["id"])
-        self._update_settings(EI_DEVICEGROUP_ID, None)
+        self.update_settings(EI_PRODUCT_ID, product["id"])
+        self.update_settings(EI_DEVICEGROUP_ID, None)
         self.on_action_complete()
 
 
@@ -1228,8 +1235,8 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
             self.on_create_new_product()
         else:
             # Save selected product in the settings file
-            self._update_settings(EI_PRODUCT_ID, names[index-1][0])
-            self._update_settings(EI_DEVICEGROUP_ID, None)
+            self.update_settings(EI_PRODUCT_ID, names[index-1][0])
+            self.update_settings(EI_DEVICEGROUP_ID, None)
             self.on_action_complete()
 
     def select_existing_product(self):
@@ -1237,13 +1244,13 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         # get current account details
         account, error = ImpCentral.account(token)
         if self.check_imp_error(error,
-            "Failed to account details:", "Try again ?"):
+            STR_FAILED_TO_GET_ACCOUNT_DETAILS, STR_RETRY_SELECT_PRODUCT):
             return
 
         products, error = ImpCentral.list_products(token, account["id"])
         # Handle imp central request's error
         if self.check_imp_error(error,
-            "Failed to extract products list:", "Try again ?"):
+            STR_FAILED_TO_GET_PRODUCTS, STR_RETRY_SELECT_PRODUCT):
             return
 
         # work-around for an absolutely new user
@@ -1283,8 +1290,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         # when user is selecting product in this plugin
         # then the second error message should happen
         if self.check_imp_error(error,
-            "Failed to extract the device group list: ",
-            "Something wend wrong, retry to extract the list of devicegroups ?"):
+            STR_FAILED_TO_GET_DEVICEGROUPS, STR_RETRY_TO_GET_DEVICEGROUPS):
             return
 
         # check that response has some payload
@@ -1315,9 +1321,9 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             # the list of items does not contain the "new device group"
             # selection option which has index == 0
             id = items[index-1][0]
-            self._update_settings(EI_DEVICEGROUP_ID, id)
+            self.update_settings(EI_DEVICEGROUP_ID, id)
             # Force to propose code loading from the web
-            self._update_settings(EI_DEPLOYMENT_ID, None)
+            self.update_settings(EI_DEPLOYMENT_ID, None)
             self.on_action_complete()
 
     def on_create_new_devicegroup(self, show_dialog=True):
@@ -1334,12 +1340,12 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             token, settings[EI_PRODUCT_ID], name)
 
         if self.check_imp_error(error,
-            "Failed to create device group: ",
-            "Wrong device group name. Type again ?"):
+            STR_FAILED_TO_GET_DEVICEGROUP,
+            STR_RETRY_TO_GET_DEVICEGROUP):
             return
 
-        self._update_settings(EI_DEVICEGROUP_ID, devicegroup["id"])
-        self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+        self.update_settings(EI_DEVICEGROUP_ID, devicegroup["id"])
+        self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
         self.on_action_complete()
 
 ###
@@ -1378,7 +1384,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # handle the respond
         if self.check_imp_error(error,
-            "Failed to assign device: ", None):
+            STR_FAILED_TO_ASSING_DEVICE, None):
             log_debug("Failed to add device to the group")
             return
 
@@ -1397,7 +1403,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # Check that code is correct
         if self.check_imp_error(error,
-            "Failed to extract list of devices: ", None):
+            STR_FAILED_TO_GET_DEVICELIST, None):
             return
 
         if not devices or len(devices) == 0:
@@ -1442,8 +1448,8 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # the second error should happen if someone drop
         # the device group via IDE
         if self.check_imp_error(error,
-            "Failed to remove device from the group: ",
-            "Something went wrong with device unassing from the device group.\n\n Try again ?"):
+            STR_FAILED_TO_REMOVE_DEVICE,
+            STR_RETRY_TO_REMOVE_DEVICE):
             log_debug("Failed to remove device from the group")
             return
 
@@ -1462,7 +1468,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
 
         # Check that code is correct
         if self.check_imp_error(error,
-            "Failed to get the list of devices: ", None):
+            STR_FAILED_TO_GET_DEVICELIST, None):
             return
 
         # check that response has some payload
@@ -1526,7 +1532,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
         if not error:
             # save the current deployment
-            self._update_settings(EI_DEPLOYMENT_ID, deployment["id"])
+            self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
             # print the deployment to the status
             self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(deployment["attributes"]["sha"])))
             # note user about conditionla restart request
@@ -1536,7 +1542,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             response, error = ImpCentral.conditional_restart(
                 self.env.project_manager.get_access_token(), settings.get(EI_DEVICEGROUP_ID))
 
-            if self.check_imp_error(error, "Failed to perform the conditional restart", None):
+            if self.check_imp_error(error, STR_FAILED_CONDITIONAL_RESTART, None):
                 return
         else:
             # {
@@ -1608,13 +1614,13 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         #
         if self.cmd_on_complete == "auth":
             self.cmd_on_complete = None
-            settings = self.load_settings()
-            token = settings.get(EI_ACCESS_TOKEN_SET)
+            auth = self.load_auth_settings()
+            token = auth.get(EI_ACCESS_TOKEN_SET)
 
             if token and EI_ACCESS_TOKEN in token:
                 # reset access token to force an update
                 token[EI_ACCESS_TOKEN] = None
-                self._update_settings(EI_ACCESS_TOKEN_SET, token)
+                self.update_settings(EI_ACCESS_TOKEN_SET, token)
 
             # run an ariginal command
             self.window.run_command(self.name())
@@ -1636,7 +1642,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
                 self.env.project_manager.get_access_token(), device_id)
 
             if self.check_imp_error(error,
-                "Failed to get aget url for some device"):
+                STR_FAILED_TO_GET_DEVICE_AGENT_URL, None):
                 return
 
             agent_id = device["attributes"].get("agent_id")
@@ -1768,7 +1774,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
 
     def action(self):
         if not sublime.ok_cancel_dialog(STR_DEVICEGROUP_CONFIRM_PULLING_CODE):
-            self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+            self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
             self.on_action_complete()
             return
 
@@ -1776,7 +1782,8 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         devicegroup, error = ImpCentral.get_devicegroup(
             self.env.project_manager.get_access_token(), settings[EI_DEVICEGROUP_ID])
 
-        if self.check_imp_error(error, "Failed to extract source code", "Retry ?"):
+        if self.check_imp_error(error,
+            STR_FAILED_TO_EXTRACT_CODE, STR_RETRY_TO_EXTRACT_CODE):
             return
 
         # Handle the use-case when there is no any deployment yet
@@ -1785,7 +1792,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             sublime.message_dialog("There is no any deployment yet")
             # mark that there is no more deployments yet, to prevent
             # permanent deployments requests
-            self._update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+            self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
             return
 
         deployment = devicegroup["relationships"]["current_deployment"]["id"]
@@ -1805,10 +1812,10 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             self.env.project_manager.get_access_token(), deployment)
 
         if self.check_imp_error(error,
-            "Failed to load the latest deployment: ", None):
+            STR_FAILED_TO_GET_DEPLOYMENT, None):
             return
 
-        # Pull the latest code from the Model
+        # Pull the latest code from the devicegroup
         source_dir = self.env.project_manager.get_source_directory_path()
         agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
@@ -1819,7 +1826,7 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
             with open(device_file, "w", encoding="utf-8") as file:
                 file.write(deployment["attributes"]["device_code"])
             # save the latest deployment id
-            self._update_settings(EI_DEPLOYMENT_ID, deployment["id"])
+            self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
 
 class AnfNewProject(AdvancedNewFileNew):
     def __init__(self, window, capture="", on_path_provided=None):
