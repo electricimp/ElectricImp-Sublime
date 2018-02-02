@@ -1661,7 +1661,7 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
             if token and EI_ACCESS_TOKEN in token:
                 # reset access token to force an update
                 token[EI_ACCESS_TOKEN] = None
-                self.update_settings(EI_ACCESS_TOKEN_SET, token)
+                self.update_auth_settings(EI_ACCESS_TOKEN_SET, token)
 
             # run an ariginal command
             self.window.run_command(self.name())
