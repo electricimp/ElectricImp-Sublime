@@ -1121,21 +1121,45 @@ class ImpAuthCommand(BaseElectricImpCommand):
         return token != None and token.get('refresh_token') != None
 
     def action(self):
+        self.pwd = ""
         self.prompt_for_user_password()
 
-    def prompt_for_user_password(self, need_to_confirm=True, user_name=None):
+    def prompt_for_user_password(self, need_to_confirm=True, user_name=None, password=None):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_USER_ID): return
         if not user_name:
             self.window.show_input_panel(STR_USER_ID, "", self.on_user_id_provided, None, None)
         else:
+            # enter pressed
             ufunc = lambda pwd: self.on_user_id_provided(user_name, pwd)
-            self.window.show_input_panel(STR_PASSWORD, "", ufunc , None, None)
+            # partial input
+            pfunc = lambda pwd: self.on_user_id_provided(user_name, pwd, True)
 
-    def on_user_id_provided(self, user_name, password=None):
-        if not password:
-            self.prompt_for_user_password(False, user_name)
+            stars = ""
+            if password != None:
+                stars = "*" * len(password)
+            self.window.show_input_panel(STR_PASSWORD, stars, ufunc , pfunc, None)
+
+    def on_user_id_provided(self, user_name, password=None, is_partial=False):
+        if not password or is_partial:
+            if is_partial:
+
+                chg = password.replace("*", "")
+                # work-around to prevent infinite recursion
+                if chg == "":
+                    return
+
+                if  len(password) < len(self.pwd):
+                    self.pwd = self.pwd[:len(password)]
+                else:
+                    self.pwd = self.pwd + chg
+            self.prompt_for_user_password(False, user_name, self.pwd)
         else:
-            sublime.set_timeout_async(lambda: self.request_credentials(user_name, password), 0)
+            chg = password.replace("*", "")
+            if  len(password) < len(self.pwd):
+                self.pwd = self.pwd[:len(password)]
+            else:
+                self.pwd = self.pwd + chg
+            sublime.set_timeout_async(lambda: self.request_credentials(user_name, self.pwd), 0)
 
     def request_credentials(self, user_name, password):
         response, error = ImpCentral.auth(user_name, password)
