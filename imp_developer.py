@@ -1657,7 +1657,10 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
             # run an ariginal command
             self.window.run_command(self.name())
             return
-        update_log_windows(False)
+        # trigger the stream reset procedure
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+        # force stream open after restart
+        sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
 
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
