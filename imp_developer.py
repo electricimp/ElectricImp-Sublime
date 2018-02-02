@@ -486,7 +486,11 @@ class ImpCentral:
                 for product in response.get("data"):
                     if product["relationships"]["owner"]["id"] == owner_id:
                         products.append(product)
-                link = response["links"].get("next")
+                next_link = response["links"].get("next")
+                if next_link == link:
+                    link = None
+                else:
+                    link = next_link
             else:
                 return response, error
 
@@ -508,7 +512,11 @@ class ImpCentral:
                 for devicegroup in response.get("data"):
                     if devicegroup["relationships"]["product"]["id"] == product_id:
                         devicegroups.append(devicegroup)
-                    link = response["links"].get("next")
+                    next_link = response["links"].get("next")
+                    if next_link == link:
+                        link = None
+                    else:
+                        link = next_link
             else:
                 return response, error
 
@@ -534,7 +542,11 @@ class ImpCentral:
                     if (devicegroup_id == None
                         or (devgrp and devgrp["id"] == devicegroup_id)):
                         devices.append(device)
-                link = response["links"].get("next")
+                next_link = response["links"].get("next")
+                if next_link == link:
+                    link = None
+                else:
+                    link = next_link
             else:
                 return response, error
 
@@ -1314,7 +1326,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
 
     def select_device_group(self):
         settings = self.load_settings()
-        product_id = settings[EI_PRODUCT_ID]
+        product_id = settings.get(EI_PRODUCT_ID)
         devicegroups, error = ImpCentral.list_devicegroups(
             self.env.project_manager.get_access_token(), product_id)
 
