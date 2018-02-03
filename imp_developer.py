@@ -58,7 +58,7 @@ PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
 PL_ACTION_STATUS_KEY     = "action-status-key"
 PL_PRODUCT_STATUS_KEY    = "product-status-key"
 PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
-PL_KEEP_ALIVE_TIMEOUT    = 35 # api timeout is 30 seconds
+PL_KEEP_ALIVE_TIMEOUT    = 60 # api timeout is 30 seconds
 PL_LONG_POLL_TIMEOUT     = 5 # sec
 PL_LOGS_UPDATE_LONG_PERIOD = 1000 # ms
 PL_LOGS_UPDATE_SHORT_PERIOD = 300 # ms
@@ -107,7 +107,7 @@ project_env_map = {}
 
 
 class ProjectManager:
-    """Electric Imp project specific fuctionality"""
+    """Electric Imp project specific functionality"""
 
     def __init__(self, window):
         self.window = window
@@ -646,7 +646,7 @@ class ImpCentral:
             response = None
         except urllib.error.HTTPError as err:
             # TODO: - handle expired access token
-            #       - no internet connection
+            #       - no Internet connection
             response = None
         if not response:
             response = None
@@ -729,7 +729,7 @@ class ImpCentral:
         if failure:
             return {"code": ImpRequest.FAILURE, "message": failure}
 
-        return {"code": ImpRequest.FAILURE, "message": "Unhandled http error: " + str(code)}
+        return {"code": ImpRequest.FAILURE, "message": "Unhanded http error: " + str(code)}
 
     @staticmethod
     def read_logs(handler):
@@ -1018,7 +1018,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
             # use an original command to refresh credentials
             if self.cmd_on_complete:
-                # run an ariginal command
+                # run an original command
                 self.window.run_command(self.cmd_on_complete)
             else:
                 # re-run current command
@@ -1049,7 +1049,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     # reset current credentials
     # which trigger login/pwd procedure on next command
-    def reset_credentails(self):
+    def reset_credentials(self):
         self.update_auth_settings(EI_ACCESS_TOKEN_SET, None)
 
 ###
@@ -1294,7 +1294,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
             return
 
         products, error = ImpCentral.list_products(token, account["id"])
-        # Handle imp central request's error
+        # Handle imp central request errors
         if self.check_imp_error(error,
             STR_FAILED_TO_GET_PRODUCTS, STR_RETRY_SELECT_PRODUCT):
             return
@@ -1319,7 +1319,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
     def check(base):
         settings = base.load_settings();
         return EI_DEVICEGROUP_ID in settings and settings.get(EI_DEVICEGROUP_ID) != None
-        # TODO: Check that project still available in the remote configuraiton
+        # TODO: Check that project still available in the remote configuration
 
     def action(self):
         sublime.set_timeout_async(self.select_device_group, 0)
@@ -1333,7 +1333,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         # Check that code is correct
         # In common case it is expected error==failure only
         # But, if someone decide to drop product via IDE
-        # when user is selecting product in this plugin
+        # when user is selecting product in this plug in
         # then the second error message should happen
         if self.check_imp_error(error,
             STR_FAILED_TO_GET_DEVICEGROUPS, STR_RETRY_TO_GET_DEVICEGROUPS):
@@ -1376,7 +1376,8 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         # prompts a message_dialog
         if show_dialog and not sublime.ok_cancel_dialog(STR_DEVICEGROUP_PROVIDE_NAME):
             return
-        self.window.show_input_panel(STR_DEVICEGROUP_NAME, "", self.on_new_devicegroup_name_provided, None, None)
+        self.window.show_input_panel(STR_DEVICEGROUP_NAME, "",
+            self.on_new_devicegroup_name_provided, None, None)
 
     def on_new_devicegroup_name_provided(self, name):
         token = self.env.project_manager.get_access_token()
@@ -1432,7 +1433,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
         # handle the respond
         if self.check_imp_error(error,
-            STR_FAILED_TO_ASSING_DEVICE, None):
+            STR_FAILED_TO_ASSIGN_DEVICE, None):
             log_debug("Failed to add device to the group")
             return
 
@@ -1440,10 +1441,10 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         #
         # Note: for another hand it is possible to attach the device
         #       to the logstream without stream reset, but it is
-        #       expected that user should not use assign/unassign
+        #       expected that user should not use assign/Un-Assign
         #       devices frequently
         # Note: push reset to the background thread to prevent
-        #       concurent access to the LogManager's fields
+        #       concurrent access to the LogManager's fields
         sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
         # force log restart, but we need to reset current log first
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
@@ -1504,8 +1505,8 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
             log_debug("Failed to remove device from the group")
             return
 
-        # Request log stream reset to remove the devive from the log
-        # Note: push to the background thread to prevent concurent access
+        # Request log stream reset to remove the device from the log
+        # Note: push to the background thread to prevent concurrent access
         #       to the logManager's fields
         sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
         # force log restart, but we need to reset current log first
@@ -1528,7 +1529,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # check that response has some payload
         # response should contain the list of devices
         if len(devices) > 0:
-            # filter devices localy
+            # filter devices locally
             all_names = [(str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"]["name"])) for device in devices]
             # make a new product creation option as a part of the product select menu
@@ -1576,7 +1577,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
         self.update_status_message()
         self.on_action_complete()
 
-    # Handle deployment errors more carefull
+    # Handle deployment errors more carefully
     def handle_deployment(self, deployment, error):
         settings = self.load_settings()
 
@@ -1588,7 +1589,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
             # print the deployment to the status
             self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(deployment["attributes"]["sha"])))
-            # note user about conditionla restart request
+            # note user about conditional restart request
             self.print_to_tty(STR_DEVICEGROUP_CONDITIONAL_RESTART)
 
             # Now it's time to restart code on agent and devices
@@ -1683,7 +1684,6 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         # force stream open after restart
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
-
 class ImpSelectDeviceCommand(BaseElectricImpCommand):
     def action(self):
         self.select_device()
@@ -1723,7 +1723,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         # check that response has some payload
         # response should contain the list of devices
         if len(devices) > 0:
-            # filter devices localy
+            # filter devices locally
             all_names = [(str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"]["name"])) for device in devices]
             # make a new product creation option as a part of the product select menu
@@ -2047,7 +2047,7 @@ class LogManager:
         self.sock = None
         self.devices = []
         self.has_logs = False
-        # Suported states:
+        # Supported states:
         self.IDLE = 0
         self.INIT = 1
         self.POLL = 2
@@ -2069,16 +2069,16 @@ class LogManager:
     def stop(self, is_restart=False):
         if self.state == self.POLL:
             if is_restart:
-                self.write_to_console("Realtime logging restart requested.")
+                self.write_to_console("Real-time logging restart requested.")
                 # set current state to idle
                 self.state = self.IDLE
                 # and then trigger log start
                 sublime.set_timeout_async(lambda: update_log_windows(False), 0)
                 return
             # stop logs
-            self.write_to_console("Realtime logging has stopped. Please refresh to enable it again.")
+            self.write_to_console("Real-time logging has stopped. Please refresh to enable it again.")
         elif self.state == self.INIT:
-            self.write_to_console("Realtime logging not started. Please refresh to enable it again.")
+            self.write_to_console("Real-time logging not started. Please refresh to enable it again.")
 
         # change current state depends on initial
         self.state = self.IDLE
@@ -2117,7 +2117,7 @@ class LogManager:
                             next_cmd = False
                             if line == b'data: closed\n':
                                 self.reset()
-                                logs.appned("Stream was closed by server event.\n")
+                                logs.append("Stream was closed by server event.\n")
                                 return logs
                             if line == b'data: opened\n':
                                 self.keep_alive = datetime.datetime.now()
@@ -2145,8 +2145,8 @@ class LogManager:
             if self.keep_alive != None and len(logs) == 0:
                 delta = datetime.datetime.now() - self.keep_alive
                 if delta.seconds > PL_KEEP_ALIVE_TIMEOUT:
-                    log_debug("Did not get keep alive ontime. Trigger log reset.")
-                    self.reset(is_restart=True)
+                    log_debug("Did not get keep alive on-time. Trigger log reset.")
+                    self.reset()
 
             return logs
 
@@ -2208,7 +2208,7 @@ class LogManager:
             return None
 
         log_debug("Attach devices")
-        # attache the devices from the device group to the logstream
+        # attach all devices from the device group to the logstream
         for device in self.devices:
             if ("devicegroup" in device["relationships"]
                 and devicegroup_id == device["relationships"]["devicegroup"]["id"]):
@@ -2219,7 +2219,7 @@ class LogManager:
                 if self.check_imp_error(error):
                     return None
 
-        log_debug("Logstream config done, start polling")
+        log_debug("Logstream subscription done, start polling")
 
         self.state = self.POLL
         self.write_to_console("Logstream started.")
@@ -2296,7 +2296,7 @@ class LogManager:
         res = {}
         ms = log.split(" ")
         # is some case we could get wrong log format
-        # the following code is attemtion to handle such case
+        # the following code is to handle such case
         if len(ms) < 5 or ms.pop(0) != "data:":
             res["device"] = "sublime"
             res["dt"] = datetime.datetime.now()
@@ -2304,7 +2304,7 @@ class LogManager:
             res["deployment"] = ""
             res["message"] = log[:-1]
         else:
-            # date: deviceId timestamp deployment type log-string
+            # date: deviceId timestamps deployment type log-string
             res["device"] = ms.pop(0)
             res["dt"] = datetime.datetime.strptime(ms.pop(0), "%Y-%m-%dT%H:%M:%S.%fZ")
             res["deployment"] = ms.pop(0)
@@ -2331,17 +2331,17 @@ class LogManager:
     def reset(self, is_restart=False):
         # this action should force to close the log stream
         # but on the next request of logs stream should be
-        # instatiated
+        # instantiated
         if self.sock:
             self.sock.close()
         self.sock = None
         # reset poll url to reopen socket
         self.poll_url = None
-        # last shown log could be different after device assing
-        # that's why log could be suplicated in the console
+        # last shown log could be different after device sassing
+        # that's why log could be supplicated in the console
         # after device assign/an-assign
         self.last_shown_log = None
-        # stop traking timer
+        # stop timer
         self.keep_alive = None
         # reset current state to idle
         self.stop(is_restart)

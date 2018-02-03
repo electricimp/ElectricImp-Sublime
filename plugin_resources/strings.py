@@ -23,7 +23,7 @@ STR_PROVIDE_BUILD_API_KEY            = "Please provide your Electric Imp Build A
 STR_INVALID_CREDENTIALS              = "Invalid user name or password. Try again ?"
 STR_USER_ID                          = "Username"
 STR_PASSWORD                         = "Password"
-STR_PROVIDE_USER_ID                  = "Please signin to get an access to the ElectricImp environment"
+STR_PROVIDE_USER_ID                  = "Please sign-in to get an access to the ElectricImp environment"
 
 STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
 STR_PRODUCT_NAME                     = "Product name:"
@@ -51,7 +51,7 @@ STR_STATUS_ACTION                    = "Command: {}"
 STR_INITIAL_SRC_CONTENT              = "// {} source code goes here\n\n"
 
 STR_FAILED_TO_LOGIN                    = "Failed to login: "
-STR_INVALID_USER_OR_PASSWORD         = "Invalid username or password. Try again?"
+STR_INVALID_USER_OR_PASSWORD         = "Invalid user-name or password. Try again?"
 
 STR_FAILED_TO_CREATE_PRODUCT         = "Failed to create new product: "
 STR_RETRY_CREATE_PRODUCT             = "Try to create product again ?"
@@ -66,14 +66,14 @@ STR_RETRY_TO_GET_DEVICEGROUPS        = "Something wend wrong, retry to extract t
 STR_FAILED_TO_GET_DEVICEGROUP        = "Failed to create device group: "
 STR_RETRY_TO_GET_DEVICEGROUP         = "Wrong device group id. Type again ?"
 
-STR_FAILED_TO_ASSING_DEVICE          = "Failed to assign device: "
+STR_FAILED_TO_ASSIGN_DEVICE          = "Failed to assign device: "
 STR_FAILED_TO_GET_DEVICELIST         = "Failed to extract list of devices: "
 
 STR_FAILED_TO_REMOVE_DEVICE          = "Failed to remove device from the group: "
 STR_RETRY_TO_REMOVE_DEVICE           = "Something went wrong with device unassing from the device group.\n\n Try again ?"
 
 STR_FAILED_CONDITIONAL_RESTART       = "Failed to perform the conditional restart"
-STR_FAILED_TO_GET_DEVICE_AGENT_URL   = "Failed to get aget url for some device"
+STR_FAILED_TO_GET_DEVICE_AGENT_URL   = "Failed to get agent url for some device"
 
 STR_FAILED_TO_EXTRACT_CODE           = "Failed to extract source code"
 STR_RETRY_TO_EXTRACT_CODE            = "Try to download code again ?"
