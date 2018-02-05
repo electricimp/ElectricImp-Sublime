@@ -2148,6 +2148,10 @@ class LogManager:
                     log_debug("Did not get keep alive on-time. Trigger log reset.")
                     self.reset()
 
+            # work around to keep stream active when logs are available
+            if len(logs) > 0:
+                self.keep_alive = datetime.datetime.now()
+
             return logs
 
     def query_logs(self):
@@ -2182,9 +2186,9 @@ class LogManager:
             if self.check_imp_error(error):
                 return None
 
-            #if len(devices) == 0:
-            #    self.write_to_console("There is no devices in current device group. Please assign some device to start logging.")
-            #    return None
+            if len(devices) == 0:
+                self.write_to_console("There is no devices in current device group. Please assign some device to start logging.")
+                return None
 
             # cache device list
             # it could be re-use on the next connection
