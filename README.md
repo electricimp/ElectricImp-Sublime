@@ -40,8 +40,8 @@ projects and code preprocessing
 * Leveraging the rich set of Sublime Text 3 Editor features.
 
 The Plug-in requires connection to the Internet as it leverages the
-[Electric's ImpCentral API V5](https://electricimp.com/docs/buildapi/)
-to work with the the [Electric Imp impCloud™](https://electricimp.com/platform/cloud/).
+[Electric Imp impCentral API V5](https://developer.electricimp.com/tools/impcentralapi/)
+to work with the [Electric Imp impCloud™](https://electricimp.com/platform/cloud/).
 
 ## Installation Steps
 
@@ -106,7 +106,7 @@ The  project folder will be set up with the following
 ```
 -- <Project Name>
   |--> settings                           - Electric Imp settings folder
-  .   |--> auth.info                      - SENSITIVE: ImpCentral API tokens and GitHub authentication information
+  .   |--> auth.info                      - SENSITIVE: impCentral API tokens and GitHub authentication information
   .   |--> electric-imp.settings          - Generic Electric Imp settings
   |--> src                                - Source folder
   .   |--> device.nut                     - Device code
@@ -162,7 +162,7 @@ for the first time, you will be asked to provide:
 
 - The path to the Node.js executable (if it is not automatically detected by the plug-in).
 - The location of the Builder *cli.js* command line tool (if not automatically detected by the plug-in).
-- User name and password, which you use for the [Electric Imp IDE](https://impcentral.electricimp.com/)
+- User name and password, which you use for the [Electric Imp impCentral](https://impcentral.electricimp.com/)
 - Create a new project or select an existing one
 - Create a new device group or select an existing one
 - You could be offered to download the latest deployment if you select an existing product and devicegroup
