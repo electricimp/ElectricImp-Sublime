@@ -541,7 +541,7 @@ class ImpCentral:
     def get_device(token, device_id):
         response, code = HTTP.get(token,
             PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id)
-        error = ImpCentral.handle_http_response(response, error)
+        error = ImpCentral.handle_http_response(response, code)
         return response, error
 
 
@@ -1077,7 +1077,7 @@ class ImpCheckBuilderPathCommand(BaseElectricImpCommand):
         return EI_ST_PR_BUILDER_CLI in builder_settings and os.path.exists(
             builder_settings[EI_ST_PR_BUILDER_CLI])
 
-    def action(self):
+    def action(self, need_to_confirm=True):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH):
             self.on_action_complete(canceled=True)
             return
@@ -1741,7 +1741,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
 
-    def run(self):
+    def run(self, cmd_on_complete=None):
         AnfNewProject(self.window, STR_NEW_PROJECT_LOCATION, self.on_project_path_provided). \
             run(initial_path=self.get_default_project_path())
 
