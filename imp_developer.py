@@ -2139,7 +2139,13 @@ class LogManager:
                             self.keep_alive = datetime.datetime.now()
                             next_log = False
                             next_cmd = False
-                        # if waiting for logs
+                        # if waiting for logs in a following format:
+                        # data: message\n
+                        # data: log start message and pretty print like this {\n
+                        # data:   value1: 123,\n
+                        # data:   value2: 123\n
+                        # data: }\n
+                        # \n
                         elif next_log:
                              message = line.decode("utf-8")
                              if (message.find("data:") == 0):
