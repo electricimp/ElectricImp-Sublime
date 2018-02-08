@@ -2114,6 +2114,7 @@ class LogManager:
             next_log = False
             next_cmd = False
             logs = []
+            log_message = ""
             count = PL_LOGS_MAX_PER_REQUEST
             while count > 0:
                 # lets read no more than coun logs per one loop
@@ -2122,9 +2123,31 @@ class LogManager:
                     break
                 else:
                     for line in self.sock:
-                        if next_log:
+                        if line == b'event: message\n':
+                            count -= 1
+                            next_log = True
+                            next_cmd = False
+                        elif line == b'event: state_change\n':
+                            count -= 1
+                            next_cmd = True
                             next_log = False
-                            logs.append(line.decode("utf-8"))
+                        elif line == b'\n':
+                            next_log = False
+                            next_cmd = False
+                            break
+                        elif line == b': keep-alive\n':
+                            self.keep_alive = datetime.datetime.now()
+                            next_log = False
+                            next_cmd = False
+                        # if waiting for logs
+                        elif next_log:
+                             message = line.decode("utf-8")
+                             if (message.find("data:") == 0):
+                                log_message += message[5:]
+                             else:
+                                 # show unexpected messages too
+                                 log_message += message
+                        # if waiting for command
                         elif next_cmd:
                             next_cmd = False
                             if line == b'data: closed\n':
@@ -2136,22 +2159,18 @@ class LogManager:
                                 return logs
                             if line != b'\n':
                                 logs.append(line.decode("utf-8"))
-
-                        elif line == b'event: message\n':
-                            count -= 1
-                            next_log = True
-
-                        elif line == b'event: state_change\n':
-                            count -= 1
-                            next_cmd = True
-                        elif line == b'\n':
-                            next_cmd = False
-                            next_log = False
-                            break
-                        elif line == b': keep-alive\n':
-                            self.keep_alive = datetime.datetime.now()
                         else:
                             log_debug("Unhandled command: " + str(line.decode("utf-8")))
+
+                        # append log to the list
+                        if not next_log and len(log_message) > 0:
+                                logs.append(log_message)
+                                log_message = ""
+
+            # this case should never happen
+            # but things happens
+            if len(log_message) > 0:
+                logs.append(log_message)
 
             if len(logs) > 0:
                 # work around to keep stream active while logs are available
