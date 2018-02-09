@@ -78,6 +78,10 @@ PR_AGENT_FILE_NAME       = "agent.nut"
 PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
+EI_BUILD_API_KEY            = "builder-key"
+EI_MODEL_ID                 = "model-id"
+EI_MODEL_NAME               = "model-name"
+EI_DEVICE_ID                = "device-id"
 EI_LOGIN_KEY                = "login-key"
 EI_ACCESS_TOKEN             = "access-token"
 EI_ACCESS_TOKEN_VALUE       = "access-token-value"
@@ -911,6 +915,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             return
 
         commands = [
+            {"command": "imp_check_old_version", "method": ImpCheckOldVersionCommand.check},
             {"command": "imp_check_nodejs_path", "method": ImpCheckNodejsPathCommand.check},
             {"command": "imp_check_builder_path", "method": ImpCheckBuilderPathCommand.check},
             {"command": "imp_auth", "method": ImpAuthCommand.check},
@@ -934,12 +939,21 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
     def update_settings(self, index, value):
         settings = self.load_settings()
-        settings[index] = value
+        # remove element from the configuration
+        if value is None and index in settings:
+            del settings[index]
+        else:
+            settings[index] = value
         self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
     def update_auth_settings(self, index, value):
         settings = self.load_auth_settings()
-        settings[index] = value
+        # remove element from the configuration
+        if value is None and index in settings:
+            del settings[index]
+        else:
+            settings[index] = value
+        # save an update settings
         self.env.project_manager.save_settings(PR_AUTH_INFO_FILE, settings)
 
     def print_to_tty(self, text):
@@ -1027,6 +1041,48 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     # which trigger login/pwd procedure on next command
     def reset_credentials(self):
         self.update_auth_settings(EI_ACCESS_TOKEN, None)
+
+
+#
+# Check that it is not an old version of plugin
+#
+class ImpCheckOldVersionCommand(BaseElectricImpCommand):
+
+    @staticmethod
+    def check(base):
+        auth_info = base.load_auth_settings()
+        if EI_BUILD_API_KEY in auth_info:
+            return False
+
+        settings = base.load_settings()
+        if (EI_MODEL_NAME in settings or
+            EI_MODEL_ID in settings or
+            EI_DEVICE_ID in settings):
+            return False
+
+        return True
+
+    def action(self, skip_dialog=False):
+        if not skip_dialog and not sublime.ok_cancel_dialog(STR_REPLACE_CONFIG):
+            self.on_action_complete(canceled=True)
+            return
+
+        auth_info = self.load_auth_settings()
+        if EI_BUILD_API_KEY in auth_info:
+            self.update_auth_settings(EI_BUILD_API_KEY, None)
+
+        settings = self.load_settings()
+        if (EI_MODEL_NAME in settings):
+            self.update_settings(EI_MODEL_NAME, None)
+
+        if (EI_MODEL_ID in settings):
+            self.update_settings(EI_MODEL_ID, None)
+
+        if (EI_DEVICE_ID in settings):
+            self.update_settings(EI_DEVICE_ID, None)
+
+        # continue
+        self.on_action_complete();
 
 
 #

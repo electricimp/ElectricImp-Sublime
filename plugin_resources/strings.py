@@ -41,6 +41,10 @@ STR_DEVICE_GROUP_DESCRIPTION          = "Devicegroup created from sublime plugin
 
 STR_DEPLOYMENT_DESCRIPTION            = "Code from the sublime plugin."
 
+STR_REPLACE_CONFIG                    = """This plugin does not support an old version of the Builder API.\n\n
+Would you like to start with a new version of impCentral API?\n\n
+NOTE: the old configuration will be replaced with the new one."""
+
 STR_ERR_MESSAGE_LINE                 = "    ERROR: [CLICKABLE] {} ({}:{})\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "\nDeploy failed because of the following errors:\n"
 STR_ERR_RUNTIME_ERROR                = "ERROR:   [CLICKABLE] at {} ({}:{})"
