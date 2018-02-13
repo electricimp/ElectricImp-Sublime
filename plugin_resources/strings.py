@@ -3,7 +3,7 @@
 # http://opensource.org/licenses/MIT
 
 # String resources exposed to the users
-STR_SELECT_DEVICE                    = "Please select a device of the Model to connect to"
+STR_SELECT_DEVICE                    = "Please select a device to assign to"
 STR_CODE_IS_ABSENT                   = "Code files for agent or device are absent. Please check the project settings at {}"
 STR_NEW_PROJECT_LOCATION             = "New Electric Imp Project Location:"
 STR_NODE_JS_PATH                     = "Node.js Binary Path:"
@@ -15,28 +15,35 @@ STR_INVALID_BUILDER_CLI_PATH         = "Can't find the Builder cli.js at the pat
 STR_FOLDER_EXISTS                    = "The folder {} already exists. Do you want to create project in this folder? Existing project files will be overwritten. Existing sources will be left untouched"
 STR_BUILD_API_KEY                    = "Electric Imp Build API key:"
 STR_INVALID_API_KEY                  = "Build API key is invalid. Please try another one"
-STR_AGENT_URL_COPIED                 = "The agent URL for the selected device {} is:\n{}\nIt is copied into the clipboard"
+STR_AGENT_URL_COPIED                 = "The agent URL is copied into the clipboard:\n\n Device :  {}\n\n Url :  {}"
 STR_NO_DEVICES_AVAILABLE             = "There are no other Imp devices registered in the system. Please register a new device and try again"
 STR_FAILED_TO_GET_LOGS               = "An error returned for logs request."
 STR_PROVIDE_BUILD_API_KEY            = "Please provide your Electric Imp Build API key. It can be found in the Developer Console (login into your account and click on the top right link with you user name and select \"Build API Keys\")"
 
-STR_MODEL_PROVIDE_NAME               = "Provide a Model name for the project"
-STR_MODEL_NAME                       = "New Model name:"
-STR_MODEL_NAME_EXISTS                = "The Model name already exists. Please try another one"
-STR_MODEL_HAS_NO_DEVICES             = "The model has no devices yet. Please add an existing device to the model (Tools -> Packages -> Electric Imp -> Add Device)"
-STR_MODEL_FAILED_TO_CREATE           = "Failed to create the model"
-STR_MODEL_ADD_DEVICE                 = "Please select a device to add to the model"
-STR_MODEL_ADDING_DEVICE_FAILED       = "Adding device to the model failed"
-STR_MODEL_IMP_REGISTERED             = "The Imp device is added to the Model and selected as active"
-STR_MODEL_REMOVE_DEVICE              = "Select a device to remove from the Model"
-STR_MODEL_NO_DEVICES_TO_REMOVE       = "The Model has no devices to remove"
-STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE  = "This device is currently selected as active. Can't remove it from the Model"
-STR_MODEL_REMOVE_DEVICE_FAILED       = "Failed removing device from the Model"
-STR_MODEL_DEVICE_REMOVED             = "The device is successfully removed from the Model"
-STR_MODEL_NOT_ASSIGNED               = "The project doesn't have a model assigned. Please select or create one (Tools -> Packages -> Electric Imp -> Create/Select Model)."
-STR_MODEL_NO_MODELS_FOUND            = "No models available on the account. Please create one (Tools -> Packages -> Electric Imp -> Create Model)"
-STR_MODEL_SELECT_EXISTING_MODEL      = "Select existing Model"
-STR_MODEL_CONFIRM_PULLING_MODEL_CODE = "Do you want to pull the latest code revision from the Model? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
+STR_INVALID_CREDENTIALS              = "Invalid user name or password. Try again ?"
+STR_USER_ID                          = "Username"
+STR_PASSWORD                         = "Password"
+STR_PROVIDE_USER_ID                  = "Please sign-in to get an access to the ElectricImp environment"
+
+STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
+STR_PRODUCT_NAME                     = "Product name:"
+STR_PRODUCT_SERVER_ERROR             = "Failed to extract product list"
+STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
+STR_PRODUCT_PROVIDE_NAME             = "Please provide a new product name"
+STR_PRODUCT_DESCRIPTION              = "Product created from sublime plugin"
+
+STR_DEVICE_GROUP_CREATE_NEW           = "Create a new Device Group ..."
+STR_DEVICE_GROUP_CONDITIONAL_RESTART  = "Requested the conditional restart for the device group to apply the deployed source code"
+STR_DEVICE_GROUP_PROVIDE_NAME         = "Please provide a unique device group name"
+STR_DEVICE_GROUP_NAME                 = "Device group name:"
+STR_DEVICE_GROUP_CONFIRM_PULLING_CODE = "Do you want to pull the latest code revision from the DeviceGroup? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
+STR_DEVICE_GROUP_DESCRIPTION          = "Devicegroup created from sublime plugin"
+
+STR_DEPLOYMENT_DESCRIPTION            = "Code from the sublime plugin."
+
+STR_REPLACE_CONFIG                    = """This plugin does not support an old version of the Builder API.\n\n
+Would you like to start with a new version of impCentral API?\n\n
+NOTE: the old configuration will be replaced with the new one."""
 
 STR_ERR_MESSAGE_LINE                 = "    ERROR: [CLICKABLE] {} ({}:{})\n"
 STR_ERR_DEPLOY_FAILED_WITH_ERRORS    = "\nDeploy failed because of the following errors:\n"
@@ -46,7 +53,55 @@ STR_ERR_PREPROCESSING_ERROR          = "\nPreprocessing failed because of the fo
 
 STR_STATUS_REVISION_UPLOADED         = "Revision uploaded: {}"
 STR_STATUS_CREATING_PROJECT          = "Creating project at {}"
-STR_STATUS_ACTIVE_MODEL              = "Model: {}"
+STR_STATUS_ACTIVE_PRODUCT            = "Product: {}"
+STR_STATUS_ACTION                    = "Command: {}"
 
 STR_INITIAL_SRC_CONTENT              = "// {} source code goes here\n\n"
 
+STR_FAILED_TO_LOGIN                    = "Failed to login: "
+STR_INVALID_USER_OR_PASSWORD         = "Invalid user-name or password. Try again?"
+
+STR_FAILED_TO_CREATE_PRODUCT         = "Failed to create new product: "
+STR_RETRY_CREATE_PRODUCT             = "Try to create product again ?"
+
+STR_FAILED_TO_GET_ACCOUNT_DETAILS    = "Failed to get account details: "
+STR_FAILED_TO_GET_PRODUCTS           = "Failed to get the list of products: "
+STR_RETRY_SELECT_PRODUCT             = "Try to load list of products again?"
+
+STR_FAILED_TO_GET_DEVICE_GROUPS      = "Failed to extract the device group list: "
+STR_RETRY_TO_GET_DEVICE_GROUPS       = "Something wend wrong, retry to extract the list of devicegroups ?"
+
+STR_FAILED_TO_GET_DEVICE_GROUP       = "Failed to create device group: "
+STR_RETRY_TO_GET_DEVICE_GROUP        = "Wrong device group id. Type again ?"
+
+STR_FAILED_TO_ASSIGN_DEVICE          = "Failed to assign device: "
+STR_FAILED_TO_GET_DEVICELIST         = "Failed to extract list of devices: "
+
+STR_FAILED_TO_REMOVE_DEVICE          = "Failed to remove device from the group: "
+STR_RETRY_TO_REMOVE_DEVICE           = "Something went wrong with device unassing from the device group.\n\n Try again ?"
+
+STR_FAILED_CONDITIONAL_RESTART       = "Failed to perform the conditional restart"
+STR_FAILED_TO_GET_DEVICE_AGENT_URL   = "Failed to get agent url for some device"
+
+STR_FAILED_TO_EXTRACT_CODE           = "Failed to extract source code"
+STR_RETRY_TO_EXTRACT_CODE            = "Try to download code again ?"
+
+STR_FAILED_TO_GET_DEPLOYMENT         = "Failed to load the latest deployment: "
+
+STR_FAILED_TOO_SHORT_CONTENT         = "Too short conten exception"
+STR_FAILED_RESOURCE_NOT_AVAILABLE    = "\n There is no Internet connection.\n Or requested resource not avialble."
+
+STR_FAILED_CODE_DEPLOY               = "Code deploy failed because of the error: {}"
+
+STR_UNHANDLED_HTTP_ERROR             = "Unhanded http error: {}"
+STR_TRY_AGAIN                        = "Try again"
+
+STR_MESSAGE_ASSIGN_DEVICE            = "There is no devices in current device group. Please assign some device to start logging."
+STR_MESSAGE_DEVICE_LIST_EMPTY        = "The device list is empty, please register device first."
+STR_MESSAGE_DEPLOYMENT_EMPTY         = "There is no any deployment yet"
+STR_MESSAGE_LOG_STREAM_REQUESTED     = "Log stream start requested ...\n"
+STR_MESSAGE_LOG_STREAM_RESTART       = "Real-time logging restart requested."
+STR_MESSAGE_LOG_STREAM_STARTED       = "Logstream started."
+STR_MESSAGE_LOG_STREAM_STOPPED       = "Real-time logging has stopped. Please refresh to enable it again."
+STR_MESSAGE_LOG_STREAM_NOT_STARTED   = "Real-time logging not started. Please refresh to enable it again."
+STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP= "There is no assigned devices in the current device group"
