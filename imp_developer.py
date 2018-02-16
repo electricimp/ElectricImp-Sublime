@@ -441,6 +441,23 @@ class HTTP:
         # return the failure message
         return failure
 
+    @staticmethod
+    def get_compile_errors(code, response):
+        compile_errors = []
+        if code in [400]:
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # it is possible to get more than one error
+                # but usually it is only one error
+                for error in errors:
+                    if (error.get("title") == 'Compilation Error' or
+                        error.get("code") == "CX005"):
+                        # usually there is no more then one compile error
+                        compile_errors.append(error)
+                if len(compile_errors) > 0:
+                    return compile_errors, 'Compilation Error'
+        return None, None
+
 
 class ImpRequest():
 
@@ -459,7 +476,7 @@ class ImpCentral:
             '{"id": "' + user_name + '", "password": "' + password + '"}',
             headers=HttpHeaders.AUTH_HEADERS)
 
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         return response, error
 
     @staticmethod
@@ -468,15 +485,15 @@ class ImpCentral:
             PL_IMPCENTRAL_API_URL_V5 + "/auth/token",
             '{"token": "' + refresh_token + '"}',
             headers=HttpHeaders.AUTH_HEADERS)
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         return response, error
 
     @staticmethod
     def account(token):
         response, code = HTTP.get(token,
             PL_IMPCENTRAL_API_URL_V5 + "/accounts/me")
-        error = ImpCentral.handle_http_response(response, code)
-        return response.get("data"), error
+        payload, error = ImpCentral.handle_http_response(response, code)
+        return payload, error
 
 
     @staticmethod
@@ -505,7 +522,7 @@ class ImpCentral:
         while link is not None:
             # TODO: think about async reading or pagination
             response, code = HTTP.get(token, url=link, data=data)
-            error = ImpCentral.handle_http_response(response, code)
+            payload, error = ImpCentral.handle_http_response(response, code)
             data = None
 
             # stop reading devices on http failure
@@ -513,7 +530,7 @@ class ImpCentral:
                 return response, error
 
             # check that all devices has correct device group
-            for item in response.get('data'):
+            for item in payload:
                 details = item["relationships"].get(filter)
                 if (filter_value is None or
                    (details is not None
@@ -531,23 +548,22 @@ class ImpCentral:
     def get_device_group(token, device_group_id):
         url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + device_group_id
         response, code = HTTP.get(token, url=url)
-        error = ImpCentral.handle_http_response(response, code)
-        return response.get("data"), error
+        payload, error = ImpCentral.handle_http_response(response, code)
+        return payload, error
 
     @staticmethod
     def get_deployment(token, deployment_id):
         url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment_id
         response, code = HTTP.get(token, url=url)
-        error = ImpCentral.handle_http_response(response, code)
-        return response.get("data"), error
+        payload, error = ImpCentral.handle_http_response(response, code)
+        return payload, error
 
     @staticmethod
     def get_device(token, device_id):
         response, code = HTTP.get(token,
             PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id)
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         return response, error
-
 
     @staticmethod
     def create_product(token, product_name):
@@ -563,9 +579,9 @@ class ImpCentral:
         })
         response, code = HTTP.post(token, url, data, headers=HttpHeaders.DEFAULT_HEADERS)
 
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
 
-        return response.get("data"), error
+        return payload, error
 
     @staticmethod
     def create_device_group(token, product_id, device_group_name):
@@ -586,22 +602,22 @@ class ImpCentral:
             }})
 
         response, code = HTTP.post(token, url, data)
-        error = ImpCentral.handle_http_response(response, code)
-        return response.get("data"), error
+        payload, error = ImpCentral.handle_http_response(response, code)
+        return payload, error
 
     @staticmethod
     def create_log_stream(token):
         response, code = HTTP.post(token,
             url=PL_IMPCENTRAL_API_URL_V5 + "logstream")
-        error = ImpCentral.handle_http_response(response, code)
-        return response.get("data"), error
+        payload, error = ImpCentral.handle_http_response(response, code)
+        return payload, error
 
     @staticmethod
     def attach_device_to_log_stream(token, log_stream_id, device_id):
         response, code = HTTP.put(token,
             url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + log_stream_id + "/" + device_id,
             data="{}")
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         # Note: response in None in that case
         return response, error
 
@@ -644,8 +660,7 @@ class ImpCentral:
               ' }}')
         # create a new deployment
         response, code = HTTP.post(token, url=url, data=data)
-        error = ImpCentral.handle_http_response(response, code)
-        return response.get("data"), error
+        return ImpCentral.handle_http_response(response, code)
 
     @staticmethod
     def assign_device(token, device_group_id, device_id):
@@ -658,7 +673,7 @@ class ImpCentral:
             })
 
         response, code = HTTP.post(token, url, data)
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         return response, error
 
     @staticmethod
@@ -673,7 +688,7 @@ class ImpCentral:
         # Append the selected device to the device group
         response, code = HTTP.delete(token, url, data)
 
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         return response, error
 
     @staticmethod
@@ -681,30 +696,38 @@ class ImpCentral:
         url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + device_group_id + "/conditional_restart"
         response, code = HTTP.post(token, url)
 
-        error = ImpCentral.handle_http_response(response, code)
+        payload, error = ImpCentral.handle_http_response(response, code)
         return response, error
 
     @staticmethod
     def handle_http_response(response, code):
         if HTTP.is_response_code_valid(code):
-            return None
+            if response is not None:
+                return response.get("data"), None
+            return response, None
 
         # Handle invalid credentials use-case
         if HTTP.is_invalid_credentials(code, response):
-            return {"code": ImpRequest.INVALID_CREDENTIALS, "error": "Invalid Credentials"}
+            return response.get("errors"), {"code": ImpRequest.INVALID_CREDENTIALS, "error": "Invalid Credentials"}
+
+        # the compile errors has the same http code as wrong resource
+        # therefore it is necessary to check them first
+        errors, message = HTTP.get_compile_errors(code, response)
+        if errors is not None and len(errors) > 0:
+            return response.get("errors"), {"code": ImpRequest.COMPILE_FAIL, "errors": errors, "message": message}
 
         # handle wrong input use-case
         error, title = HTTP.is_wrong_input(code, response)
         if error:
             # offer for the user to re-try current action
-            return {"code": ImpRequest.WRONG_INPUT, "message": error}
+            return response.get("errors"), {"code": ImpRequest.WRONG_INPUT, "message": error}
 
         # Handle failure use-case
         failure = HTTP.is_failure_request(response, code)
         if failure:
-            return {"code": ImpRequest.FAILURE, "message": failure}
+            return response.get("errors"), {"code": ImpRequest.FAILURE, "message": failure}
 
-        return {"code": ImpRequest.FAILURE,
+        return response.get("errors"), {"code": ImpRequest.FAILURE,
             "message": STR_UNHANDLED_HTTP_ERROR.format(str(code))}
 
     @staticmethod
@@ -1672,22 +1695,21 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             # 	},
             # 	'success': False
             # }
-            def build_error_messages(errors, source_type, env):
+            def build_error_messages(meta, source_type, env):
                 report = ""
                 preprocessor = self.env.code_processor
-                if errors is not None:
-                    for e in errors:
-                        log_debug("Original compilation error: " + str(e))
-                        orig_file = "main"
-                        orig_line = int(e["row"])
-                        try:
-                            orig_file, orig_line = \
-                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1),
-                                                                env=env)
-                        except Exception as exc:
-                            log_debug("Error trying to find original error source: {}".format(exc))
-                            pass  # Do nothing - use read values
-                        report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
+                if meta is not None:
+                    log_debug("Original compilation error: " + str(meta))
+                    orig_file = "main"
+                    orig_line = int(meta.get("row"))
+                    try:
+                        orig_file, orig_line = \
+                            preprocessor.get_error_location(source_type=source_type, line=(int(orig_line) - 1),
+                                                            env=env)
+                    except Exception as exc:
+                        log_debug("Error trying to find original error source: {}".format(exc))
+                        pass  # Do nothing - use read values
+                    report += STR_ERR_MESSAGE_LINE.format(meta.get("text"), orig_file, orig_line)
                 return report
             if error["code"] == ImpRequest.INVALID_CREDENTIALS:
                 self.check_imp_error(error, None, None)
@@ -1695,8 +1717,16 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
             if error["code"] == ImpRequest.COMPILE_FAIL:
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
-                error_message += build_error_messages(error["details"]["agent_errors"], SourceType.AGENT, self.env)
-                error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE, self.env)
+                compile_errors = error.get("errors")
+                # each error contain the meta array with
+                # list of rows and text message
+                for error in compile_errors:
+                    # extract details from meta information
+                    for meta in error.get("meta"):
+                        if meta.get('file') == 'agent_code':
+                            error_message += build_error_messages(meta, SourceType.AGENT, self.env)
+                        else:
+                            error_message += build_error_messages(meta, SourceType.DEVICE, self.env)
                 self.print_to_tty(error_message)
             else:
                 log_debug("Code deploy failed because of the error: {}".format(str(error["message"])))
@@ -1735,8 +1765,11 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
             # run an ariginal command
             self.window.run_command(self.name())
             return
-        # trigger the stream reset procedure
-        sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+        # Note: The commented code can trigger logstream restart
+        #       on each show console command (Ctrl+Shift+C)
+        #
+        # sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+
         # force stream open after restart
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
@@ -2181,6 +2214,9 @@ class LogManager:
                     for line in self.sock:
                         if line == b'event: message\n':
                             count -= 1
+                            if next_log and len(log_message) > 0:
+                                logs.append(log_message)
+                            log_message = ""
                             next_log = True
                             next_cmd = False
                         elif line == b'event: state_change\n':
@@ -2205,7 +2241,7 @@ class LogManager:
                         elif next_log:
                              message = line.decode("utf-8")
                              if (message.find("data:") == 0):
-                                log_message += message[5:]
+                                log_message += message[6:]
                              else:
                                  # show unexpected messages too
                                  log_message += message
@@ -2233,6 +2269,7 @@ class LogManager:
             # but things happens
             if len(log_message) > 0:
                 logs.append(log_message)
+                log_message = ""
 
             if len(logs) > 0:
                 # work around to keep stream active while logs are available
@@ -2359,7 +2396,7 @@ class LogManager:
                 if not log:
                     continue
 
-                self.write_to_console(log)
+                self.write_to_console(log, False)
                 self.last_shown_log = log
             self.update_log_started = False
 
@@ -2386,17 +2423,17 @@ class LogManager:
                     pass  # Use original message if failed to translate the error location
         return message
 
-    def __parse_log(self, log):
+    def __parse_log(self, log, status_log):
         res = {}
         ms = log.split(" ")
         # is some case we could get wrong log format
         # the following code is to handle such case
-        if len(ms) < 5 or ms.pop(0) != "data:":
+        if len(ms) < 4 or status_log:
             res["device"] = "sublime"
             res["dt"] = datetime.datetime.now()
             res["type"] = "[status.log]"
             res["deployment"] = ""
-            res["message"] = log[:-1]
+            res["message"] = log
         else:
             # date: deviceId timestamps deployment type log-string
             res["device"] = ms.pop(0)
@@ -2407,10 +2444,10 @@ class LogManager:
 
         return res
 
-    def write_to_console(self, log):
+    def write_to_console(self, log, status_log=True):
         # parse log string
         # to extract log details
-        item = self.__parse_log(log)
+        item = self.__parse_log(log, status_log)
 
         # maps the error details to the corresponding
         # filename and line numbers
