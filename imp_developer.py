@@ -464,7 +464,6 @@ class ImpRequest():
 class ImpCentral:
 
     def __init__(self, env):
-        self.env = env
         settings = env.project_manager.load_settings()
         self.url = settings.get(EI_CLOUD_URL)
 
