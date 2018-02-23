@@ -347,11 +347,6 @@ class HTTP:
         return headers
 
     @staticmethod
-    def is_valid_url(url):
-        # TODO: define url validation and ping procedure
-        return True
-
-    @staticmethod
     def do_request(key, url, method, data=None, timeout=None, headers=None):
         if data:
             data = data.encode('utf-8')
