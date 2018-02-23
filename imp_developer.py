@@ -352,13 +352,6 @@ class HTTP:
         return True
 
     @staticmethod
-    def is_refresh_token_valid(token):
-        if datetime.datetime.strptime(token.get(EI_ACCESS_TOKEN_EXPIRES_AT), IMPC_DATA_FORMAT) > datetime.now():
-            return True
-        request, code = HTTP.post({token: token.value}, PL_IMPCENTRAL_API_URL_V5 + "/auth/token")
-        return code == 200
-
-    @staticmethod
     def do_request(key, url, method, data=None, timeout=None, headers=None):
         if data:
             data = data.encode('utf-8')
@@ -477,50 +470,45 @@ class ImpCentral:
 
     def __init__(self, env):
         self.env = env
+        settings = env.project_manager.load_settings()
+        self.url = settings.get(EI_CLOUD_URL)
 
-    @staticmethod
-    def auth(user_name, password):
-        url = PL_IMPCENTRAL_API_URL_V5 + "auth"
+    def auth(self, user_name, password):
+        url = self.url + "auth"
         response, code = HTTP.post(None, url,
             '{"id": "' + user_name + '", "password": "' + password + '"}',
             headers=HttpHeaders.AUTH_HEADERS)
 
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return response, error
 
-    @staticmethod
-    def refresh_access_token(refresh_token):
+    def refresh_access_token(self, refresh_token):
         response, code = HTTP.post(None,
-            PL_IMPCENTRAL_API_URL_V5 + "/auth/token",
+            self.url + "/auth/token",
             '{"token": "' + refresh_token + '"}',
             headers=HttpHeaders.AUTH_HEADERS)
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return response, error
 
-    @staticmethod
-    def account(token):
+    def account(self, token):
         response, code = HTTP.get(token,
-            PL_IMPCENTRAL_API_URL_V5 + "/accounts/me")
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+            self.url + "/accounts/me")
+        payload, error = self.handle_http_response(response, code)
         return payload, error
 
 
-    @staticmethod
-    def list_products(token, owner_id=None):
+    def list_products(self, token, owner_id=None):
         # list all products with owner_id
-        return ImpCentral(self.env).list_items(token, "products", filter="owner", filter_value=owner_id)
+        return self.list_items(token, "products", filter="owner", filter_value=owner_id)
 
-    @staticmethod
-    def list_device_groups(token, product_id):
-        return ImpCentral(self.env).list_items(token, "devicegroups", filter="product", filter_value=product_id)
+    def list_device_groups(self, token, product_id):
+        return self.list_items(token, "devicegroups", filter="product", filter_value=product_id)
 
-    @staticmethod
-    def list_devices(token, device_group_id=None):
-        return ImpCentral(self.env).list_items(token, "devices", filter="devicegroup", filter_value=device_group_id)
+    def list_devices(self, token, device_group_id=None):
+        return self.list_items(token, "devices", filter="devicegroup", filter_value=device_group_id)
 
-    @staticmethod
-    def list_items(token, interface, filter=None, filter_value=None):
-        link = PL_IMPCENTRAL_API_URL_V5 + interface
+    def list_items(self, token, interface, filter=None, filter_value=None):
+        link = self.url + interface
         items = []
         # filter by group id or not
         if filter_value:
@@ -531,7 +519,7 @@ class ImpCentral:
         while link is not None:
             # TODO: think about async reading or pagination
             response, code = HTTP.get(token, url=link, data=data)
-            payload, error = ImpCentral(self.env).handle_http_response(response, code)
+            payload, error = self.handle_http_response(response, code)
             data = None
 
             # stop reading devices on http failure
@@ -553,30 +541,26 @@ class ImpCentral:
 
         return items, error
 
-    @staticmethod
-    def get_device_group(token, device_group_id):
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + device_group_id
+    def get_device_group(self, token, device_group_id):
+        url = self.url + "devicegroups/" + device_group_id
         response, code = HTTP.get(token, url=url)
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return payload, error
 
-    @staticmethod
-    def get_deployment(token, deployment_id):
-        url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment_id
+    def get_deployment(self, token, deployment_id):
+        url = self.url + "deployments/" + deployment_id
         response, code = HTTP.get(token, url=url)
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return payload, error
 
-    @staticmethod
-    def get_device(token, device_id):
+    def get_device(self, token, device_id):
         response, code = HTTP.get(token,
-            PL_IMPCENTRAL_API_URL_V5 + "devices/" + device_id)
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+            self.url + "devices/" + device_id)
+        payload, error = self.handle_http_response(response, code)
         return response, error
 
-    @staticmethod
-    def create_product(token, product_name):
-        url = PL_IMPCENTRAL_API_URL_V5 + "products"
+    def create_product(self, token, product_name):
+        url = self.url + "products"
         data = json.dumps({
             "data": {
                 "type": "product",
@@ -588,13 +572,12 @@ class ImpCentral:
         })
         response, code = HTTP.post(token, url, data, headers=HttpHeaders.DEFAULT_HEADERS)
 
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
 
         return payload, error
 
-    @staticmethod
-    def create_device_group(token, product_id, device_group_name):
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups"
+    def create_device_group(self, token, product_id, device_group_name):
+        url = self.url + "devicegroups"
         data = json.dumps({
             "data": {
                 "type": "development_devicegroup",
@@ -611,30 +594,27 @@ class ImpCentral:
             }})
 
         response, code = HTTP.post(token, url, data)
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return payload, error
 
-    @staticmethod
-    def create_log_stream(token):
+    def create_log_stream(self, token):
         response, code = HTTP.post(token,
-            url=PL_IMPCENTRAL_API_URL_V5 + "logstream")
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+            url=self.url + "logstream")
+        payload, error = self.handle_http_response(response, code)
         return payload, error
 
-    @staticmethod
-    def attach_device_to_log_stream(token, log_stream_id, device_id):
+    def attach_device_to_log_stream(self, token, log_stream_id, device_id):
         response, code = HTTP.put(token,
-            url=PL_IMPCENTRAL_API_URL_V5 + "logstream/" + log_stream_id + "/" + device_id,
+            url=self.url + "logstream/" + log_stream_id + "/" + device_id,
             data="{}")
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         # Note: response in None in that case
         return response, error
 
 
-    @staticmethod
-    def open_log_stream(token, log_stream_id):
+    def open_log_stream(self, token, log_stream_id):
         response = None
-        url = PL_IMPCENTRAL_API_URL_V5 + "logstream/" + log_stream_id
+        url = self.url + "logstream/" + log_stream_id
         headers = HTTP.get_http_headers(token, HttpHeaders.STREAM_HEADERS)
         # open socket to start polling
         request = urllib.request.Request(
@@ -653,9 +633,8 @@ class ImpCentral:
 
         return response
 
-    @staticmethod
-    def create_deployment(token, device_group_id, agent_code, device_code):
-        url = PL_IMPCENTRAL_API_URL_V5 + "deployments"
+    def create_deployment(self, token, device_group_id, agent_code, device_code):
+        url = self.url + "deployments"
         data = ('{"data": {"type": "deployment",'
               ' "attributes": {'
               '  "description": "' + STR_DEPLOYMENT_DESCRIPTION + '"'
@@ -669,11 +648,10 @@ class ImpCentral:
               ' }}')
         # create a new deployment
         response, code = HTTP.post(token, url=url, data=data)
-        return ImpCentral(self.env).handle_http_response(response, code)
+        return self.handle_http_response(response, code)
 
-    @staticmethod
-    def assign_device(token, device_group_id, device_id):
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + device_group_id + "/relationships/devices"
+    def assign_device(self, token, device_group_id, device_id):
+        url = self.url + "devicegroups/" + device_group_id + "/relationships/devices"
         data = json.dumps({
                 "data": [{
                     "type": "device",
@@ -682,12 +660,11 @@ class ImpCentral:
             })
 
         response, code = HTTP.post(token, url, data)
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return response, error
 
-    @staticmethod
-    def unassign_device(token, device_group_id, device_id):
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + device_group_id + "/relationships/devices"
+    def unassign_device(self, token, device_group_id, device_id):
+        url = self.url + "devicegroups/" + device_group_id + "/relationships/devices"
         data = json.dumps({
                 "data": [{
                     "type": "device",
@@ -697,19 +674,22 @@ class ImpCentral:
         # Append the selected device to the device group
         response, code = HTTP.delete(token, url, data)
 
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return response, error
 
-    @staticmethod
-    def conditional_restart(token, device_group_id):
-        url = PL_IMPCENTRAL_API_URL_V5 + "devicegroups/" + device_group_id + "/conditional_restart"
+    def conditional_restart(self, token, device_group_id):
+        url = self.url + "devicegroups/" + device_group_id + "/conditional_restart"
         response, code = HTTP.post(token, url)
 
-        payload, error = ImpCentral(self.env).handle_http_response(response, code)
+        payload, error = self.handle_http_response(response, code)
         return response, error
 
-    @staticmethod
-    def handle_http_response(response, code):
+    def is_valid_api_path(self, url):
+        self.url = url
+        payload, error = self.account("")
+        return error.get("code") == ImpRequest.INVALID_CREDENTIALS
+
+    def handle_http_response(self, response, code):
         if HTTP.is_response_code_valid(code):
             if response is not None:
                 return response.get("data"), None
@@ -738,11 +718,6 @@ class ImpCentral:
 
         return response.get("errors"), {"code": ImpRequest.FAILURE,
             "message": STR_UNHANDLED_HTTP_ERROR.format(str(code))}
-
-    @staticmethod
-    def read_logs(handler):
-        return [], None
-
 
 class SourceType():
 
@@ -950,6 +925,7 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             {"command": "imp_check_old_version", "method": ImpCheckOldVersionCommand.check},
             {"command": "imp_check_nodejs_path", "method": ImpCheckNodejsPathCommand.check},
             {"command": "imp_check_builder_path", "method": ImpCheckBuilderPathCommand.check},
+            {"command": "imp_check_cloud_url", "method": ImpCheckCloudUrlCommand.check},
             {"command": "imp_auth", "method": ImpAuthCommand.check},
             {"command": "imp_refresh_token", "method": ImpRefreshTokenCommand.check},
             {"command": "imp_create_new_product", "method": ImpCreateNewProductCommand.check},
@@ -1192,20 +1168,20 @@ class ImpCheckBuilderPathCommand(BaseElectricImpCommand):
 #
 # Check if user need custom build cloud
 #
-class ImpCheckCloudName(BaseElectricImpCommand):
+class ImpCheckCloudUrlCommand(BaseElectricImpCommand):
     #
     # check if tokens are available
     #
     @staticmethod
     def check(base):
         settings = base.load_settings()
-        return token.get(EI_CLOUD_URL) is not None
+        return settings is not None and settings.get(EI_CLOUD_URL) is not None
 
     def action(self):
         settings = self.load_settings()
-        self.could = token.get(EI_CLOUD_URL)
-        if (self.could is None):
-            self.could = PL_IMPCENTRAL_API_URL_V5
+        self.cloud = settings.get(EI_CLOUD_URL)
+        if (self.cloud is None):
+            self.cloud = PL_IMPCENTRAL_API_URL_V5
         self.prompt_could_url()
 
     def prompt_could_url(self):
@@ -1214,7 +1190,7 @@ class ImpCheckCloudName(BaseElectricImpCommand):
     def on_url_provided(self, url):
         self.cloud = url
 
-        if not HTTP.is_valid_url(url):
+        if not ImpCentral(self.env).is_valid_api_path(url):
             if not sublime.ok_cancel_dialog(STR_PLEASE_CHECK_URL.format(url)):
                 return
             self.prompt_could_url()
@@ -1377,7 +1353,8 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
 
     def on_new_product_name_provided(self, name):
         # request a new product creation
-        product, error = ImpCentral(self.env).create_product(self.env.project_manager.get_access_token(), name)
+        product, error = ImpCentral(self.env).create_product(
+            self.env.project_manager.get_access_token(), name)
         # handle possible errors, and force restart or show message dialog
         if self.check_imp_error(error,
             STR_FAILED_TO_CREATE_PRODUCT, STR_RETRY_CREATE_PRODUCT):
@@ -1571,7 +1548,8 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
     def select_existing_device(self):
-        devices, error = ImpCentral(self.env).list_devices(self.env.project_manager.get_access_token())
+        devices, error = ImpCentral(self.env).list_devices(
+            self.env.project_manager.get_access_token())
 
         # Check that code is correct
         if self.check_imp_error(error,
@@ -2033,7 +2011,6 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
         if deployment == settings.get(EI_DEPLOYMENT_ID):
             log_debug("Everything is up to date")
 
-        url = PL_IMPCENTRAL_API_URL_V5 + "deployments/" + deployment
         deployment, error = ImpCentral(self.env).get_deployment(
             self.env.project_manager.get_access_token(), deployment)
 
