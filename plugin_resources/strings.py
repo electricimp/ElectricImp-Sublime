@@ -1,4 +1,4 @@
-# Copyright (c) 2016 Electric Imp
+# Copyright (c) 2016-2018 Electric Imp
 # This file is licensed under the MIT License
 # http://opensource.org/licenses/MIT
 
@@ -95,6 +95,9 @@ STR_FAILED_CODE_DEPLOY               = "Code deploy failed because of the error:
 
 STR_UNHANDLED_HTTP_ERROR             = "Unhanded http error: {}"
 STR_TRY_AGAIN                        = "Try again"
+
+STR_COULD_URL                        = "impCentral api url:"
+STR_PLEASE_CHECK_URL                 = "Failed to request {} api, please check url"
 
 STR_MESSAGE_ASSIGN_DEVICE            = "There is no devices in current device group. Please assign some device to start logging."
 STR_MESSAGE_DEVICE_LIST_EMPTY        = "The device list is empty, please register device first."
