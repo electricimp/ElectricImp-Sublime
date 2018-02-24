@@ -2213,7 +2213,6 @@ class LogManager:
 
         return True
 
-
     def __read_logs(self):
         if self.sock and type(self.sock) is not None and self.sock.fp is not None:
             next_log = False
@@ -2257,7 +2256,7 @@ class LogManager:
                         elif next_log:
                              message = line.decode("utf-8")
                              if (message.find("data:") == 0):
-                                log_message += message[6:]
+                                 log_message += message[6:]
                              else:
                                  # show unexpected messages too
                                  log_message += message
@@ -2278,14 +2277,13 @@ class LogManager:
 
                         # append log to the list
                         if not next_log and len(log_message) > 0:
-                                logs.append(log_message)
-                                log_message = ""
+                            logs.append(log_message)
+                            log_message = ""
 
-            # this case should never happen
-            # but things happens
-            if len(log_message) > 0:
-                logs.append(log_message)
-                log_message = ""
+                    # save log message on each exit from the for-loop
+                    if len(log_message) > 0:
+                        logs.append(log_message)
+                        log_message = ""
 
             if len(logs) > 0:
                 # work around to keep stream active while logs are available
@@ -2304,8 +2302,7 @@ class LogManager:
 
         # check if it is polling procedure
         if self.sock and type(self.sock) is not None and self.sock.fp is not None:
-            result = {"logs": self.__read_logs()}
-            return result
+            return {"logs": self.__read_logs()}
 
         #
         # Initialize logstream for the device group
