@@ -90,7 +90,7 @@ EI_ACCESS_TOKEN_VALUE       = "access-token-value"
 EI_ACCESS_TOKEN_EXPIRES_AT  = "access-token-expires"
 EI_REFRESH_TOKEN            = "refresh-token"
 EI_PRODUCT_ID               = "product-id"
-EI_DEVICE_GROUP_ID           = "device-group-id"
+EI_DEVICE_GROUP_ID          = "device-group-id"
 EI_DEPLOYMENT_ID            = "deployment-id"
 
 EI_DEPLOYMENT_NEW           = "deployment-new"
@@ -505,53 +505,57 @@ class ImpCentral:
 
     def list_products(self, token, owner_id=None):
         # list all products with owner_id
+        filters = {}
         if owner_id is not None:
-            return self.list_items(token, "products", filter="owner", filter_value=owner_id)
+            filters["owner"] = owner_id
 
         # list all products
-        return self.list_items(token, "products")
+        return self.list_items(token, "products", filters)
 
     def list_device_groups(self, token, product_id):
-        return self.list_items(token, "devicegroups", filter="product", filter_value=product_id)
+        filters = {"product": product_id}
+        return self.list_items(token, "devicegroups", filters)
 
     def list_devices(self, token, collaborator, device_group_id=None):
-        if collaborator is not None:
-            return self.list_items(token, "devices", filter="owner", filter_value=collaborator)
-        return self.list_items(token, "devices", filter="devicegroup", filter_value=device_group_id)
+        filters = {"devicegroup": device_group_id}
+        # TODO: for some reason it works even without collaborator. Figure out if we really need it.
+        # if collaborator is not None:
+        #     filters["owner"] = collaborator
+        return self.list_items(token, "devices", filters)
 
-    def list_items(self, token, interface, filter=None, filter_value=None):
-        link = self.url + interface
-        items = []
+    def list_items(self, token, interface, filters=None):
+        dg_url = self.url + interface
         # filter by group id or not
-        if filter_value is not None:
-            data = '{"filter[' + filter +'.id]": "' + filter_value + '"}'
-        else:
-            data = None
 
-        while link is not None:
+        filter_query = ""
+        for key in filters:
+            if filters[key]:
+                filter_query += 'filter[' + key + '.id]=' + filters[key]
+        if len(filter_query) > 0:
+            dg_url += '?' + filter_query
+
+        log_debug(str(filters))
+        items = []
+        while dg_url is not None:
             # TODO: think about async reading or pagination
-            response, code = HTTP.get(token, url=link, data=data)
+            response, code = HTTP.get(token, url=dg_url)
             payload, error = self.handle_http_response(response, code)
-            data = None
 
+            log_debug(str(payload) + " " + str(error))
             # stop reading devices on http failure
             if error:
                 return response, error
 
             # check that all devices has correct device group
             for item in payload:
-                details = item["relationships"].get(filter)
-                if (filter_value is None or
-                   (details is not None
-                        and details["id"] == filter_value)):
-                    items.append(item)
+                items.append(item)
 
             # work-around for interface which has wrong 'next' value
             # for the last pagination page
             next_link = response["links"].get("next")
-            link = None if next_link == link else next_link
+            dg_url = None if next_link == dg_url else next_link
 
-        return items, error
+        return items, None
 
     def get_device_group(self, token, device_group_id):
         url = self.url + "devicegroups/" + device_group_id
@@ -1654,7 +1658,8 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
     def select_existing_device(self):
         devices, error = ImpCentral(self.env).list_devices(
             self.env.project_manager.get_access_token(),
-            self.load_settings().get(EI_COLLABORATOR_ID))
+            self.load_settings().get(EI_COLLABORATOR_ID),
+            self.load_settings().get(EI_DEVICE_GROUP_ID))
 
         # Check that code is correct
         if self.check_imp_error(error,
