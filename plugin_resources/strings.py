@@ -28,7 +28,7 @@ STR_PROVIDE_USER_ID                  = "Please sign-in to get an access to the E
 STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
 STR_PRODUCT_NAME                     = "Product name:"
 STR_PRODUCT_SERVER_ERROR             = "Failed to extract product list"
-STR_PRODUCT_CREATE_NEW               = "Create a new product ..."
+STR_PRODUCT_CREATE_NEW               = "> Create a new product ..."
 STR_PRODUCT_PROVIDE_NAME             = "Please provide a new product name"
 STR_PRODUCT_DESCRIPTION              = "Product created from sublime plugin"
 
@@ -108,3 +108,7 @@ STR_MESSAGE_LOG_STREAM_STARTED       = "Logstream started."
 STR_MESSAGE_LOG_STREAM_STOPPED       = "Real-time logging has stopped. Please refresh to enable it again."
 STR_MESSAGE_LOG_STREAM_NOT_STARTED   = "Real-time logging not started. Please refresh to enable it again."
 STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP= "There is no assigned devices in the current device group"
+
+STR_FAILED_TO_EXTRACT_COLLABORATORS   = "Failed to extract the list of collaborators."
+STR_FAILED_TO_EXTRACT_GRANTS          = "Failed to extract grants for the collaborator {}."
+STR_SELECT_COLLABORATOR               = "> Choose collaborator's project"
