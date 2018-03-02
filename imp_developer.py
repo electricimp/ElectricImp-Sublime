@@ -79,6 +79,7 @@ PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
 EI_CLOUD_URL                = "cloud-url"
+EI_COLLABORATOR_ID          = "collaborator-id"
 EI_BUILD_API_KEY            = "builder-key"
 EI_MODEL_ID                 = "model-id"
 EI_MODEL_NAME               = "model-name"
@@ -484,28 +485,45 @@ class ImpCentral:
         payload, error = self.handle_http_response(response, code)
         return response, error
 
-    def account(self, token):
+    def account(self, token, owner="me"):
         response, code = HTTP.get(token,
-            self.url + "/accounts/me")
+            self.url + "/accounts/" + owner)
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
+    def collaborators(self, token):
+        response, code = HTTP.get(token,
+            self.url + "/accounts")
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def capabilities(self, token, owner):
+        response, code = HTTP.get(token,
+            self.url + "/accounts/" + owner + "/capabilities")
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
 
     def list_products(self, token, owner_id=None):
         # list all products with owner_id
-        return self.list_items(token, "products", filter="owner", filter_value=owner_id)
+        if owner_id is not None:
+            return self.list_items(token, "products", filter="owner", filter_value=owner_id)
+
+        # list all products
+        return self.list_items(token, "products")
 
     def list_device_groups(self, token, product_id):
         return self.list_items(token, "devicegroups", filter="product", filter_value=product_id)
 
-    def list_devices(self, token, device_group_id=None):
+    def list_devices(self, token, collaborator, device_group_id=None):
+        if collaborator is not None:
+            return self.list_items(token, "devices", filter="owner", filter_value=collaborator)
         return self.list_items(token, "devices", filter="devicegroup", filter_value=device_group_id)
 
     def list_items(self, token, interface, filter=None, filter_value=None):
         link = self.url + interface
         items = []
         # filter by group id or not
-        if filter_value:
+        if filter_value is not None:
             data = '{"filter[' + filter +'.id]": "' + filter_value + '"}'
         else:
             data = None
@@ -553,9 +571,9 @@ class ImpCentral:
         payload, error = self.handle_http_response(response, code)
         return response, error
 
-    def create_product(self, token, product_name):
+    def create_product(self, token, product_name, collaborator):
         url = self.url + "products"
-        data = json.dumps({
+        payload = {
             "data": {
                 "type": "product",
                 "attributes": {
@@ -563,7 +581,15 @@ class ImpCentral:
                     "description": STR_PRODUCT_DESCRIPTION
                 }
             }
-        })
+        }
+        if collaborator is not None:
+            payload["data"]["relationships"] = {
+                "owner": {
+                    "type": "account",
+                    "id": collaborator
+                }
+            }
+        data = json.dumps(payload)
         response, code = HTTP.post(token, url, data, headers=HttpHeaders.DEFAULT_HEADERS)
 
         payload, error = self.handle_http_response(response, code)
@@ -1333,6 +1359,12 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         return settings.get(EI_PRODUCT_ID) is not None
 
     def action(self):
+        # reset current credentials if available
+        self.update_settings(EI_COLLABORATOR_ID, None)
+
+        self.collaborators = None
+        self.products = None
+
         sublime.set_timeout_async(self.select_existing_product, 1)
 
     def on_create_new_product(self, show_dialog=True):
@@ -1346,9 +1378,12 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: self.on_new_product_name_provided(name), 0)
 
     def on_new_product_name_provided(self, name):
+        settings = self.load_settings()
+        collaborator = settings.get(EI_COLLABORATOR_ID)
+
         # request a new product creation
         product, error = ImpCentral(self.env).create_product(
-            self.env.project_manager.get_access_token(), name)
+            self.env.project_manager.get_access_token(), name, collaborator)
         # handle possible errors, and force restart or show message dialog
         if self.check_imp_error(error,
             STR_FAILED_TO_CREATE_PRODUCT, STR_RETRY_CREATE_PRODUCT):
@@ -1358,48 +1393,123 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         self.update_settings(EI_DEVICE_GROUP_ID, None)
         self.on_action_complete()
 
-
-    def on_product_name_provided(self, index, names):
+    def on_product_name_provided(self, index, names, owner_id):
         # prevent wrong index which should never happened
-        if (index < 0 or index > len(names)):
+        if (index < 0 or index > (len(names) + 1)):
             return
+
+        if index != 1:
+            # save the collaborator id
+            if owner_id is not None and self.me.get("id") != owner_id:
+                self.update_settings(EI_COLLABORATOR_ID, owner_id)
 
         # Create new product
         if index == 0:
             # Handle a new product creation process
             self.on_create_new_product()
+        elif index == 1:
+            self.select_collaborator()
         else:
             # Save selected product in the settings file
-            self.update_settings(EI_PRODUCT_ID, names[index-1][0])
+            self.update_settings(EI_PRODUCT_ID, names[index-2][0])
             self.update_settings(EI_DEVICE_GROUP_ID, None)
+
             self.on_action_complete()
 
-    def select_existing_product(self):
+    def select_existing_product(self, collaborator=None):
         token = self.env.project_manager.get_access_token()
-        # get current account details
-        account, error = ImpCentral(self.env).account(token)
-        if self.check_imp_error(error,
-            STR_FAILED_TO_GET_ACCOUNT_DETAILS, STR_RETRY_SELECT_PRODUCT):
-            return
+        if collaborator is None:
+            # get current account details
+            account, error = ImpCentral(self.env).account(token)
+            if error:
+                if self.check_imp_error(error,
+                    STR_FAILED_TO_GET_ACCOUNT_DETAILS, STR_RETRY_SELECT_PRODUCT):
+                    return
+                self.select_existing_product()
+                return
+            self.me = account
+        else:
+            account = collaborator
 
-        products, error = ImpCentral(self.env).list_products(token, account["id"])
-        # Handle imp central request errors
-        if self.check_imp_error(error,
-            STR_FAILED_TO_GET_PRODUCTS, STR_RETRY_SELECT_PRODUCT):
+        if self.products is None:
+            # list products for all accounts
+            products, error = ImpCentral(self.env).list_products(token)
+
+            # Handle imp central request errors
+            if error:
+                if self.check_imp_error(error,
+                    STR_FAILED_TO_GET_PRODUCTS, STR_RETRY_SELECT_PRODUCT):
+                    return
+                self.select_existing_product(account)
+                return
+
+        self.products = products
+        self.show_product_list(account.get("id"))
+
+    def select_collaborator(self):
+        # user has one or more collaborators
+        if self.collaborators is None:
+            collaborators = []
+            token = self.env.project_manager.get_access_token()
+            # load the list of collaborators
+            collaborators, error = ImpCentral(self.env).collaborators(token)
+            if error:
+                if self.check_imp_error(error,
+                    STR_FAILED_TO_EXTRACT_COLLABORATORS, STR_RETRY_SELECT_PRODUCT):
+                    return
+                self.select_collaborator()
+                return
+            self.collaborators = collaborators
+
+        items = []
+        for c in self.collaborators:
+            attr = c.get("attributes")
+            if attr and attr.get("name"):
+                items.append(attr.get("name"))
+
+        self.window.show_quick_panel(items, lambda id: self.on_collaborator_selected(id, items))
+
+    def on_collaborator_selected(self, index, items):
+        # user selected nothing
+        if (index < 0 or index >= len(items)):
             return
+        c = self.collaborators[index]
+
+        # 1. TODO: Check if user could create product for the current collaborator
+        # token = self.env.project_manager.get_access_token()
+        # grants, error = ImpCentral(self.env).grants(token, c.get("id"))
+        # if error:
+        #     if not self.check_imp_error(error,
+        #        STR_FAILED_TO_EXTRACT_GRANTS.format(c.get("attributes").get("name")), STR_RETRY_SELECT_PRODUCT):
+        #        return
+        #     # retry the collaborator select process
+        #     self.select_collaborator()
+        #     return
+
+        # 2. prepare the list of products
+        self.show_product_list(c.get("id"))
+
+    def show_product_list(self, owner_id):
+        products = []
+        for item in self.products:
+            details = item["relationships"].get("owner")
+            if (details is not None):
+                if details["id"] == owner_id:
+                    products.append(item)
 
         # work-around for an absolutely new user
         # who do not have any products at all
         all_names = []
         details = []
         # check that response has some payload
-        if products and len(products) > 0:
+        if len(products) > 0:
             all_names = [str(product["attributes"]["name"]) for product in products]
             details = [(product["id"], str(product["attributes"]["name"])) for product in products]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_PRODUCT_CREATE_NEW ] + all_names, lambda id: self.on_product_name_provided(id, details))
-
+        self.window.show_quick_panel(
+            [ STR_PRODUCT_CREATE_NEW, STR_SELECT_COLLABORATOR ] + all_names,
+            lambda id: self.on_product_name_provided(id, details, owner_id))
 
 #
 # Check the device group or create a new one
@@ -1543,7 +1653,8 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
     def select_existing_device(self):
         devices, error = ImpCentral(self.env).list_devices(
-            self.env.project_manager.get_access_token())
+            self.env.project_manager.get_access_token(),
+            self.load_settings().get(EI_COLLABORATOR_ID))
 
         # Check that code is correct
         if self.check_imp_error(error,
@@ -1613,6 +1724,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # list devices for the current device group
         devices, error = ImpCentral(self.env).list_devices(
             self.env.project_manager.get_access_token(),
+            None, # owner is not required for unassign
             settings[EI_DEVICE_GROUP_ID])
 
         # Check that code is correct
@@ -1823,6 +1935,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         # list devices for the current device group
         devices, error = ImpCentral(self.env).list_devices(
             self.env.project_manager.get_access_token(),
+            None, # owner is not required
             settings[EI_DEVICE_GROUP_ID])
 
         # Check that code is correct
@@ -2320,7 +2433,8 @@ class LogManager:
         # on first connection and cache it for future
         if not self.poll_url:
             log_debug("Request devices")
-            devices, error = ImpCentral(self.env).list_devices(token, device_group_id)
+            devices, error = ImpCentral(self.env).list_devices(
+                token, None, device_group_id)
 
             # Suppose that there is no logs if there is no device
             if self.check_imp_error(error):
