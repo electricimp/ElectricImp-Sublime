@@ -517,10 +517,12 @@ class ImpCentral:
         return self.list_items(token, "devicegroups", filters)
 
     def list_devices(self, token, collaborator, device_group_id=None):
-        filters = {"devicegroup": device_group_id}
-        # TODO: for some reason it works even without collaborator. Figure out if we really need it.
-        # if collaborator is not None:
-        #     filters["owner"] = collaborator
+        filters = {}
+        if device_group_id is not None:
+            filters["devicegroup"] = device_group_id
+        elif collaborator is not None:
+            filters["owner"] = collaborator
+
         return self.list_items(token, "devices", filters)
 
     def list_items(self, token, interface, filters=None):
@@ -1656,10 +1658,10 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
     def select_existing_device(self):
+        # Get all available devices for the collaborator
         devices, error = ImpCentral(self.env).list_devices(
             self.env.project_manager.get_access_token(),
-            self.load_settings().get(EI_COLLABORATOR_ID),
-            self.load_settings().get(EI_DEVICE_GROUP_ID))
+            self.load_settings().get(EI_COLLABORATOR_ID))
 
         # Check that code is correct
         if self.check_imp_error(error,
