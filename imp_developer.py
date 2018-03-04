@@ -1671,11 +1671,13 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         if not devices or len(devices) == 0:
             sublime.message_dialog(STR_MESSAGE_DEVICE_LIST_EMPTY)
             return
-
+        print(devices)
         # check that response has some payload
         # response should contain the list of devices
         if len(devices) > 0:
-            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+            all_names = [(
+                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+                str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"].get("name"))) for device in devices]
             # make a new product creation option as a part of the product select menu
             self.window.show_quick_panel(all_names,
