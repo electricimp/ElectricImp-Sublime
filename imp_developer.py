@@ -517,10 +517,12 @@ class ImpCentral:
         return self.list_items(token, "devicegroups", filters)
 
     def list_devices(self, token, collaborator, device_group_id=None):
-        filters = {"devicegroup": device_group_id}
-        # TODO: for some reason it works even without collaborator. Figure out if we really need it.
-        # if collaborator is not None:
-        #     filters["owner"] = collaborator
+        filters = {}
+        if device_group_id is not None:
+            filters["devicegroup"] = device_group_id
+        elif collaborator is not None:
+            filters["owner"] = collaborator
+
         return self.list_items(token, "devices", filters)
 
     def list_items(self, token, interface, filters=None):
@@ -1656,10 +1658,10 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
     def select_existing_device(self):
+        # Get all available devices for the collaborator
         devices, error = ImpCentral(self.env).list_devices(
             self.env.project_manager.get_access_token(),
-            self.load_settings().get(EI_COLLABORATOR_ID),
-            self.load_settings().get(EI_DEVICE_GROUP_ID))
+            self.load_settings().get(EI_COLLABORATOR_ID))
 
         # Check that code is correct
         if self.check_imp_error(error,
@@ -1669,11 +1671,12 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         if not devices or len(devices) == 0:
             sublime.message_dialog(STR_MESSAGE_DEVICE_LIST_EMPTY)
             return
-
         # check that response has some payload
         # response should contain the list of devices
         if len(devices) > 0:
-            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+            all_names = [(
+                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+                str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"].get("name"))) for device in devices]
             # make a new product creation option as a part of the product select menu
             self.window.show_quick_panel(all_names,
@@ -1741,7 +1744,9 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # response should contain the list of devices
         if len(devices) > 0:
             # filter devices locally
-            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+            all_names = [(
+                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+                str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"]["name"])) for device in devices]
             # make a new product creation option as a part of the product select menu
             self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
@@ -1952,7 +1957,9 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         # response should contain the list of devices
         if len(devices) > 0:
             # filter devices locally
-            all_names = [(str(device["attributes"].get("mac_address")) + " - " +
+            all_names = [(
+                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+                str(device["attributes"].get("mac_address")) + " - " +
                 str(device["attributes"]["name"])) for device in devices]
             # make a new product creation option as a part of the product select menu
             if len(devices) == 1:
