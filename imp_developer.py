@@ -491,6 +491,7 @@ class ImpCentral:
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
+    # Note: it is not documented interface
     def collaborators(self, token):
         response, code = HTTP.get(token,
             self.url + "/accounts")
@@ -521,7 +522,8 @@ class ImpCentral:
         if device_group_id is not None:
             filters["devicegroup"] = device_group_id
         elif collaborator is not None:
-            filters["owner"] = collaborator
+            # Note: it is not documented interface
+            filters["account"] = collaborator
 
         return self.list_items(token, "devices", filters)
 
@@ -1602,13 +1604,25 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
         self.on_action_complete()
 
+class ImpSelectDeviceCommand(BaseElectricImpCommand):
+    def select_device_panel(self, devices, skip_for_single_device=False):
+        # filter devices locally
+        all_names = [(
+            str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+            str(device.get("id")) + " - " +
+            str(device["attributes"]["name"])) for device in devices]
+        # make a new product creation option as a part of the product select menu
+        if len(devices) == 1 and skip_for_single_device:
+            self.on_device_name_provided(0, devices)
+        else:
+            self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
 
 #
 # Request all registered devices and assign
 # one of that devices to the device group
 # Note: action should trigger logs restart
 #
-class ImpAssignDeviceCommand(BaseElectricImpCommand):
+class ImpAssignDeviceCommand(ImpSelectDeviceCommand):
 
     def action(self):
         sublime.set_timeout_async(lambda: self.select_existing_device(), 0)
@@ -1674,20 +1688,14 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         # check that response has some payload
         # response should contain the list of devices
         if len(devices) > 0:
-            all_names = [(
-                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
-                str(device["attributes"].get("mac_address")) + " - " +
-                str(device["attributes"].get("name"))) for device in devices]
-            # make a new product creation option as a part of the product select menu
-            self.window.show_quick_panel(all_names,
-                lambda id: self.on_device_name_provided(id, devices))
+            self.select_device_panel(devices)
 
 
 #
 # Un-Assign device from the
 # current device group
 #
-class ImpUnassignDeviceCommand(BaseElectricImpCommand):
+class ImpUnassignDeviceCommand(ImpSelectDeviceCommand):
 
     def action(self):
         self.select_existing_device()
@@ -1744,12 +1752,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # response should contain the list of devices
         if len(devices) > 0:
             # filter devices locally
-            all_names = [(
-                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
-                str(device["attributes"].get("mac_address")) + " - " +
-                str(device["attributes"]["name"])) for device in devices]
-            # make a new product creation option as a part of the product select menu
-            self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
+            self.select_device_panel(devices)
         else:
             sublime.message_dialog(STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP)
 
@@ -1913,13 +1916,7 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
 
-class ImpSelectDeviceCommand(BaseElectricImpCommand):
-
-    def action(self):
-        self.select_device()
-
-
-class ImpGetAgentUrlCommand(BaseElectricImpCommand):
+class ImpGetAgentUrlCommand(ImpSelectDeviceCommand):
 
     def action(self):
         self.select_existing_device()
@@ -1956,16 +1953,7 @@ class ImpGetAgentUrlCommand(BaseElectricImpCommand):
         # check that response has some payload
         # response should contain the list of devices
         if len(devices) > 0:
-            # filter devices locally
-            all_names = [(
-                str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
-                str(device["attributes"].get("mac_address")) + " - " +
-                str(device["attributes"]["name"])) for device in devices]
-            # make a new product creation option as a part of the product select menu
-            if len(devices) == 1:
-                self.on_device_name_provided(0, devices)
-            else:
-                self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
+            self.select_device_panel(devices, True)
         else:
             sublime.message_dialog(STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP)
 
