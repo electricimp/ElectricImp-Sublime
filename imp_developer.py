@@ -349,6 +349,7 @@ class HTTP:
 
     @staticmethod
     def do_request(key, url, method, data=None, timeout=None, headers=None):
+        log_debug("[HTTP] " + method + " " + url + " " + str(data))
         if data:
             data = data.encode('utf-8')
         req = urllib.request.Request(url,
@@ -1817,6 +1818,7 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
                 self.env.project_manager.get_access_token(), settings.get(EI_DEVICE_GROUP_ID))
 
             if self.check_imp_error(error, STR_FAILED_CONDITIONAL_RESTART, None):
+                log_debug("ERROR restarting devices: " + str(error))
                 return
         else:
             # {
@@ -2469,8 +2471,7 @@ class LogManager:
         # attach all devices from the device group to the logstream
         for device in self.devices:
             if (device and ("devicegroup" in device.get("relationships")) and
-                (device_group_id == device["relationships"]["devicegroup"]["id"])):
-
+                    (device_group_id == device["relationships"]["devicegroup"]["id"])):
                 response, error = ImpCentral(self.env).attach_device_to_log_stream(
                     token, self.poll_url, device["id"])
 
