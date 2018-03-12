@@ -18,10 +18,10 @@ STR_INVALID_API_KEY                  = "Build API key is invalid. Please try ano
 STR_AGENT_URL_COPIED                 = "The agent URL is copied into the clipboard:\n\n Device :  {}\n\n Url :  {}"
 STR_FAILED_TO_GET_LOGS               = "An error returned for logs request."
 
-STR_INVALID_CREDENTIALS              = "Invalid user name or password. Try again ?"
-STR_USER_ID                          = "Username"
-STR_PASSWORD                         = "Password"
-STR_PROVIDE_USER_ID                  = "Please sign-in to get an access to the ElectricImp environment"
+STR_INVALID_CREDENTIALS              = "Invalid user name or password. Please try again?"
+STR_USER_ID                          = "Username or email:"
+STR_PASSWORD                         = "Password:"
+STR_PROVIDE_USER_ID                  = "Please sign-in to get access to the Electric Imp environment"
 
 STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
 STR_PRODUCT_NAME                     = "Product name:"
