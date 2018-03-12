@@ -1079,6 +1079,18 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def reset_credentials(self):
         self.update_auth_settings(EI_ACCESS_TOKEN, None)
 
+    def select_device_panel(self, devices, skip_for_single_device=False):
+        # filter devices locally
+        all_names = [(
+            str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+            str(device.get("id")) + " - " +
+            str(device["attributes"]["name"])) for device in devices]
+        # make a new product creation option as a part of the product select menu
+        if len(devices) == 1 and skip_for_single_device:
+            self.on_device_name_provided(0, devices)
+        else:
+            self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
+
 
 #
 # Check that it is not an old version of plugin
@@ -1606,25 +1618,12 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
         self.on_action_complete()
 
-class ImpSelectDeviceCommand(BaseElectricImpCommand):
-    def select_device_panel(self, devices, skip_for_single_device=False):
-        # filter devices locally
-        all_names = [(
-            str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
-            str(device.get("id")) + " - " +
-            str(device["attributes"]["name"])) for device in devices]
-        # make a new product creation option as a part of the product select menu
-        if len(devices) == 1 and skip_for_single_device:
-            self.on_device_name_provided(0, devices)
-        else:
-            self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
-
 #
 # Request all registered devices and assign
 # one of that devices to the device group
 # Note: action should trigger logs restart
 #
-class ImpAssignDeviceCommand(ImpSelectDeviceCommand):
+class ImpAssignDeviceCommand(BaseElectricImpCommand):
 
     def action(self):
         sublime.set_timeout_async(lambda: self.select_existing_device(), 0)
@@ -1674,10 +1673,22 @@ class ImpAssignDeviceCommand(ImpSelectDeviceCommand):
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
     def select_existing_device(self):
-        # Get all available devices for the collaborator
-        devices, error = ImpCentral(self.env).list_devices(
-            self.env.project_manager.get_access_token(),
-            self.load_settings().get(EI_COLLABORATOR_ID))
+        settings = self.load_settings()
+
+        dg_id = settings.get(EI_DEVICE_GROUP_ID)
+        token = self.env.project_manager.get_access_token()
+        colid = self.load_settings().get(EI_COLLABORATOR_ID)
+
+        imp_central = ImpCentral(self.env)
+        devices, error = imp_central.list_devices(token, colid)
+        dg_devs, error = imp_central.list_devices(token, colid, dg_id)
+
+        # Subtract this device group's devices from the rest of the list...
+        for dg_device in dg_devs:
+            for d in devices:
+                if dg_device['id'] == d['id']:
+                    devices.remove(d)
+                    break
 
         # Check that code is correct
         if self.check_imp_error(error,
@@ -1697,7 +1708,7 @@ class ImpAssignDeviceCommand(ImpSelectDeviceCommand):
 # Un-Assign device from the
 # current device group
 #
-class ImpUnassignDeviceCommand(ImpSelectDeviceCommand):
+class ImpUnassignDeviceCommand(BaseElectricImpCommand):
 
     def action(self):
         self.select_existing_device()
