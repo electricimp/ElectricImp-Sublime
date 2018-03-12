@@ -23,7 +23,6 @@ STR_USER_ID                          = "Username or email:"
 STR_PASSWORD                         = "Password:"
 STR_PROVIDE_USER_ID                  = "Please sign-in to get access to the Electric Imp environment"
 
-STR_PRODUCT_PROVIDE_NAME             = "Please, provide a unique product name and description"
 STR_PRODUCT_NAME                     = "Product name:"
 STR_PRODUCT_SERVER_ERROR             = "Failed to extract product list"
 STR_PRODUCT_CREATE_NEW               = "> Create a new product ..."
