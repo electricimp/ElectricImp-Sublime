@@ -16,9 +16,7 @@ STR_FOLDER_EXISTS                    = "The folder {} already exists. Do you wan
 STR_BUILD_API_KEY                    = "Electric Imp Build API key:"
 STR_INVALID_API_KEY                  = "Build API key is invalid. Please try another one"
 STR_AGENT_URL_COPIED                 = "The agent URL is copied into the clipboard:\n\n Device :  {}\n\n Url :  {}"
-STR_NO_DEVICES_AVAILABLE             = "There are no other Imp devices registered in the system. Please register a new device and try again"
 STR_FAILED_TO_GET_LOGS               = "An error returned for logs request."
-STR_PROVIDE_BUILD_API_KEY            = "Please provide your Electric Imp Build API key. It can be found in the Developer Console (login into your account and click on the top right link with you user name and select \"Build API Keys\")"
 
 STR_INVALID_CREDENTIALS              = "Invalid user name or password. Try again ?"
 STR_USER_ID                          = "Username"
@@ -96,7 +94,8 @@ STR_FAILED_CODE_DEPLOY               = "Code deploy failed because of the error:
 STR_UNHANDLED_HTTP_ERROR             = "Unhanded http error: {}"
 STR_TRY_AGAIN                        = "Try again"
 
-STR_COULD_URL                        = "impCentral api url:"
+STR_PROVIDE_IMPCENTRAL_API_URL       = "Please provide the impCentral API URL"
+STR_IMPCENTRAL_API_URL               = "Electric Imp impCentral API URL:"
 STR_PLEASE_CHECK_URL                 = "Failed to request {} api, please check url"
 
 STR_MESSAGE_ASSIGN_DEVICE            = "There is no devices in current device group. Please assign some device to start logging."

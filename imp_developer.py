@@ -1119,7 +1119,7 @@ class ImpCheckOldVersionCommand(BaseElectricImpCommand):
             self.update_settings(EI_DEVICE_ID, None)
 
         # continue
-        self.on_action_complete();
+        self.on_action_complete()
 
 
 #
@@ -1214,7 +1214,8 @@ class ImpCheckCloudUrlCommand(BaseElectricImpCommand):
         self.prompt_could_url()
 
     def prompt_could_url(self):
-        self.window.show_input_panel(STR_COULD_URL, self.cloud, self.on_url_provided, None, None)
+        sublime.message_dialog(STR_PROVIDE_IMPCENTRAL_API_URL)
+        self.window.show_input_panel(STR_IMPCENTRAL_API_URL, self.cloud, self.on_url_provided, None, None)
 
     def on_url_provided(self, url):
         self.cloud = url
