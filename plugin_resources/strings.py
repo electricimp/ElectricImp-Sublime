@@ -111,3 +111,5 @@ STR_FAILED_TO_EXTRACT_COLLABORATORS   = "Failed to extract the list of collabora
 STR_FAILED_TO_EXTRACT_GRANTS          = "Failed to extract grants for the collaborator {}."
 STR_SELECT_COLLABORATOR               = "> Choose collaborator's project"
 STR_DEVICE_MOVING_FROM_CONFIRMATION   = "Do you really want to move the device from Product \"{}\", and Device Group \"{}\"?"
+STR_DEVICE_SUCCESSFULLY_ASSIGNED      = "Device was successfully assigned"
+STR_DEVICE_SUCCESSFULLY_UNASSIGNED    = "Device was successfully unassigned"

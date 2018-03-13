@@ -1672,10 +1672,11 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
             device["id"])
 
         # handle the respond
-        if self.check_imp_error(error,
-            STR_FAILED_TO_ASSIGN_DEVICE, None):
+        if self.check_imp_error(error, STR_FAILED_TO_ASSIGN_DEVICE, None):
             log_debug("Failed to add device to the group")
             return
+        else:
+            sublime.message_dialog(STR_DEVICE_SUCCESSFULLY_ASSIGNED)
 
         # Request log stream reset to add the devive to the log
         #
@@ -1755,6 +1756,8 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
             STR_RETRY_TO_REMOVE_DEVICE):
             log_debug("Failed to remove device from the group")
             return
+        else:
+            sublime.message_dialog(STR_DEVICE_SUCCESSFULLY_UNASSIGNED)
 
         # Request log stream reset to remove the device from the log
         # Note: push to the background thread to prevent concurrent access
