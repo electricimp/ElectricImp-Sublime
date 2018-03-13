@@ -529,21 +529,21 @@ class ImpCentral:
         return self.list_items(token, "devices", filters)
 
     def list_items(self, token, interface, filters=None):
-        dg_url = self.url + interface
-        # filter by group id or not
+        url = self.url + interface
 
+        # Apply filters
         filter_query = ""
         for key in filters:
             if filters[key]:
                 filter_query += 'filter[' + key + '.id]=' + filters[key]
         if len(filter_query) > 0:
-            dg_url += '?' + filter_query
+            url += '?' + filter_query
 
         log_debug(str(filters))
         items = []
-        while dg_url is not None:
+        while url is not None:
             # TODO: think about async reading or pagination
-            response, code = HTTP.get(token, url=dg_url)
+            response, code = HTTP.get(token, url=url)
             payload, error = self.handle_http_response(response, code)
 
             log_debug(str(payload) + " " + str(error))
@@ -553,12 +553,13 @@ class ImpCentral:
 
             # check that all devices has correct device group
             for item in payload:
+                log_debug(str(item))
                 items.append(item)
 
             # work-around for interface which has wrong 'next' value
             # for the last pagination page
             next_link = response["links"].get("next")
-            dg_url = None if next_link == dg_url else next_link
+            url = None if next_link == url else next_link
 
         return items, None
 
@@ -575,10 +576,14 @@ class ImpCentral:
         return payload, error
 
     def get_device(self, token, device_id):
-        response, code = HTTP.get(token,
-            self.url + "devices/" + device_id)
+        response, code = HTTP.get(token, self.url + "devices/" + device_id)
         payload, error = self.handle_http_response(response, code)
-        return response, error
+        return payload, error
+
+    def get_product(self, token, product_id):
+        response, code = HTTP.get(token, self.url + "products/" + product_id)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
 
     def create_product(self, token, product_name, collaborator):
         url = self.url + "products"
@@ -1087,9 +1092,9 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             str(device["attributes"]["name"])) for device in devices]
         # make a new product creation option as a part of the product select menu
         if len(devices) == 1 and skip_for_single_device:
-            self.on_device_name_provided(0, devices)
+            self.on_device_selected(0, devices)
         else:
-            self.window.show_quick_panel(all_names, lambda id: self.on_device_name_provided(id, devices))
+            self.window.show_quick_panel(all_names, lambda id: self.on_device_selected(id, devices))
 
 
 #
@@ -1618,6 +1623,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
         self.on_action_complete()
 
+
 #
 # Request all registered devices and assign
 # one of that devices to the device group
@@ -1628,7 +1634,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
     def action(self):
         sublime.set_timeout_async(lambda: self.select_existing_device(), 0)
 
-    def on_device_name_provided(self, index, devices):
+    def on_device_selected(self, index, devices):
         # prevent wrong index which
         # happen on cancel
         if (index < 0 or index >= len(devices)):
@@ -1645,9 +1651,20 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         #       if device was not assigned to any device group
         device_group = device["relationships"].get("devicegroup")
         if device_group and device_group["id"] == settings.get(EI_DEVICE_GROUP_ID):
+            log_debug("Hmm... should never have gotten to this point :(")
             # trigger restart if user assign the same device
             sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
             return
+
+        if device_group and device_group["id"] != settings.get(EI_DEVICE_GROUP_ID):
+            log_debug("Moving device from a different device group...")
+            token = self.env.project_manager.get_access_token()
+            d_group, error = ImpCentral(self.env).get_device_group(token, device_group["id"])
+            product, error = ImpCentral(self.env).get_product(token, d_group["relationships"]["product"]["id"])
+            d_group_name = d_group["attributes"]["name"]
+            product_name = product["attributes"]["name"]
+            if not sublime.ok_cancel_dialog(STR_DEVICE_MOVING_FROM_CONFIRMATION.format(product_name, d_group_name)):
+                return
 
         response, error = ImpCentral(self.env).assign_device(
             self.env.project_manager.get_access_token(),
@@ -1713,7 +1730,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
     def action(self):
         self.select_existing_device()
 
-    def on_device_name_provided(self, index, devices):
+    def on_device_selected(self, index, devices):
         # prevent wrong index which
         # happen on cancel
         if (index < 0 or index >= len(devices)):
@@ -1930,12 +1947,12 @@ class ImpShowConsoleCommand(BaseElectricImpCommand):
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
 
-class ImpGetAgentUrlCommand(ImpSelectDeviceCommand):
+class ImpGetAgentUrlCommand(BaseElectricImpCommand):
 
     def action(self):
         self.select_existing_device()
 
-    def on_device_name_provided(self, index, devices):
+    def on_device_selected(self, index, devices):
         # prevent wrong index which
         # happen on cancel
         if (index < 0 or index >= len(devices)):

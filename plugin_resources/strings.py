@@ -110,3 +110,4 @@ STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP= "There is no assigned devices in the curr
 STR_FAILED_TO_EXTRACT_COLLABORATORS   = "Failed to extract the list of collaborators."
 STR_FAILED_TO_EXTRACT_GRANTS          = "Failed to extract grants for the collaborator {}."
 STR_SELECT_COLLABORATOR               = "> Choose collaborator's project"
+STR_DEVICE_MOVING_FROM_CONFIRMATION   = "Do you really want to move the device from Product \"{}\", and Device Group \"{}\"?"
