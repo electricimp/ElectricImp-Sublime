@@ -539,21 +539,18 @@ class ImpCentral:
         if len(filter_query) > 0:
             url += '?' + filter_query
 
-        log_debug(str(filters))
         items = []
         while url is not None:
             # TODO: think about async reading or pagination
             response, code = HTTP.get(token, url=url)
             payload, error = self.handle_http_response(response, code)
 
-            log_debug(str(payload) + " " + str(error))
             # stop reading devices on http failure
             if error:
                 return response, error
 
             # check that all devices has correct device group
             for item in payload:
-                log_debug(str(item))
                 items.append(item)
 
             # work-around for interface which has wrong 'next' value
@@ -1653,7 +1650,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         if device_group and device_group["id"] == settings.get(EI_DEVICE_GROUP_ID):
             log_debug("Hmm... should never have gotten to this point :(")
             # trigger restart if user assign the same device
-            sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+            sublime.set_timeout_async(lambda: self.env.log_manager.reset(restart=True), 0)
             return
 
         if device_group and device_group["id"] != settings.get(EI_DEVICE_GROUP_ID):
@@ -1686,7 +1683,7 @@ class ImpAssignDeviceCommand(BaseElectricImpCommand):
         #       devices frequently
         # Note: push reset to the background thread to prevent
         #       concurrent access to the LogManager's fields
-        sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(restart=True), 0)
         # force log restart, but we need to reset current log first
         sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
@@ -1762,7 +1759,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
         # Request log stream reset to remove the device from the log
         # Note: push to the background thread to prevent concurrent access
         #       to the logManager's fields
-        sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(restart=True), 0)
         # force log restart, but we need to reset current log first
         if len(devices) > 1:
             sublime.set_timeout_async(lambda: update_log_windows(False), 0)
@@ -2304,6 +2301,12 @@ def plugin_loaded():
 
 class LogManager:
 
+    # Supported states
+    STATE_IDLE = 0
+    STATE_INIT = 1
+    STATE_POLL = 2
+    STATE_FAIL = 3
+
     def __init__(self, env):
         self.env = env
         self.poll_url = None
@@ -2311,41 +2314,36 @@ class LogManager:
         self.sock = None
         self.devices = []
         self.has_logs = False
-        # Supported states:
-        self.IDLE = 0
-        self.INIT = 1
-        self.POLL = 2
-        self.FAIL = 3
         # set initial state
-        self.state = self.IDLE
+        self.state = self.STATE_IDLE
         # prevent multiple requests when http is pending
         self.update_log_started = False
         # no timer on start-up
         self.keep_alive = None
 
     def start(self):
-        if self.state == self.IDLE:
-            self.state = self.INIT
+        if self.state == self.STATE_IDLE:
+            self.state = self.STATE_INIT
             self.write_to_console(STR_MESSAGE_LOG_STREAM_REQUESTED)
         else:
             log_debug("Unexpected log manger state")
 
-    def stop(self, is_restart=False):
-        if self.state == self.POLL:
-            if is_restart:
+    def stop(self, restart=False):
+        if self.state == self.STATE_POLL:
+            if restart:
                 self.write_to_console(STR_MESSAGE_LOG_STREAM_RESTART)
                 # set current state to idle
-                self.state = self.IDLE
+                self.state = self.STATE_IDLE
                 # and then trigger log start
                 sublime.set_timeout_async(lambda: update_log_windows(False), 0)
                 return
             # stop logs
             self.write_to_console(STR_MESSAGE_LOG_STREAM_STOPPED)
-        elif self.state == self.INIT:
+        elif self.state == self.STATE_INIT:
             self.write_to_console(STR_MESSAGE_LOG_STREAM_NOT_STARTED)
 
         # change current state depends on initial
-        self.state = self.IDLE
+        self.state = self.STATE_IDLE
     #
     def check_imp_error(self, error):
         if not error:
@@ -2512,7 +2510,7 @@ class LogManager:
 
         log_debug("Logstream subscription done, start polling")
 
-        self.state = self.POLL
+        self.state = self.STATE_POLL
         self.write_to_console(STR_MESSAGE_LOG_STREAM_STARTED)
 
         start = None
@@ -2533,7 +2531,13 @@ class LogManager:
         def __update_logs():
             self.update_log_started = True
 
-            logs_json = self.query_logs()
+            try:
+                logs_json = self.query_logs()
+            except Exception as exc:
+                log_debug("An error query logs occurred")
+                log_debug(str(exc))
+                return
+
             # no logs available
             if not logs_json:
                 self.reset()
@@ -2558,6 +2562,7 @@ class LogManager:
 
                 self.write_to_console(log, False)
                 self.last_shown_log = log
+
             self.update_log_started = False
 
         if not self.update_log_started:
@@ -2619,7 +2624,7 @@ class LogManager:
             item["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
             + " [" + item["device"] + "] " + item["type"] + " " + item["message"])
 
-    def reset(self, is_restart=False):
+    def reset(self, restart=False):
         # this action should force to close the log stream
         # but on the next request of logs stream should be
         # instantiated
@@ -2635,7 +2640,7 @@ class LogManager:
         # stop timer
         self.keep_alive = None
         # reset current state to idle
-        self.stop(is_restart)
+        self.stop(restart)
 
 
 def update_log_windows(restart_timer=True):
@@ -2652,12 +2657,12 @@ def update_log_windows(restart_timer=True):
                 continue
 
             # there are two use-cases when it is possible to get logs
-            # on first start on transition from (IDLE -> INIT -> POLL)
+            # on first start on transition from (STATE_IDLE -> STATE_INIT -> STATE_POLL)
             # and on  POLL
-            if env.log_manager.state == env.log_manager.POLL:
+            if env.log_manager.state == env.log_manager.STATE_POLL:
                 env.log_manager.update_logs()
                 has_logs = True
-            elif env.log_manager.state == env.log_manager.IDLE and not restart_timer:
+            elif env.log_manager.state == env.log_manager.STATE_IDLE and not restart_timer:
                 env.log_manager.start()
                 env.log_manager.update_logs()
                 has_logs = True
