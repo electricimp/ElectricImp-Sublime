@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright 2016-2017 Electric Imp
+# Copyright 2016-2018 Electric Imp
 #
 # SPDX-License-Identifier: MIT
 #
@@ -27,13 +27,13 @@ import datetime
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import urllib.request
 import urllib.parse
 import urllib.error
 import socket
+import select
 
 import sublime
 import sublime_plugin
@@ -46,18 +46,22 @@ from .plugin_resources.node_locator import NodeLocator
 from .modules.Sublime_AdvancedNewFile_1_0_0.advanced_new_file.commands import AdvancedNewFileNew
 
 # Generic plugin constants
-PL_BUILD_API_URL_BASE    = "https://build.electricimp.com"
-PL_BUILD_API_URL_V4      = PL_BUILD_API_URL_BASE + "/v4/"
-PL_SETTINGS_FILE         = "ImpDeveloper.sublime-settings"
-PL_DEBUG_FLAG            = "debug"
-PL_AGENT_URL             = "https://agent.electricimp.com/{}"
-PL_WIN_PROGRAMS_DIR_32   = "C:\\Program Files (x86)\\"
-PL_WIN_PROGRAMS_DIR_64   = "C:\\Program Files\\"
-PL_ERROR_REGION_KEY      = "electric-imp-error-region-key"
-PL_MODEL_STATUS_KEY      = "model-status-key"
-PL_PLUGIN_STATUS_KEY     = "plugin-status-key"
-PL_LONG_POLL_TIMEOUT     = 5 # sec
-PL_LOGS_UPDATE_PERIOD    = 1000 # ms
+PL_IMPCENTRAL_API_URL_BASE  = "https://api.electricimp.com"
+PL_IMPCENTRAL_API_URL_V5    = PL_IMPCENTRAL_API_URL_BASE + "/v5/"
+PL_SETTINGS_FILE            = "ImpDeveloper.sublime-settings"
+PL_DEBUG_FLAG               = "debug"
+PL_AGENT_URL                = "https://agent.electricimp.com/{}"
+PL_WIN_PROGRAMS_DIR_32      = "C:\\Program Files (x86)\\"
+PL_WIN_PROGRAMS_DIR_64      = "C:\\Program Files\\"
+PL_ERROR_REGION_KEY         = "electric-imp-error-region-key"
+PL_ACTION_STATUS_KEY        = "action-status-key"
+PL_PRODUCT_STATUS_KEY       = "product-status-key"
+PL_PLUGIN_STATUS_KEY        = "plugin-status-key"
+PL_KEEP_ALIVE_TIMEOUT       = 60 # impCentral api timeout is 30 seconds
+PL_LONG_POLL_TIMEOUT        = 5  # sec
+PL_LOGS_UPDATE_LONG_PERIOD  = 1000 # ms - waiting for log start command
+PL_LOGS_UPDATE_SHORT_PERIOD = 300  # ms - polling logs
+PL_LOGS_MAX_PER_REQUEST     = 30   # maximum logs to read per request
 
 # Electric Imp project specific constants
 PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
@@ -74,18 +78,39 @@ PR_AGENT_FILE_NAME       = "agent.nut"
 PR_PREPROCESSED_PREFIX   = "preprocessed."
 
 # Electric Imp settings and project properties
-EI_BUILD_API_KEY         = "build-api-key"
-EI_MODEL_ID              = "model-id"
-EI_MODEL_NAME            = "model-name"
-EI_DEVICE_FILE           = "device-file"
-EI_AGENT_FILE            = "agent-file"
-EI_DEVICE_ID             = "device-id"
-EI_BUILDER_SETTINGS      = "builder-settings"
-EI_ST_PR_NODE_PATH       = "node_path"
-EI_ST_PR_BUILDER_CLI     = "builder_cli_path"
-EI_GITHUB_USER           = "github-user"
-EI_GITHUB_TOKEN          = "github-token"
-EI_VARIABLE_DEFINES      = "variable-definitions"
+EI_CLOUD_URL                = "cloud-url"
+EI_COLLABORATOR_ID          = "collaborator-id"
+EI_BUILD_API_KEY            = "builder-key"
+EI_MODEL_ID                 = "model-id"
+EI_MODEL_NAME               = "model-name"
+EI_DEVICE_ID                = "device-id"
+EI_LOGIN_KEY                = "login-key"
+EI_ACCESS_TOKEN             = "access-token"
+EI_ACCESS_TOKEN_VALUE       = "access-token-value"
+EI_ACCESS_TOKEN_EXPIRES_AT  = "access-token-expires"
+EI_REFRESH_TOKEN            = "refresh-token"
+EI_PRODUCT_ID               = "product-id"
+EI_DEVICE_GROUP_ID          = "device-group-id"
+EI_DEPLOYMENT_ID            = "deployment-id"
+
+EI_DEPLOYMENT_NEW           = "deployment-new"
+
+EI_DEVICE_FILE              = "device-file"
+EI_AGENT_FILE               = "agent-file"
+
+EI_DEVICE_ID                = "device-id"
+EI_BUILDER_SETTINGS         = "builder-settings"
+EI_ST_PR_NODE_PATH          = "node_path"
+EI_ST_PR_BUILDER_CLI        = "builder_cli_path"
+EI_GITHUB_USER              = "github-user"
+EI_GITHUB_TOKEN             = "github-token"
+EI_VARIABLE_DEFINES         = "variable-definitions"
+
+# impCentral values mapping
+IMPC_EXPIRES_AT    = "expires_at"
+IMPC_ACCESS_TOKEN  = "access_token"
+IMPC_REFRESH_TOKEN = "refresh_token"
+IMPC_DATA_FORMAT   = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 # Global variables
 plugin_settings = None
@@ -93,7 +118,7 @@ project_env_map = {}
 
 
 class ProjectManager:
-    """Electric Imp project specific fuctionality"""
+    """Electric Imp project specific functionality"""
 
     def __init__(self, window):
         self.window = window
@@ -129,20 +154,45 @@ class ProjectManager:
         if path and os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 return json.load(f)
+        return {}
 
     def load_settings(self):
         return self.load_settings_file(PR_SETTINGS_FILE)
 
-    def get_build_api_key(self):
-        auth_info = self.load_settings_file(PR_AUTH_INFO_FILE)
+    def load_auth_settings(self):
+        return self.load_settings_file(PR_AUTH_INFO_FILE)
+
+    def get_access_token_set(self):
+        auth_info = self.load_auth_settings()
         if auth_info:
-            return auth_info.get(EI_BUILD_API_KEY)
+            return auth_info.get(EI_ACCESS_TOKEN)
+
+    def get_access_token(self):
+        auth_info = self.load_auth_settings()
+        if auth_info:
+            token = auth_info.get(EI_ACCESS_TOKEN)
+            if token and EI_ACCESS_TOKEN_VALUE in token:
+                return token[EI_ACCESS_TOKEN_VALUE]
+
+        return None
+
+    def get_refresh_token(self):
+        auth_info = self.load_auth_settings()
+        if auth_info:
+            token = auth_info.get(EI_ACCESS_TOKEN)
+            if token and EI_REFRESH_TOKEN in token:
+                return token[EI_REFRESH_TOKEN]
+
+        return None
 
     def get_github_auth_info(self):
         auth_info = self.load_settings_file(PR_AUTH_INFO_FILE)
-        builder_settings = auth_info[EI_BUILDER_SETTINGS]
-        if auth_info:
-            return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
+        if auth_info and EI_BUILDER_SETTINGS in auth_info:
+            builder_settings = auth_info[EI_BUILDER_SETTINGS]
+            if builder_settings and EI_GITHUB_USER in builder_settings and EI_GITHUB_TOKEN in builder_settings:
+                return builder_settings[EI_GITHUB_USER], builder_settings[EI_GITHUB_TOKEN]
+
+        return None, None
 
     def get_project_directory_path(self):
         return os.path.dirname(self.window.project_file_name())
@@ -174,11 +224,7 @@ class Env:
         self.log_manager = LogManager(self)
 
         # Temp variables
-        self.tmp_model = None
         self.tmp_device_ids = None
-
-        # Check settings callback
-        self.tmp_check_settings_callback = None
 
     @staticmethod
     def For(window):
@@ -212,9 +258,6 @@ class UIManager:
     def create_new_console(self):
         env = Env.For(self.window)
         env.terminal = self.window.get_output_panel("textarea")
-
-        # plugin_name = os.path.basename(os.path.dirname(os.path.realpath(__file__)))
-        # env.terminal.set_syntax_file(os.path.join("Packages", plugin_name, "syn tax", "logs.tmLanguage"))
 
         env.log_manager.poll_url = None
         env.log_manager.last_shown_log = None
@@ -250,6 +293,14 @@ class UIManager:
         for v in views:
             v.erase_status(key)
 
+    def show_action_value_in_status(self, status, action_name, formatted_string):
+        env = Env.For(self.window)
+        if action_name:
+            env.ui_manager.set_status_message(
+                status, formatted_string.format(action_name))
+        else:
+            env.ui_manager.erase_status_message(status)
+
     def show_settings_value_in_status(self, property_name, status_key, formatted_string):
         env = Env.For(self.window)
         settings = env.project_manager.load_settings()
@@ -264,6 +315,22 @@ class UIManager:
             log_debug("Property \"" + property_name + "\" is not found in the settings")
 
 
+class HttpHeaders():
+
+    DEFAULT_HEADERS = {
+        "Content-Type": "application/vnd.api+json",
+        "User-Agent": "imp-developer/sublime"
+    }
+    STREAM_HEADERS = {
+        "Content-Type": "text/event-stream",
+        "User-Agent": "imp-developer/sublime"
+    }
+    AUTH_HEADERS = {
+        "Content-Type": "application/json",
+        "User-Agent": "imp-developer/sublime"
+    }
+
+
 class HTTP:
     """Implementation of all the Electric Imp connection functionality"""
 
@@ -272,58 +339,419 @@ class HTTP:
         return base64.b64encode(str.encode()).decode()
 
     @staticmethod
-    def __get_http_headers(key):
-        return {
-            "Authorization": "Basic " + HTTP.__base64_encode(key),
-            "Content-Type": "application/json",
-            "User-Agent": "imp-developer/sublime"
-        }
+    def get_http_headers(key, headers):
+        if not headers:
+            headers = {}
+        if key:
+            headers["Authorization"] = "Bearer " + key
+
+        return headers
 
     @staticmethod
-    def is_build_api_key_valid(key):
-        request, code = HTTP.get(key, PL_BUILD_API_URL_V4 + "models")
-        return code == 200
-
-    @staticmethod
-    def do_request(key, url, method, data=None, timeout=None):
+    def do_request(key, url, method, data=None, timeout=None, headers=None):
+        log_debug("[HTTP] " + method + " " + url + " " + str(data))
         if data:
             data = data.encode('utf-8')
         req = urllib.request.Request(url,
-                                     headers=HTTP.__get_http_headers(key),
+                                     headers=HTTP.get_http_headers(key, headers),
                                      data=data,
                                      method=method)
 
         result, code = None, None
         try:
-            res = urllib.request.urlopen(req, timeout=timeout)
+            res = urllib.request.urlopen(req, timeout=None)
             code = res.getcode()
-            result = json.loads(res.read().decode('utf-8'))
+            pl = res.read().decode('utf-8')
+            if pl:
+                result = json.loads(pl)
         except socket.timeout:
             log_debug("Timeout error occurred for URL: " + url)
             result = code
         except urllib.error.HTTPError as err:
             code = err.code
             result = json.loads(err.read().decode('utf-8'))
+        except urllib.error.URLError as err:
+            code = 404
+            result = {"error": err.reason}
+        except urllib.error.ContentTooShortError:
+            code = 404
+            result = {"error": STR_FAILED_TOO_SHORT_CONTENT}
+
         return result, code
 
     @staticmethod
-    def get(key, url, timeout=None):
-        return HTTP.do_request(key, url, "GET", timeout=timeout)
+    def get(key, url, timeout=None, data=None, headers=HttpHeaders.DEFAULT_HEADERS):
+        return HTTP.do_request(key, url, "GET", timeout=timeout, data=data, headers=headers)
 
     @staticmethod
-    def post(key, url, data=None):
-        return HTTP.do_request(key, url, "POST", data)
+    def post(key, url, data=None, headers=HttpHeaders.DEFAULT_HEADERS):
+        return HTTP.do_request(key, url, "POST", data, headers=headers)
 
     @staticmethod
-    def put(key, url, data=None):
-        return HTTP.do_request(key, url, "PUT", data)
+    def put(key, url, data=None, headers=HttpHeaders.DEFAULT_HEADERS):
+        return HTTP.do_request(key, url, "PUT", data, headers=headers)
+
+    @staticmethod
+    def delete(key, url, data=None, headers=HttpHeaders.DEFAULT_HEADERS):
+        return HTTP.do_request(key, url, "DELETE", data, headers=headers)
 
     @staticmethod
     def is_response_code_valid(code):
-        return code in [200, 201, 202]
+        return code in [200, 201, 202, 204]
 
+    @staticmethod
+    def is_invalid_credentials(code, response):
+        if code in [401]:
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # it is possible to get more than one error
+                # but usually it is only one error
+                for error in errors:
+                    if (error.get("title") in ["Invalid Credentials"]
+                        or error.get("code") == "PX100"):
+                        return True
+        return False
+
+    @staticmethod
+    def is_wrong_input(code, response):
+        if code in [400, 409]:
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # it is possible to get more than one error
+                # but usually it is only one error
+                for error in errors:
+                    if error.get("detail"):
+                        return error.get("detail"), error.get("title")
+        return None, None
+
+    @staticmethod
+    def is_failure_request(response, code):
+        failure = None
+        if not HTTP.is_response_code_valid(code):
+            if code == 404:
+                return STR_FAILED_RESOURCE_NOT_AVAILABLE
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # take only first error to show
+                failure = errors[0]["detail"]
+        # return the failure message
+        return failure
+
+    @staticmethod
+    def get_compile_errors(code, response):
+        compile_errors = []
+        if code in [400]:
+            errors = response.get("errors")
+            if errors and len(errors) > 0:
+                # it is possible to get more than one error
+                # but usually it is only one error
+                for error in errors:
+                    if (error.get("title") == 'Compilation Error' or
+                        error.get("code") == "CX005"):
+                        # usually there is no more then one compile error
+                        compile_errors.append(error)
+                if len(compile_errors) > 0:
+                    return compile_errors, 'Compilation Error'
+        return None, None
+
+
+class ImpRequest():
+
+    INVALID_CREDENTIALS = 1
+    WRONG_INPUT = 2
+    COMPILE_FAIL = 3
+    FAILURE = 4
+
+
+class ImpCentral:
+
+    def __init__(self, env):
+        settings = env.project_manager.load_settings()
+        self.url = settings.get(EI_CLOUD_URL)
+
+    def auth(self, user_name, password):
+        url = self.url + "auth"
+        response, code = HTTP.post(None, url,
+            '{"id": "' + user_name + '", "password": "' + password + '"}',
+            headers=HttpHeaders.AUTH_HEADERS)
+
+        payload, error = self.handle_http_response(response, code)
+        return response, error
+
+    def refresh_access_token(self, refresh_token):
+        response, code = HTTP.post(None,
+            self.url + "/auth/token",
+            '{"token": "' + refresh_token + '"}',
+            headers=HttpHeaders.AUTH_HEADERS)
+        payload, error = self.handle_http_response(response, code)
+        return response, error
+
+    def account(self, token, owner="me"):
+        response, code = HTTP.get(token,
+            self.url + "/accounts/" + owner)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    # Note: it is not documented interface
+    def collaborators(self, token):
+        response, code = HTTP.get(token,
+            self.url + "/accounts")
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def capabilities(self, token, owner):
+        response, code = HTTP.get(token,
+            self.url + "/accounts/" + owner + "/capabilities")
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def list_products(self, token, owner_id=None):
+        # list all products with owner_id
+        filters = {}
+        if owner_id is not None:
+            filters["owner"] = owner_id
+
+        # list all products
+        return self.list_items(token, "products", filters)
+
+    def list_device_groups(self, token, product_id):
+        filters = {"product": product_id}
+        return self.list_items(token, "devicegroups", filters)
+
+    def list_devices(self, token, collaborator, device_group_id=None):
+        filters = {}
+        if device_group_id is not None:
+            filters["devicegroup"] = device_group_id
+        elif collaborator is not None:
+            # Note: it is not documented interface
+            filters["account"] = collaborator
+
+        return self.list_items(token, "devices", filters)
+
+    def list_items(self, token, interface, filters=None):
+        url = self.url + interface
+
+        # Apply filters
+        filter_query = ""
+        for key in filters:
+            if filters[key]:
+                filter_query += 'filter[' + key + '.id]=' + filters[key]
+        if len(filter_query) > 0:
+            url += '?' + filter_query
+
+        items = []
+        while url is not None:
+            # TODO: think about async reading or pagination
+            response, code = HTTP.get(token, url=url)
+            payload, error = self.handle_http_response(response, code)
+
+            # stop reading devices on http failure
+            if error:
+                return response, error
+
+            # check that all devices has correct device group
+            for item in payload:
+                items.append(item)
+
+            # work-around for interface which has wrong 'next' value
+            # for the last pagination page
+            next_link = response["links"].get("next")
+            url = None if next_link == url else next_link
+
+        return items, None
+
+    def get_device_group(self, token, device_group_id):
+        url = self.url + "devicegroups/" + device_group_id
+        response, code = HTTP.get(token, url=url)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def get_deployment(self, token, deployment_id):
+        url = self.url + "deployments/" + deployment_id
+        response, code = HTTP.get(token, url=url)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def get_device(self, token, device_id):
+        response, code = HTTP.get(token, self.url + "devices/" + device_id)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def get_product(self, token, product_id):
+        response, code = HTTP.get(token, self.url + "products/" + product_id)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def create_product(self, token, product_name, collaborator):
+        url = self.url + "products"
+        payload = {
+            "data": {
+                "type": "product",
+                "attributes": {
+                    "name": product_name,
+                    "description": STR_PRODUCT_DESCRIPTION
+                }
+            }
+        }
+        if collaborator is not None:
+            payload["data"]["relationships"] = {
+                "owner": {
+                    "type": "account",
+                    "id": collaborator
+                }
+            }
+        data = json.dumps(payload)
+        response, code = HTTP.post(token, url, data, headers=HttpHeaders.DEFAULT_HEADERS)
+
+        payload, error = self.handle_http_response(response, code)
+
+        return payload, error
+
+    def create_device_group(self, token, product_id, device_group_name):
+        url = self.url + "devicegroups"
+        data = json.dumps({
+            "data": {
+                "type": "development_devicegroup",
+                "attributes": {
+                    "name": device_group_name,
+                    "description": STR_DEVICE_GROUP_DESCRIPTION
+                },
+                "relationships": {
+                    "product": {
+                        "type": "product",
+                        "id": product_id
+                    }
+                }
+            }})
+
+        response, code = HTTP.post(token, url, data)
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def create_log_stream(self, token):
+        response, code = HTTP.post(token,
+            url=self.url + "logstream")
+        payload, error = self.handle_http_response(response, code)
+        return payload, error
+
+    def attach_device_to_log_stream(self, token, log_stream_id, device_id):
+        response, code = HTTP.put(token,
+            url=self.url + "logstream/" + log_stream_id + "/" + device_id,
+            data="{}")
+        payload, error = self.handle_http_response(response, code)
+        # Note: response in None in that case
+        return response, error
+
+
+    def open_log_stream(self, token, log_stream_id):
+        response = None
+        url = self.url + "logstream/" + log_stream_id
+        headers = HTTP.get_http_headers(token, HttpHeaders.STREAM_HEADERS)
+        # open socket to start polling
+        request = urllib.request.Request(
+            url=url, headers=headers, method="GET")
+        try:
+            response = urllib.request.urlopen(request, timeout=None)
+        except socket.timeout:
+            # open url timeout
+            response = None
+        except urllib.error.HTTPError:
+            # - handle expired access token
+            # - no Internet connection
+            response = None
+        if not response:
+            response = None
+
+        return response
+
+    def create_deployment(self, token, device_group_id, agent_code, device_code):
+        url = self.url + "deployments"
+        data = ('{"data": {"type": "deployment",'
+              ' "attributes": {'
+              '  "description": "' + STR_DEPLOYMENT_DESCRIPTION + '"'
+              ', "origin": "sublime"'
+              ', "tags": []'
+              ', "agent_code": ' + json.dumps(agent_code) +
+              ', "device_code": ' + json.dumps(device_code) +
+              '},'
+              '"relationships": {"devicegroup": {'
+              ' "type": "development_devicegroup", "id": "' + device_group_id + '"}}'
+              ' }}')
+        # create a new deployment
+        response, code = HTTP.post(token, url=url, data=data)
+        return self.handle_http_response(response, code)
+
+    def assign_device(self, token, device_group_id, device_id):
+        url = self.url + "devicegroups/" + device_group_id + "/relationships/devices"
+        data = json.dumps({
+                "data": [{
+                    "type": "device",
+                    "id": device_id
+                }]
+            })
+
+        response, code = HTTP.post(token, url, data)
+        payload, error = self.handle_http_response(response, code)
+        return response, error
+
+    def unassign_device(self, token, device_group_id, device_id):
+        url = self.url + "devicegroups/" + device_group_id + "/relationships/devices"
+        data = json.dumps({
+                "data": [{
+                    "type": "device",
+                    "id": device_id
+                }]
+            })
+        # Append the selected device to the device group
+        response, code = HTTP.delete(token, url, data)
+
+        payload, error = self.handle_http_response(response, code)
+        return response, error
+
+    def conditional_restart(self, token, device_group_id):
+        url = self.url + "devicegroups/" + device_group_id + "/conditional_restart"
+        response, code = HTTP.post(token, url)
+
+        payload, error = self.handle_http_response(response, code)
+        return response, error
+
+    def is_valid_api_path(self, url):
+        self.url = url
+        payload, error = self.account("")
+        return error.get("code") == ImpRequest.INVALID_CREDENTIALS
+
+    def handle_http_response(self, response, code):
+        if HTTP.is_response_code_valid(code):
+            if response is not None:
+                return response.get("data"), None
+            return response, None
+
+        # Handle invalid credentials use-case
+        if HTTP.is_invalid_credentials(code, response):
+            return response.get("errors"), {"code": ImpRequest.INVALID_CREDENTIALS, "error": "Invalid Credentials"}
+
+        # the compile errors has the same http code as wrong resource
+        # therefore it is necessary to check them first
+        errors, message = HTTP.get_compile_errors(code, response)
+        if errors is not None and len(errors) > 0:
+            return response.get("errors"), {"code": ImpRequest.COMPILE_FAIL, "errors": errors, "message": message}
+
+        # handle wrong input use-case
+        error, title = HTTP.is_wrong_input(code, response)
+        if error:
+            # offer for the user to re-try current action
+            return response.get("errors"), {"code": ImpRequest.WRONG_INPUT, "message": error}
+
+        # Handle failure use-case
+        failure = HTTP.is_failure_request(response, code)
+        if failure:
+            return response.get("errors"), {"code": ImpRequest.FAILURE, "message": failure}
+
+        return response.get("errors"), {"code": ImpRequest.FAILURE,
+            "message": STR_UNHANDLED_HTTP_ERROR.format(str(code))}
 
 class SourceType():
+
     AGENT = 0
     DEVICE = 1
 
@@ -484,13 +912,15 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
 
         node_locator = NodeLocator(sublime.platform())
         node_path = node_locator.get_node_path()
-        if (EI_ST_PR_NODE_PATH not in builder_settings or node_path != builder_settings[EI_ST_PR_NODE_PATH]) \
+        if (EI_ST_PR_NODE_PATH not in builder_settings
+            or node_path != builder_settings[EI_ST_PR_NODE_PATH]) \
                 and os.path.exists(node_path):
             settings_updated = True
             builder_settings[EI_ST_PR_NODE_PATH] = node_path
 
         builder_cli_path = node_locator.get_builder_cli_path()
-        if (EI_ST_PR_BUILDER_CLI not in builder_settings or builder_cli_path != builder_settings[EI_ST_PR_BUILDER_CLI]) \
+        if (EI_ST_PR_BUILDER_CLI not in builder_settings
+            or builder_cli_path != builder_settings[EI_ST_PR_BUILDER_CLI]) \
                 and os.path.exists(builder_cli_path):
             settings_updated = True
             builder_settings[EI_ST_PR_BUILDER_CLI] = builder_cli_path
@@ -501,43 +931,227 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
     def load_settings(self):
         return self.env.project_manager.load_settings()
 
-    def check_settings(self, callback=None, selecting_or_creating_model=None):
+    def load_auth_settings(self):
+        return self.env.project_manager.load_auth_settings()
+
+    def on_action_complete(self, canceled=False):
+        if not canceled and self.cmd_on_complete is not None:
+            self.window.run_command(self.cmd_on_complete)
+
+    def run(self, cmd_on_complete=None):
+        self.init_env_and_settings()
+        self.env.ui_manager.init_tty()
+        self.cmd_on_complete = cmd_on_complete
+
         # Setup pending callback
-        if callback:
-            self.env.tmp_check_settings_callback = callback
-        else:
-            callback = getattr(self.env, "tmp_check_settings_callback", None)
+        if cmd_on_complete:
+            # prevent an infinite loop in case of error
+            if cmd_on_complete == self.name():
+                return
+            # perform command on completion
+            self.action()
+            return
 
-        if selecting_or_creating_model is not None:
-            self.env.tmp_selecting_or_creating_model = selecting_or_creating_model
-        else:
-            selecting_or_creating_model = getattr(self.env, "tmp_selecting_or_creating_model", None)
+        commands = [
+            {"command": "imp_check_old_version", "method": ImpCheckOldVersionCommand.check},
+            {"command": "imp_check_nodejs_path", "method": ImpCheckNodejsPathCommand.check},
+            {"command": "imp_check_builder_path", "method": ImpCheckBuilderPathCommand.check},
+            {"command": "imp_check_cloud_url", "method": ImpCheckCloudUrlCommand.check},
+            {"command": "imp_auth", "method": ImpAuthCommand.check},
+            {"command": "imp_refresh_token", "method": ImpRefreshTokenCommand.check},
+            {"command": "imp_create_new_product", "method": ImpCreateNewProductCommand.check},
+            {"command": "imp_create_new_device_group", "method": ImpCreateNewDeviceGroupCommand.check},
+            {"command": "imp_load_code", "method": ImpLoadCodeCommand.check}]
 
-        key = self.env.project_manager.get_build_api_key()
+        for x in commands:
+            self.show_action_status(x["command"])
+            if x["command"] == self.name():
+                break
 
-        # Perform the checks and prompts for appropriate settings
-        if self.is_missing_node_js_path():
-            self.prompt_for_node_js_path()
-        elif self.is_missing_builder_cli_path():
-            self.prompt_for_builder_cli_path()
-        elif not key or not HTTP.is_build_api_key_valid(key):
-            self.prompt_for_build_api_key()
-        elif not selecting_or_creating_model and self.is_missing_model():
-            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
-        else:
-            # All the checks passed, invoke the callback now
-            if callback:
-                callback()
-            self.env.tmp_check_settings_callback = None
-            self.env.tmp_selecting_or_creating_model = None
+            if not x["method"](self):
+                self.window.run_command(x["command"], {"cmd_on_complete": self.name()})
+                return
+        # perform an action of the current command
+        self.show_action_status(self.name())
+        self.action()
+        self.show_action_status()
 
-    def is_missing_node_js_path(self):
+    def update_settings(self, index, value):
         settings = self.load_settings()
-        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
-        return EI_ST_PR_NODE_PATH not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_NODE_PATH])
+        # remove element from the configuration
+        if value is None and index in settings:
+            del settings[index]
+        else:
+            settings[index] = value
+        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
 
-    def prompt_for_node_js_path(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_NODE_JS_PATH): return
+    def update_auth_settings(self, index, value):
+        settings = self.load_auth_settings()
+        # remove element from the configuration
+        if value is None and index in settings:
+            del settings[index]
+        else:
+            settings[index] = value
+        # save an update settings
+        self.env.project_manager.save_settings(PR_AUTH_INFO_FILE, settings)
+
+    def print_to_tty(self, text):
+        env = Env.For(self.window)
+        if env:
+            self.env.ui_manager.write_to_console(text)
+        else:
+            print(STR_ERR_CONSOLE_NOT_FOUND.format(text))
+
+    def is_enabled(self):
+        return ProjectManager.is_electric_imp_project_window(self.window)
+
+    def update_status_message(self, query_data=True):
+        self.env.ui_manager.show_settings_value_in_status(
+            EI_PRODUCT_ID, PL_PRODUCT_STATUS_KEY, STR_STATUS_ACTIVE_PRODUCT)
+
+    def show_action_status(self, action=None):
+        self.env.ui_manager.show_action_value_in_status(
+            PL_ACTION_STATUS_KEY, action, STR_STATUS_ACTION)
+
+    # Check HTTP response and force an action
+    # There are four use-cases are possible:
+    # 1. Code valid
+    # 2. Refresh token expired - invalid credentials
+    # 3. Wrong input (for example product name already exists)
+    # 4. All other failures
+    # Check HTTP response and force an action
+    # There are four use-cases are possible:
+    # 1. Code valid
+    # 2. Refresh token expired - invalid credentials
+    # 3. Wrong input (for example product name already exists)
+    # 4. All other failures
+    def check_imp_error(self, error, str_failed, str_retry, should_retry=True):
+        if not error:
+            return False
+
+        # Handle invalid credentials use-case
+        if error["code"] == ImpRequest.INVALID_CREDENTIALS:
+            # force token update and restart command
+            auth = self.load_auth_settings()
+            token = auth.get(EI_ACCESS_TOKEN)
+
+            if not token:
+                if (not should_retry or
+                    not sublime.ok_cancel_dialog(str_retry, STR_TRY_AGAIN)):
+                    return True
+
+            if token and EI_ACCESS_TOKEN_VALUE in token:
+                # reset access token to force an update
+                token[EI_ACCESS_TOKEN_VALUE] = None
+                self.update_auth_settings(EI_ACCESS_TOKEN, token)
+
+            # use an original command to refresh credentials
+            if self.cmd_on_complete:
+                # run an original command
+                self.window.run_command(self.cmd_on_complete)
+            else:
+                # re-run current command
+                self.window.run_command(self.name())
+            return True
+
+        # handle wrong input use-case
+        if error["code"] == ImpRequest.WRONG_INPUT:
+            # offer for the user to re-try current action
+            if should_retry and sublime.ok_cancel_dialog(error["message"], STR_TRY_AGAIN):
+                if self.cmd_on_complete:
+                    self.window.run_command(self.name(), {"cmd_on_complete": self.cmd_on_complete})
+                else:
+                    self.window.run_command(self.name())
+            return True
+
+        # Handle failure use-case
+        if error["code"] == ImpRequest.FAILURE:
+            # offer for the user to re-try current action
+            if (should_retry and str_failed
+                and sublime.ok_cancel_dialog(str_failed + ": \n" + error["message"], STR_TRY_AGAIN)):
+                if self.cmd_on_complete:
+                    self.window.run_command(self.name(), {"cmd_on_complete": self.cmd_on_complete})
+                else:
+                    self.window.run_command(self.name())
+
+        return True
+
+    # reset current credentials
+    # which trigger login/pwd procedure on next command
+    def reset_credentials(self):
+        self.update_auth_settings(EI_ACCESS_TOKEN, None)
+
+    def select_device_panel(self, devices, skip_for_single_device=False):
+        # filter devices locally
+        all_names = [(
+            str("( on)" if device["attributes"].get("device_online") else "(off)") + " - " +
+            str(device.get("id")) + " - " +
+            str(device["attributes"]["name"])) for device in devices]
+        # make a new product creation option as a part of the product select menu
+        if len(devices) == 1 and skip_for_single_device:
+            self.on_device_selected(0, devices)
+        else:
+            self.window.show_quick_panel(all_names, lambda id: self.on_device_selected(id, devices))
+
+
+#
+# Check that it is not an old version of plugin
+#
+class ImpCheckOldVersionCommand(BaseElectricImpCommand):
+
+    @staticmethod
+    def check(base):
+        auth_info = base.load_auth_settings()
+        if EI_BUILD_API_KEY in auth_info:
+            return False
+
+        settings = base.load_settings()
+        if (EI_MODEL_NAME in settings or
+            EI_MODEL_ID in settings or
+            EI_DEVICE_ID in settings):
+            return False
+
+        return True
+
+    def action(self, skip_dialog=False):
+        if not skip_dialog and not sublime.ok_cancel_dialog(STR_REPLACE_CONFIG):
+            self.on_action_complete(canceled=True)
+            return
+
+        auth_info = self.load_auth_settings()
+        if EI_BUILD_API_KEY in auth_info:
+            self.update_auth_settings(EI_BUILD_API_KEY, None)
+
+        settings = self.load_settings()
+        if (EI_MODEL_NAME in settings):
+            self.update_settings(EI_MODEL_NAME, None)
+
+        if (EI_MODEL_ID in settings):
+            self.update_settings(EI_MODEL_ID, None)
+
+        if (EI_DEVICE_ID in settings):
+            self.update_settings(EI_DEVICE_ID, None)
+
+        # continue
+        self.on_action_complete()
+
+
+#
+# Configure the nodejs path
+#
+class ImpCheckNodejsPathCommand(BaseElectricImpCommand):
+
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
+        result = EI_ST_PR_NODE_PATH not in builder_settings or not os.path.exists(builder_settings[EI_ST_PR_NODE_PATH])
+        return not result
+
+    def action(self, skip_dialog=False):
+        if not skip_dialog and not sublime.ok_cancel_dialog(STR_PROVIDE_NODE_JS_PATH):
+            self.on_action_complete(canceled=True)
+            return
         AnfNewProject(self.window, STR_NODE_JS_PATH, self.on_node_js_path_provided).run("/")
 
     def on_node_js_path_provided(self, path):
@@ -552,19 +1166,29 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
             self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
         else:
             if sublime.ok_cancel_dialog(STR_INVALID_NODE_JS_PATH):
-                self.prompt_for_node_js_path(False)
+                self.action(skip_dialog=True)
 
         # Loop back to the main settings check
-        self.check_settings()
+        self.on_action_complete()
 
-    def is_missing_builder_cli_path(self):
-        settings = self.load_settings()
+#
+# Check the Builder path
+# Builder uses for preprocessing libraries
+#
+class ImpCheckBuilderPathCommand(BaseElectricImpCommand):
+
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
         builder_settings = settings[EI_BUILDER_SETTINGS] if EI_BUILDER_SETTINGS in settings else {}
-        return EI_ST_PR_BUILDER_CLI not in builder_settings or not os.path.exists(
+        return EI_ST_PR_BUILDER_CLI in builder_settings and os.path.exists(
             builder_settings[EI_ST_PR_BUILDER_CLI])
 
-    def prompt_for_builder_cli_path(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH): return
+    def action(self, need_to_confirm=True):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH):
+            self.on_action_complete(canceled=True)
+            return
+        self.callback = callback
         AnfNewProject(self.window, STR_BUILDER_CLI_PATH, self.on_builder_cli_path_provided).run("/")
 
     def on_builder_cli_path_provided(self, path):
@@ -582,266 +1206,649 @@ class BaseElectricImpCommand(sublime_plugin.WindowCommand):
                 self.prompt_for_node_js_path(False)
 
         # Loop back to the main settings check
-        self.check_settings()
+        self.on_action_complete()
 
-    def prompt_for_build_api_key(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILD_API_KEY): return
-        self.window.show_input_panel(STR_BUILD_API_KEY, "", self.on_build_api_key_provided, None, None)
+#
+# Check if user need custom build cloud
+#
+class ImpCheckCloudUrlCommand(BaseElectricImpCommand):
+    #
+    # check if tokens are available
+    #
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        return settings is not None and settings.get(EI_CLOUD_URL) is not None
 
-    def is_missing_model(self):
+    def action(self):
         settings = self.load_settings()
-        return EI_MODEL_ID not in settings or settings.get(EI_MODEL_ID) is None
+        self.cloud = settings.get(EI_CLOUD_URL)
+        if (self.cloud is None):
+            self.cloud = PL_IMPCENTRAL_API_URL_V5
+        self.prompt_could_url()
 
-    def create_new_model(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_PROVIDE_NAME): return
-        self.window.show_input_panel(STR_MODEL_NAME, "", self.on_model_name_provided, None, None)
+    def prompt_could_url(self):
+        sublime.message_dialog(STR_PROVIDE_IMPCENTRAL_API_URL)
+        self.window.show_input_panel(STR_IMPCENTRAL_API_URL, self.cloud, self.on_url_provided, None, None)
 
-    def on_model_name_provided(self, name):
-        response, code = HTTP.post(self.env.project_manager.get_build_api_key(),
-                                   PL_BUILD_API_URL_V4 + "models/", '{"name" : "' + name + '" }')
+    def on_url_provided(self, url):
+        self.cloud = url
 
-        if not HTTP.is_response_code_valid(code) \
-                and sublime.ok_cancel_dialog(STR_MODEL_NAME_EXISTS):
-            self.create_new_model(False)
+        if not ImpCentral(self.env).is_valid_api_path(url):
+            if not sublime.ok_cancel_dialog(STR_PLEASE_CHECK_URL.format(url)):
+                return
+            self.prompt_could_url()
             return
-        elif not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_MODEL_FAILED_TO_CREATE)
-            return
 
-        # Save newly created model to the project settings
-        settings = self.load_settings()
-        settings[EI_MODEL_ID] = response.get("model").get("id")
-        settings[EI_MODEL_NAME] = response.get("model").get("name")
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        self.update_settings(EI_CLOUD_URL, url)
+        # continue the rest of the command stack
+        self.on_action_complete()
 
-        self.update_model_name_in_status(query_model_name=False)
 
-        # Reset the logs
-        self.env.log_manager.reset()
+#
+# Check user credentials
+#
+class ImpAuthCommand(BaseElectricImpCommand):
 
-        # Check settings
-        self.check_settings(selecting_or_creating_model=True)
+    #
+    # check if tokens are available
+    #
+    @staticmethod
+    def check(base):
+        token = base.env.project_manager.get_access_token_set()
+        return token is not None and token.get(EI_REFRESH_TOKEN) is not None
 
-    def is_missing_device(self):
-        settings = self.load_settings()
-        return EI_DEVICE_ID not in settings or settings.get(EI_DEVICE_ID) is None
+    def action(self):
+        self.pwd = ""
+        self.prompt_for_user_password()
 
-    def load_devices(self, input_device_ids=None, exclude_device_ids=None):
-        device_ids = input_device_ids if input_device_ids else []
-        device_names = []
-
-        response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
-                                  PL_BUILD_API_URL_V4 + "devices/")
-        all_devices = response.get("devices")
-
-        if exclude_device_ids is None:
-            exclude_device_ids = []
-
-        def get_device_display_name(device):
-            name = d.get("name")
-            return name if name else device.get("id")
-
-        if input_device_ids:
-            for d_id in input_device_ids:
-                for d in all_devices:
-                    if d.get("id") == d_id and d_id not in exclude_device_ids:
-                        device_names.append(get_device_display_name(d))
-                        break
+    def prompt_for_user_password(self, need_to_confirm=True, user_name=None, password=None):
+        if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_USER_ID): return
+        if not user_name:
+            self.window.show_input_panel(STR_USER_ID, "", self.on_user_id_provided, None, None)
         else:
-            for d in all_devices:
-                if d.get("id") not in exclude_device_ids:
-                    device_ids.append(d.get("id"))
-                    device_names.append(get_device_display_name(d))
+            # enter pressed
+            ufunc = lambda pwd: self.on_user_id_provided(user_name, pwd)
+            # partial input
+            pfunc = lambda pwd: self.on_user_id_provided(user_name, pwd, True)
 
-        return device_ids, device_names
+            stars = ""
+            if password is not None:
+                stars = "*" * len(password)
+            self.window.show_input_panel(STR_PASSWORD, stars, ufunc , pfunc, None)
 
-    def on_device_to_add_selected(self, index):
-        # Selection was canceled, just return
-        if index == -1:
-            return
+    def on_user_id_provided(self, user_name, password=None, is_partial=False):
+        if not password or is_partial:
+            if is_partial:
+                chg = password.replace("*", "")
 
-        model = self.env.tmp_model
-        device_id = self.env.tmp_device_ids[index]
+                if  len(password) - len(chg) < len(self.pwd):
+                    self.pwd = self.pwd[:(len(password) - len(chg))] + chg
+                else:
+                    # work-around to prevent infinite recursion
+                    if chg == "":
+                        return
+                    self.pwd = self.pwd + chg
 
-        response, code = HTTP.put(self.env.project_manager.get_build_api_key(),
-                                  PL_BUILD_API_URL_V4 + "devices/" + device_id,
-                                  '{"model_id": "' + model.get("id") + '"}')
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_MODEL_ADDING_DEVICE_FAILED)
-
-        # Once the device is registered, select this device
-        self.on_device_selected(index)
-
-        sublime.message_dialog(STR_MODEL_IMP_REGISTERED)
-
-        self.env.tmp_model = None
-        self.env.tmp_device_ids = None
-
-    def load_this_model(self):
-        # We assume the model is set up already
-        model_id = self.load_settings().get(EI_MODEL_ID)
-        response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
-                                  PL_BUILD_API_URL_V4 + "models/" + str(model_id))
-        if HTTP.is_response_code_valid(code):
-            return response.get("model")
-
-    def select_device(self, need_to_confirm=True):
-        model = self.load_this_model()
-        if not model:
-            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
-            return
-
-        device_ids = model.get("devices")
-        if not device_ids or not len(device_ids):
-            sublime.message_dialog(STR_MODEL_HAS_NO_DEVICES)
-            return
-
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_SELECT_DEVICE): return
-        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
-        self.window.show_quick_panel(device_names, self.on_device_selected)
-
-    def add_device(self, need_to_confirm=True):
-        model = self.load_this_model()
-        if not model:
-            sublime.message_dialog(STR_MODEL_NOT_ASSIGNED)
-            return
-
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_ADD_DEVICE): return
-
-        device_ids = model.get("devices")
-        (device_ids, device_names) = self.load_devices(exclude_device_ids=device_ids)
-
-        if len(device_ids) == 0:
-            sublime.message_dialog(STR_NO_DEVICES_AVAILABLE)
-            return
-
-        self.env.tmp_model = model
-        self.env.tmp_device_ids = device_ids
-        self.window.show_quick_panel(device_names, self.on_device_to_add_selected)
-
-    def on_device_selected(self, index):
-        # Selection was canceled, just return
-        if index == -1:
-            return
-        settings = self.load_settings()
-        new_device_id = Env.For(self.window).tmp_device_ids[index]
-        old_device_id = None if EI_DEVICE_ID not in settings else settings.get(EI_DEVICE_ID)
-        if new_device_id != old_device_id:
-            log_debug("New device selected: saving new settings file and restarting the console...")
-            # Update the device id
-            settings[EI_DEVICE_ID] = Env.For(self.window).tmp_device_ids[index]
-            self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-            # Clean up the terminal window
-            self.env.ui_manager.create_new_console()
-            self.env.ui_manager.show_console()
+            self.prompt_for_user_password(False, user_name, self.pwd)
         else:
-            log_debug("Newly selected device is the same as the old one. Nothing to do.")
-        # Clean up temporary variables
-        self.env.tmp_device_ids = None
-        # Loop back to the main settings check
-        self.check_settings()
-        # Reset the logs
-        self.env.log_manager.reset()
+            chg = password.replace("*", "")
+            if  len(password) - len(chg) < len(self.pwd):
+                self.pwd = self.pwd[:(len(password) - len(chg))] + chg
+            else:
+                self.pwd = self.pwd + chg
+            sublime.set_timeout_async(lambda: self.request_credentials(user_name, self.pwd), 0)
 
-    def on_build_api_key_provided(self, key):
-        log_debug("build api key provided: " + key)
-        if HTTP.is_build_api_key_valid(key):
-            log_debug("build API key is valid")
-            self.env.project_manager.save_settings(PR_AUTH_INFO_FILE, {
-                EI_BUILD_API_KEY: key,
-                EI_BUILDER_SETTINGS: {
+    def request_credentials(self, user_name, password):
+        response, error = ImpCentral(self.env).auth(user_name, password)
+        self.on_login_complete(response, error)
+
+    def on_login_complete(self, payload, error):
+        if self.check_imp_error(error,
+            STR_FAILED_TO_LOGIN, STR_INVALID_USER_OR_PASSWORD):
+            return
+
+        # save the access token in the auth.info
+        # and refresh token in the settings file
+        log_debug("Access token received")
+        # make mapping values from the impCentral format
+        # to the internal settings format
+        self.update_auth_settings(EI_ACCESS_TOKEN, {
+                EI_ACCESS_TOKEN_VALUE: payload[IMPC_ACCESS_TOKEN],
+                EI_ACCESS_TOKEN_EXPIRES_AT: payload[IMPC_EXPIRES_AT],
+                EI_REFRESH_TOKEN: payload[IMPC_REFRESH_TOKEN]
+            })
+        auth = self.load_auth_settings()
+        # initialize builder settings on user auth complete
+        if not auth.get(EI_BUILDER_SETTINGS):
+            self.update_auth_settings(EI_BUILDER_SETTINGS,
+                {
                     EI_GITHUB_USER: None,
                     EI_GITHUB_TOKEN: None
-                }
-            })
+                })
+        # check setting again
+        self.on_action_complete()
+
+#
+# check that token is not expired
+# and try to update it
+#
+class ImpRefreshTokenCommand(BaseElectricImpCommand):
+
+    #
+    # Refresh access token if necessary
+    #
+    @staticmethod
+    def check(base):
+        token = base.env.project_manager.get_access_token_set()
+        if (not token or not EI_ACCESS_TOKEN_EXPIRES_AT in token
+            or not EI_ACCESS_TOKEN_VALUE in token or not token[EI_ACCESS_TOKEN_VALUE]):
+            return False
+        expires = datetime.datetime.strptime(token.get(EI_ACCESS_TOKEN_EXPIRES_AT), IMPC_DATA_FORMAT)
+        return expires > datetime.datetime.utcnow()
+
+    def action(self):
+        refresh_token = self.env.project_manager.get_refresh_token()
+        # request to refresh an access token
+        request, error = ImpCentral(self.env).refresh_access_token(refresh_token)
+        # Failed to refresh token reset credentials
+        # Do not need to show dialog which offer to refresh token
+        if self.check_imp_error(error, None, None, False):
+            self.update_auth_settings(EI_ACCESS_TOKEN, None)
+            self.on_action_complete()
+            return
         else:
-            if sublime.ok_cancel_dialog(STR_INVALID_API_KEY):
-                self.prompt_for_build_api_key(False)
+            # refresh token could be unexpectedly
+            # updated during request
+            if IMPC_REFRESH_TOKEN in request:
+                refresh_token = request[IMPC_REFRESH_TOKEN]
+            # save new settings
+            self.update_auth_settings(EI_ACCESS_TOKEN, {
+                    EI_ACCESS_TOKEN_VALUE: request[IMPC_ACCESS_TOKEN],
+                    EI_ACCESS_TOKEN_EXPIRES_AT: request[IMPC_EXPIRES_AT],
+                    EI_REFRESH_TOKEN: refresh_token
+                })
 
-        # Loop back to the main settings check
-        self.check_settings()
+        # restart login process
+        self.on_action_complete()
 
-    def print_to_tty(self, text):
-        env = Env.For(self.window)
-        if env:
-            self.env.ui_manager.write_to_console(text)
+#
+# Check the product setting
+#
+class ImpCreateNewProductCommand(BaseElectricImpCommand):
+
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        return settings.get(EI_PRODUCT_ID) is not None
+
+    def action(self):
+        # reset current credentials if available
+        self.update_settings(EI_COLLABORATOR_ID, None)
+
+        self.collaborators = None
+        self.products = None
+
+        sublime.set_timeout_async(self.select_existing_product, 1)
+
+    def on_create_new_product(self, show_dialog=True):
+        # prompts a message_dialog
+        if show_dialog and not sublime.ok_cancel_dialog(STR_PRODUCT_PROVIDE_NAME):
+            return
+        self.window.show_input_panel(STR_PRODUCT_NAME, "",
+            self.on_new_product_name_provided_async, None, None)
+
+    def on_new_product_name_provided_async(self, name):
+        sublime.set_timeout_async(lambda: self.on_new_product_name_provided(name), 0)
+
+    def on_new_product_name_provided(self, name):
+        settings = self.load_settings()
+        collaborator = settings.get(EI_COLLABORATOR_ID)
+
+        # request a new product creation
+        product, error = ImpCentral(self.env).create_product(
+            self.env.project_manager.get_access_token(), name, collaborator)
+        # handle possible errors, and force restart or show message dialog
+        if self.check_imp_error(error,
+            STR_FAILED_TO_CREATE_PRODUCT, STR_RETRY_CREATE_PRODUCT):
+            return
+
+        self.update_settings(EI_PRODUCT_ID, product["id"])
+        self.update_settings(EI_DEVICE_GROUP_ID, None)
+        self.on_action_complete()
+
+    def on_product_name_provided(self, index, names, owner_id):
+        # prevent wrong index which should never happened
+        if (index < 0 or index > (len(names) + 1)):
+            return
+
+        if index != 1:
+            # save the collaborator id
+            if owner_id is not None and self.me.get("id") != owner_id:
+                self.update_settings(EI_COLLABORATOR_ID, owner_id)
+
+        # Create new product
+        if index == 0:
+            # Handle a new product creation process
+            self.on_create_new_product()
+        elif index == 1:
+            self.select_collaborator()
         else:
-            print(STR_ERR_CONSOLE_NOT_FOUND.format(text))
+            # Save selected product in the settings file
+            self.update_settings(EI_PRODUCT_ID, names[index-2][0])
+            self.update_settings(EI_DEVICE_GROUP_ID, None)
 
-    def is_enabled(self):
-        return ProjectManager.is_electric_imp_project_window(self.window)
+            self.on_action_complete()
 
-    def update_model_name_in_status(self, query_model_name=True):
-        if query_model_name:
-            settings = self.load_settings()
-            model_id = settings.get(EI_MODEL_ID)
-            if not model_id or not self.env.project_manager.get_build_api_key():
-                # Nothing to update
+    def select_existing_product(self, collaborator=None):
+        token = self.env.project_manager.get_access_token()
+        if collaborator is None:
+            # get current account details
+            account, error = ImpCentral(self.env).account(token)
+            if error:
+                if self.check_imp_error(error,
+                    STR_FAILED_TO_GET_ACCOUNT_DETAILS, STR_RETRY_SELECT_PRODUCT):
+                    return
+                self.select_existing_product()
                 return
-            response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
-                                      PL_BUILD_API_URL_V4 + "models/" + str(model_id))
-            if HTTP.is_response_code_valid(code):
-                model_name = response.get("model").get("name")
-                settings[EI_MODEL_NAME] = model_name
-                self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
-            else:
-                log_debug("An error occurred while updating the Model name")
-        self.env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+            self.me = account
+        else:
+            account = collaborator
+
+        if self.products is None:
+            # list products for all accounts
+            products, error = ImpCentral(self.env).list_products(token)
+
+            # Handle imp central request errors
+            if error:
+                if self.check_imp_error(error,
+                    STR_FAILED_TO_GET_PRODUCTS, STR_RETRY_SELECT_PRODUCT):
+                    return
+                self.select_existing_product(account)
+                return
+
+        self.products = products
+        self.show_product_list(account.get("id"))
+
+    def select_collaborator(self):
+        # user has one or more collaborators
+        if self.collaborators is None:
+            collaborators = []
+            token = self.env.project_manager.get_access_token()
+            # load the list of collaborators
+            collaborators, error = ImpCentral(self.env).collaborators(token)
+            if error:
+                if self.check_imp_error(error,
+                    STR_FAILED_TO_EXTRACT_COLLABORATORS, STR_RETRY_SELECT_PRODUCT):
+                    return
+                self.select_collaborator()
+                return
+            self.collaborators = collaborators
+
+        items = []
+        for c in self.collaborators:
+            attr = c.get("attributes")
+            if attr and attr.get("name"):
+                items.append(attr.get("name"))
+
+        self.window.show_quick_panel(items, lambda id: self.on_collaborator_selected(id, items))
+
+    def on_collaborator_selected(self, index, items):
+        # user selected nothing
+        if (index < 0 or index >= len(items)):
+            return
+        c = self.collaborators[index]
+
+        # 1. TODO: Check if user could create product for the current collaborator
+        # token = self.env.project_manager.get_access_token()
+        # grants, error = ImpCentral(self.env).grants(token, c.get("id"))
+        # if error:
+        #     if not self.check_imp_error(error,
+        #        STR_FAILED_TO_EXTRACT_GRANTS.format(c.get("attributes").get("name")), STR_RETRY_SELECT_PRODUCT):
+        #        return
+        #     # retry the collaborator select process
+        #     self.select_collaborator()
+        #     return
+
+        # 2. prepare the list of products
+        self.show_product_list(c.get("id"))
+
+    def show_product_list(self, owner_id):
+        products = []
+        for item in self.products:
+            details = item["relationships"].get("owner")
+            if (details is not None):
+                if details["id"] == owner_id:
+                    products.append(item)
+
+        # work-around for an absolutely new user
+        # who do not have any products at all
+        all_names = []
+        details = []
+        # check that response has some payload
+        if len(products) > 0:
+            all_names = [str(product["attributes"]["name"]) for product in products]
+            details = [(product["id"], str(product["attributes"]["name"])) for product in products]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel(
+            [ STR_PRODUCT_CREATE_NEW, STR_SELECT_COLLABORATOR ] + all_names,
+            lambda id: self.on_product_name_provided(id, details, owner_id))
+
+#
+# Check the device group or create a new one
+#
+class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
+
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        return EI_DEVICE_GROUP_ID in settings and settings.get(EI_DEVICE_GROUP_ID) is not None
+        # TODO: Check that project still available in the remote configuration
+
+    def action(self):
+        sublime.set_timeout_async(self.select_device_group, 0)
+
+    def select_device_group(self):
+        settings = self.load_settings()
+        product_id = settings.get(EI_PRODUCT_ID)
+        device_groups, error = ImpCentral(self.env).list_device_groups(
+            self.env.project_manager.get_access_token(), product_id)
+
+        # Check that code is correct
+        # In common case it is expected error==failure only
+        # But, if someone decide to drop product via IDE
+        # when user is selecting product in this plug in
+        # then the second error message should happen
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEVICE_GROUPS, STR_RETRY_TO_GET_DEVICE_GROUPS):
+            return
+
+        # check that response has some payload
+        all_names = []
+        details = []
+        if len(device_groups) > 0:
+            for dg in device_groups:
+                if dg["relationships"]["product"]["id"] == product_id:
+                    all_names += [str(dg["attributes"]["name"])]
+                    details += [(dg["id"], str(dg["attributes"]["name"]))]
+
+        # make a new product creation option as a part of the product select menu
+        self.window.show_quick_panel([ STR_DEVICE_GROUP_CREATE_NEW ] + all_names,
+            lambda id: self.on_device_group_name_provided_async(id, details))
+
+    def on_device_group_name_provided_async(self, index, items):
+        sublime.set_timeout_async(lambda: self.on_device_group_name_provided(index, items), 0)
+
+    def on_device_group_name_provided(self, index, items):
+        # prevent wrong index which should never happened
+        if (index < 0 or index > len(items)):
+            self.on_action_complete(canceled=True)
+            return
+
+        if index == 0:
+            self.on_create_new_device_group()
+        else:
+            # the list of items does not contain the "new device group"
+            # selection option which has index == 0
+            id = items[index-1][0]
+            self.update_settings(EI_DEVICE_GROUP_ID, id)
+            # Force to propose code loading from the web
+            self.update_settings(EI_DEPLOYMENT_ID, None)
+            self.on_action_complete()
+
+    def on_create_new_device_group(self, show_dialog=True):
+        # prompts a message_dialog
+        if show_dialog and not sublime.ok_cancel_dialog(STR_DEVICE_GROUP_PROVIDE_NAME):
+            return
+        self.window.show_input_panel(STR_DEVICE_GROUP_NAME, "",
+            self.on_new_device_group_name_provided, None, None)
+
+    def on_new_device_group_name_provided(self, name):
+        token = self.env.project_manager.get_access_token()
+        settings = self.load_settings()
+        # request a new device group creation
+        device_group, error = ImpCentral(self.env).create_device_group(
+            token, settings[EI_PRODUCT_ID], name)
+
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEVICE_GROUP,
+            STR_RETRY_TO_GET_DEVICE_GROUP):
+            return
+
+        self.update_settings(EI_DEVICE_GROUP_ID, device_group["id"])
+        self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+        self.on_action_complete()
+
+
+#
+# Request all registered devices and assign
+# one of that devices to the device group
+# Note: action should trigger logs restart
+#
+class ImpAssignDeviceCommand(BaseElectricImpCommand):
+
+    def action(self):
+        sublime.set_timeout_async(lambda: self.select_existing_device(), 0)
+
+    def on_device_selected(self, index, devices):
+        # prevent wrong index which
+        # happen on cancel
+        if (index < 0 or index >= len(devices)):
+            return
+
+        # there is no option for create new device
+        # therefore index maps on the devices correctly
+        device = devices[index]
+
+        settings = self.load_settings()
+
+        # Check that device is not in the device group yet
+        # Note: devicegroup could be not defined
+        #       if device was not assigned to any device group
+        device_group = device["relationships"].get("devicegroup")
+        if device_group and device_group["id"] == settings.get(EI_DEVICE_GROUP_ID):
+            log_debug("Hmm... should never have gotten to this point :(")
+            # trigger restart if user assign the same device
+            sublime.set_timeout_async(lambda: self.env.log_manager.reset(restart=True), 0)
+            return
+
+        if device_group and device_group["id"] != settings.get(EI_DEVICE_GROUP_ID):
+            log_debug("Moving device from a different device group...")
+            token = self.env.project_manager.get_access_token()
+            d_group, error = ImpCentral(self.env).get_device_group(token, device_group["id"])
+            product, error = ImpCentral(self.env).get_product(token, d_group["relationships"]["product"]["id"])
+            d_group_name = d_group["attributes"]["name"]
+            product_name = product["attributes"]["name"]
+            if not sublime.ok_cancel_dialog(STR_DEVICE_MOVING_FROM_CONFIRMATION.format(product_name, d_group_name)):
+                return
+
+        response, error = ImpCentral(self.env).assign_device(
+            self.env.project_manager.get_access_token(),
+            settings.get(EI_DEVICE_GROUP_ID),
+            device["id"])
+
+        # handle the respond
+        if self.check_imp_error(error, STR_FAILED_TO_ASSIGN_DEVICE, None):
+            log_debug("Failed to add device to the group")
+            return
+        else:
+            sublime.message_dialog(STR_DEVICE_SUCCESSFULLY_ASSIGNED)
+
+        # Request log stream reset to add the devive to the log
+        #
+        # Note: for another hand it is possible to attach the device
+        #       to the logstream without stream reset, but it is
+        #       expected that user should not use assign/Un-Assign
+        #       devices frequently
+        # Note: push reset to the background thread to prevent
+        #       concurrent access to the LogManager's fields
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(restart=True), 0)
+        # force log restart, but we need to reset current log first
+        sublime.set_timeout_async(lambda: update_log_windows(False), 0)
+
+    def select_existing_device(self):
+        settings = self.load_settings()
+
+        dg_id = settings.get(EI_DEVICE_GROUP_ID)
+        token = self.env.project_manager.get_access_token()
+        colid = self.load_settings().get(EI_COLLABORATOR_ID)
+
+        imp_central = ImpCentral(self.env)
+        devices, error = imp_central.list_devices(token, colid)
+        dg_devs, error = imp_central.list_devices(token, colid, dg_id)
+
+        # Subtract this device group's devices from the rest of the list...
+        for dg_device in dg_devs:
+            for d in devices:
+                if dg_device['id'] == d['id']:
+                    devices.remove(d)
+                    break
+
+        # Check that code is correct
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEVICELIST, None):
+            return
+
+        if not devices or len(devices) == 0:
+            sublime.message_dialog(STR_MESSAGE_DEVICE_LIST_EMPTY)
+            return
+        # check that response has some payload
+        # response should contain the list of devices
+        if len(devices) > 0:
+            self.select_device_panel(devices)
+
+
+#
+# Un-Assign device from the
+# current device group
+#
+class ImpUnassignDeviceCommand(BaseElectricImpCommand):
+
+    def action(self):
+        self.select_existing_device()
+
+    def on_device_selected(self, index, devices):
+        # prevent wrong index which
+        # happen on cancel
+        if (index < 0 or index >= len(devices)):
+            log_debug("There is no device selected")
+            return
+        # there is no option for create new device
+        # therefore index maps on the names correctly
+        device = devices[index]
+        settings = self.load_settings()
+
+        # Remove the selected device from the devicegroup
+        response, error = ImpCentral(self.env).unassign_device(
+            self.env.project_manager.get_access_token(),
+            settings.get(EI_DEVICE_GROUP_ID),
+            device["id"])
+
+        # handle the respond
+        # the second error should happen if someone drop
+        # the device group via IDE
+        if self.check_imp_error(error,
+            STR_FAILED_TO_REMOVE_DEVICE,
+            STR_RETRY_TO_REMOVE_DEVICE):
+            log_debug("Failed to remove device from the group")
+            return
+        else:
+            sublime.message_dialog(STR_DEVICE_SUCCESSFULLY_UNASSIGNED)
+
+        # Request log stream reset to remove the device from the log
+        # Note: push to the background thread to prevent concurrent access
+        #       to the logManager's fields
+        sublime.set_timeout_async(lambda: self.env.log_manager.reset(restart=True), 0)
+        # force log restart, but we need to reset current log first
+        if len(devices) > 1:
+            sublime.set_timeout_async(lambda: update_log_windows(False), 0)
+
+    def select_existing_device(self):
+        settings = self.load_settings()
+
+        # list devices for the current device group
+        devices, error = ImpCentral(self.env).list_devices(
+            self.env.project_manager.get_access_token(),
+            None, # owner is not required for unassign
+            settings[EI_DEVICE_GROUP_ID])
+
+        # Check that code is correct
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEVICELIST, None):
+            return
+
+        # check that response has some payload
+        # response should contain the list of devices
+        if len(devices) > 0:
+            # filter devices locally
+            self.select_device_panel(devices)
+        else:
+            sublime.message_dialog(STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP)
 
 
 class ImpBuildAndRunCommand(BaseElectricImpCommand):
     """Build and Run command implementation"""
 
-    def run(self):
-        self.init_env_and_settings()
-        self.env.ui_manager.init_tty()
+    def action(self):
         # Clean up all the error marks first
         for view in self.window.views():
             view.erase_regions(PL_ERROR_REGION_KEY)
 
-        def check_settings_callback():
-            if self.env.project_manager.get_build_api_key() is None:
-                log_debug("The build API file is missing, please check the settings")
-                return
+        # Save all the views first
+        self.save_all_current_window_views()
 
-            # Save all the views first
-            self.save_all_current_window_views()
+        # Preprocess the sources
+        agent_filename, device_filename = self.env.code_processor.preprocess(self.env)
 
-            # Preprocess the sources
-            agent_filename, device_filename = self.env.code_processor.preprocess(self.env)
+        if not agent_filename and not device_filename:
+            # Error happened during preprocessing, nothing to do.
+            log_debug("Preprocessing failed. Please, check the Builder errors")
+            return
 
-            if not agent_filename and not device_filename:
-                # Error happened during preprocessing, nothing to do.
-                return
+        if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
+            log_debug("Can't find preprocessed agent or device code file")
+            sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
 
-            if not os.path.exists(agent_filename) or not os.path.exists(device_filename):
-                log_debug("Can't find code files")
-                sublime.message_dialog(STR_CODE_IS_ABSENT.format(self.get_settings_file_path(PR_SETTINGS_FILE)))
+        agent_code = self.read_file(agent_filename)
+        device_code = self.read_file(device_filename)
 
-            agent_code = self.read_file(agent_filename)
-            device_code = self.read_file(device_filename)
+        settings = self.load_settings()
 
-            settings = self.load_settings()
-            url = PL_BUILD_API_URL_V4 + "models/" + settings.get(EI_MODEL_ID) + "/revisions"
-            data = '{"agent_code": ' + json.dumps(agent_code) + ', "device_code" : ' + json.dumps(device_code) + ' }'
-            response, code = HTTP.post(self.env.project_manager.get_build_api_key(), url, data)
-            self.handle_response(response, code)
+        # post a new deployment into the current devicegroup
+        deployment, error = ImpCentral(self.env).create_deployment(
+            self.env.project_manager.get_access_token(),
+            settings.get(EI_DEVICE_GROUP_ID),
+            agent_code,
+            device_code)
 
-        self.check_settings(callback=check_settings_callback)
-        self.update_model_name_in_status()
+        self.handle_deployment(deployment, error)
 
-    def handle_response(self, response, code):
+        self.update_status_message()
+        self.on_action_complete()
+
+    # Handle deployment errors more carefully
+    def handle_deployment(self, deployment, error):
         settings = self.load_settings()
 
         # Update the logs first
         update_log_windows(False)
 
-        if HTTP.is_response_code_valid(code):
-            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(response["revision"]["version"])))
+        if not error:
+            # save the current deployment
+            self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
+            # print the deployment to the status
+            self.print_to_tty(STR_STATUS_REVISION_UPLOADED.format(str(deployment["attributes"]["sha"])))
+            # note user about conditional restart request
+            self.print_to_tty(STR_DEVICE_GROUP_CONDITIONAL_RESTART)
 
-            # Not it's time to restart the Model
-            url = PL_BUILD_API_URL_V4 + "models/" + settings.get(EI_MODEL_ID) + "/restart"
-            HTTP.post(self.env.project_manager.get_build_api_key(), url)
+            # Now it's time to restart code on agent and devices
+            response, error = ImpCentral(self.env).conditional_restart(
+                self.env.project_manager.get_access_token(), settings.get(EI_DEVICE_GROUP_ID))
+
+            if self.check_imp_error(error, STR_FAILED_CONDITIONAL_RESTART, None):
+                log_debug("ERROR restarting devices: " + str(error))
+                return
         else:
             # {
             # 	'error': {
@@ -861,31 +1868,42 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
             # 	},
             # 	'success': False
             # }
-            def build_error_messages(errors, source_type, env):
+            def build_error_messages(meta, source_type, env):
                 report = ""
                 preprocessor = self.env.code_processor
-                if errors is not None:
-                    for e in errors:
-                        log_debug("Original compilation error: " + str(e))
-                        orig_file = "main"
-                        orig_line = int(e["row"])
-                        try:
-                            orig_file, orig_line = \
-                                preprocessor.get_error_location(source_type=source_type, line=(int(e["row"]) - 1),
-                                                                env=env)
-                        except Exception as exc:
-                            log_debug("Error trying to find original error source: {}".format(exc))
-                            pass  # Do nothing - use read values
-                        report += STR_ERR_MESSAGE_LINE.format(e["error"], orig_file, orig_line)
+                if meta is not None:
+                    log_debug("Original compilation error: " + str(meta))
+                    orig_file = "main"
+                    orig_line = int(meta.get("row"))
+                    try:
+                        orig_file, orig_line = \
+                            preprocessor.get_error_location(source_type=source_type, line=(int(orig_line) - 1),
+                                                            env=env)
+                    except Exception as exc:
+                        log_debug("Error trying to find original error source: {}".format(exc))
+                        pass  # Do nothing - use read values
+                    report += STR_ERR_MESSAGE_LINE.format(meta.get("text"), orig_file, orig_line)
                 return report
-            error = response["error"]
-            if error and error["code"] == "CompileFailed":
+            if error["code"] == ImpRequest.INVALID_CREDENTIALS:
+                self.check_imp_error(error, None, None)
+                return
+
+            if error["code"] == ImpRequest.COMPILE_FAIL:
                 error_message = STR_ERR_DEPLOY_FAILED_WITH_ERRORS
-                error_message += build_error_messages(error["details"]["agent_errors"], SourceType.AGENT, self.env)
-                error_message += build_error_messages(error["details"]["device_errors"], SourceType.DEVICE, self.env)
+                compile_errors = error.get("errors")
+                # each error contain the meta array with
+                # list of rows and text message
+                for error in compile_errors:
+                    # extract details from meta information
+                    for meta in error.get("meta"):
+                        if meta.get('file') == 'agent_code':
+                            error_message += build_error_messages(meta, SourceType.AGENT, self.env)
+                        else:
+                            error_message += build_error_messages(meta, SourceType.DEVICE, self.env)
                 self.print_to_tty(error_message)
             else:
-                log_debug("Code deploy failed because of the error: {}".format(str(response["error"]["code"])))
+                log_debug("Code deploy failed because of the error: {}".format(str(error["message"])))
+                self.print_to_tty(STR_FAILED_CODE_DEPLOY.format(str(error["message"])))
 
     def save_all_current_window_views(self):
         log_debug("Saving all views...")
@@ -899,40 +1917,81 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
 
 class ImpShowConsoleCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-        self.env.ui_manager.init_tty()
-        self.check_settings()
-        self.update_model_name_in_status()
-        update_log_windows(False)
 
+    def action(self):
+        self.update_status_message()
+        #
+        # Handle failure in the logs thread
+        # when logs fail the corresponding
+        # event should happen
+        #
+        if self.cmd_on_complete == "auth":
+            self.cmd_on_complete = None
+            auth = self.load_auth_settings()
+            token = auth.get(EI_ACCESS_TOKEN)
 
-class ImpSelectDeviceCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-        self.check_settings(callback=self.select_device)
+            if token and EI_ACCESS_TOKEN_VALUE in token:
+                # reset access token to force an update
+                token[EI_ACCESS_TOKEN_VALUE] = None
+                self.update_auth_settings(EI_ACCESS_TOKEN, token)
+
+            # run an ariginal command
+            self.window.run_command(self.name())
+            return
+        # Note: The commented code can trigger logstream restart
+        #       on each show console command (Ctrl+Shift+C)
+        #
+        # sublime.set_timeout_async(lambda: self.env.log_manager.reset(is_restart=True), 0)
+
+        # force stream open after restart
+        sublime.set_timeout_async(lambda: update_log_windows(False), 0)
 
 
 class ImpGetAgentUrlCommand(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
 
-        def check_settings_callback():
-            settings = self.load_settings()
-            if EI_DEVICE_ID in settings:
-                device_id = settings.get(EI_DEVICE_ID)
-                response, code = HTTP.get(self.env.project_manager.get_build_api_key(),
-                                          PL_BUILD_API_URL_V4 + "devices/" + device_id)
-                agent_id = response.get("device").get("agent_id")
-                agent_url = PL_AGENT_URL.format(agent_id)
-                sublime.set_clipboard(agent_url)
-                sublime.message_dialog(STR_AGENT_URL_COPIED.format(device_id, agent_url))
+    def action(self):
+        self.select_existing_device()
 
-        self.check_settings(callback=check_settings_callback)
+    def on_device_selected(self, index, devices):
+        # prevent wrong index which
+        # happen on cancel
+        if (index < 0 or index >= len(devices)):
+            log_debug("There is no device selected")
+            return
+
+        # get device by index in the list
+        device = devices[index]
+
+        agent_id = device["attributes"].get("agent_id")
+        agent_url = PL_AGENT_URL.format(agent_id)
+        sublime.set_clipboard(agent_url)
+        sublime.message_dialog(STR_AGENT_URL_COPIED.format(device["id"], agent_url))
+
+    def select_existing_device(self):
+        settings = self.load_settings()
+
+        # list devices for the current device group
+        devices, error = ImpCentral(self.env).list_devices(
+            self.env.project_manager.get_access_token(),
+            None, # owner is not required
+            settings[EI_DEVICE_GROUP_ID])
+
+        # Check that code is correct
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEVICELIST, None):
+            return
+
+        # check that response has some payload
+        # response should contain the list of devices
+        if len(devices) > 0:
+            self.select_device_panel(devices, True)
+        else:
+            sublime.message_dialog(STR_MESSAGE_NO_DEVICE_IN_DEVICE_GROUP)
 
 
 class ImpCreateProjectCommand(BaseElectricImpCommand):
-    def run(self):
+
+    def run(self, cmd_on_complete=None):
         AnfNewProject(self.window, STR_NEW_PROJECT_LOCATION, self.on_project_path_provided). \
             run(initial_path=self.get_default_project_path())
 
@@ -978,7 +2037,7 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
             EI_DEVICE_FILE: os.path.join(PR_SOURCE_DIRECTORY, PR_DEVICE_FILE_NAME)
         })
 
-        # Pull the latest code revision from the server
+        # TODO: Pull the latest code revision from the server
         self.create_source_files_if_absent(path)
 
         try:
@@ -1046,137 +2105,76 @@ class ImpCreateProjectCommand(BaseElectricImpCommand):
     def is_enabled(self):
         return True
 
+class ImpLoadCodeCommand(BaseElectricImpCommand):
 
-class ImpCreateModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
+    @staticmethod
+    def check(base):
+        settings = base.load_settings()
+        return (EI_DEPLOYMENT_ID in settings
+                and settings[EI_DEPLOYMENT_ID] is not None)
 
-        def check_settings_callback():
-            self.create_new_model()
-
-        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
-
-
-class ImpSelectModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-
-        def check_settings_callback():
-            self.select_existing_model()
-
-        self.check_settings(callback=check_settings_callback, selecting_or_creating_model=True)
-
-    def select_existing_model(self, need_to_confirm=True):
-        response, code = HTTP.get(self.env.project_manager.get_build_api_key(), PL_BUILD_API_URL_V4 + "models")
-        if len(response["models"]) > 0:
-            if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_SELECT_EXISTING_MODEL):
-                return
-            all_model_names = [model["name"] for model in response["models"]]
-            self.__tmp_all_models = [(model["id"], model["name"]) for model in response["models"]]
-        else:
-            sublime.message_dialog(STR_MODEL_NO_MODELS_FOUND)
+    def action(self):
+        if not sublime.ok_cancel_dialog(STR_DEVICE_GROUP_CONFIRM_PULLING_CODE):
+            self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+            self.on_action_complete()
             return
 
-        self.window.show_quick_panel(all_model_names, self.on_model_selected)
-
-    def on_model_selected(self, index):
-        # Selection was canceled, nothing to do here
-        if index == -1:
-            return
-
-        model_id, model_name = self.__tmp_all_models[index]
-
-        self.__tmp_all_models = None  # We don't need it anymore
-        log_debug("Model selected id: " + model_id)
-
-        # Save newly created model to the project settings
         settings = self.load_settings()
-        settings[EI_MODEL_ID] = model_id
-        settings[EI_MODEL_NAME] = model_name
-        self.env.project_manager.save_settings(PR_SETTINGS_FILE, settings)
+        device_group, error = ImpCentral(self.env).get_device_group(
+            self.env.project_manager.get_access_token(), settings[EI_DEVICE_GROUP_ID])
 
-        # Reset the logs
-        self.env.log_manager.reset()
-
-        # Update the Model name in the status bar
-        self.update_model_name_in_status(query_model_name=False)
-
-        if not sublime.ok_cancel_dialog(STR_MODEL_CONFIRM_PULLING_MODEL_CODE):
+        if self.check_imp_error(error,
+            STR_FAILED_TO_EXTRACT_CODE, STR_RETRY_TO_EXTRACT_CODE):
             return
 
-        # Pull the latest code from the Model
+        # Handle the use-case when there is no any deployment yet
+        # for example for a newly created group via IDE
+        if not "current_deployment" in device_group["relationships"]:
+            sublime.message_dialog(STR_MESSAGE_DEPLOYMENT_EMPTY)
+            # mark that there is no more deployments yet, to prevent
+            # permanent deployments requests
+            self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
+            self.on_action_complete()
+            return
+
+        deployment = device_group["relationships"]["current_deployment"]["id"]
+
+        # for a one hand it is the same revision as should be
+        # in the local file but for another hand
+        # local files could be changed and user wants to revert them
+        # to the latest revision
+        #
+        # Note: There is no way to select the deployment version
+        #       only the latest version available for user
+        if deployment == settings.get(EI_DEPLOYMENT_ID):
+            log_debug("Everything is up to date")
+
+        deployment, error = ImpCentral(self.env).get_deployment(
+            self.env.project_manager.get_access_token(), deployment)
+
+        if self.check_imp_error(error,
+            STR_FAILED_TO_GET_DEPLOYMENT, None):
+            return
+
+        # Pull the latest code from the devicegroup
         source_dir = self.env.project_manager.get_source_directory_path()
         agent_file = os.path.join(source_dir, PR_AGENT_FILE_NAME)
         device_file = os.path.join(source_dir, PR_DEVICE_FILE_NAME)
 
-        revisions, code = HTTP.get(self.env.project_manager.get_build_api_key(),
-                                   PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions")
-        if len(revisions["revisions"]) > 0:
-            latest_revision_url = PL_BUILD_API_URL_V4 + "models/" + model_id + "/revisions/" + \
-                                  str(revisions["revisions"][0]["version"])
-            source, code = HTTP.get(self.env.project_manager.get_build_api_key(), latest_revision_url)
+        if deployment and deployment["attributes"]:
             with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(source["revision"]["agent_code"])
+                file.write(deployment["attributes"]["agent_code"])
             with open(device_file, "w", encoding="utf-8") as file:
-                file.write(source["revision"]["device_code"])
-        else:
-            # Create initial source files
-            with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(STR_INITIAL_SRC_CONTENT.format("Agent"))
-            with open(device_file, "w", encoding="utf-8") as file:
-                file.write(STR_INITIAL_SRC_CONTENT.format("Device"))
-
-
-class ImpAddDeviceToModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-
-        def check_settings_callback():
-            self.add_device(need_to_confirm=False)
-
-        self.check_settings(callback=check_settings_callback)
-
-
-class ImpRemoveDeviceFromModel(BaseElectricImpCommand):
-    def run(self):
-        self.init_env_and_settings()
-        self.check_settings(callback=self.prompt_model_to_remove_device)
-
-    def prompt_model_to_remove_device(self, need_to_confirm=True):
-        if need_to_confirm and not sublime.ok_cancel_dialog(STR_MODEL_REMOVE_DEVICE): return
-
-        model = self.load_this_model()
-        device_ids = model.get("devices") if model else None
-
-        if not device_ids or len(device_ids) == 0:
-            sublime.message_dialog(STR_MODEL_NO_DEVICES_TO_REMOVE)
-            return
-
-        (Env.For(self.window).tmp_device_ids, device_names) = self.load_devices(input_device_ids=device_ids)
-        self.window.show_quick_panel(device_names, self.on_remove_device_selected)
-
-    def on_remove_device_selected(self, index):
-        device_id = self.env.tmp_device_ids[index]
-        active_device_id = self.load_settings().get(EI_DEVICE_ID)
-
-        if device_id == active_device_id:
-            sublime.message_dialog(STR_MODEL_CANT_REMOVE_ACTIVE_DEVICE)
-            return
-
-        response, code = HTTP.put(self.env.project_manager.get_build_api_key(),
-                                  PL_BUILD_API_URL_V4 + "devices/" + device_id,
-                                  '{"model_id": ""}')
-        if not HTTP.is_response_code_valid(code):
-            sublime.message_dialog(STR_MODEL_REMOVE_DEVICE_FAILED)
-            return
-
-        sublime.message_dialog(STR_MODEL_DEVICE_REMOVED)
-
-        self.env.tmp_model = None
-        self.env.tmp_device_ids = None
+                file.write(deployment["attributes"]["device_code"])
+            # save the latest deployment id
+            self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
+        # trigger an original event on complete
+        # it could be build and run or assign/unassing device
+        self.on_action_complete()
 
 
 class AnfNewProject(AdvancedNewFileNew):
+
     def __init__(self, window, capture="", on_path_provided=None):
         super(AnfNewProject, self).__init__(window)
         self.on_path_provided = on_path_provided
@@ -1199,11 +2197,13 @@ class AnfNewProject(AdvancedNewFileNew):
 
 # This is a helper class to implement text substitution in the file path command line
 class AnfReplaceCommand(sublime_plugin.TextCommand):
+
     def run(self, edit, content):
         self.view.replace(edit, sublime.Region(0, self.view.size()), content)
 
 
 class ImpErrorProcessor(sublime_plugin.EventListener):
+
     CLICKABLE_CP_ERROR_PATTERN = r".*\s*ERROR:\s*\[CLICKABLE\]\s.*\((.*)\:(\d+)\)"
     CLICKABLE_RT_ERROR_PATTERN = r".*\s*ERROR:\s*\[CLICKABLE\]\s*(?:\S*)\s*(?:at|from)\s*.*\s+\((\S*):(\d+)\)\s*"
 
@@ -1278,8 +2278,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
         env = Env.For(window)
         if not env:
             env = Env.get_existing_or_create_env_for(window)
-
-        env.ui_manager.show_settings_value_in_status(EI_MODEL_NAME, PL_MODEL_STATUS_KEY, STR_STATUS_ACTIVE_MODEL)
+        env.ui_manager.show_settings_value_in_status(EI_PRODUCT_ID, PL_PRODUCT_STATUS_KEY, STR_STATUS_ACTIVE_PRODUCT)
 
     def on_new(self, view):
         self.__update_status(view)
@@ -1301,59 +2300,252 @@ def plugin_loaded():
 
 
 class LogManager:
+
+    # Supported states
+    STATE_IDLE = 0
+    STATE_INIT = 1
+    STATE_POLL = 2
+    STATE_FAIL = 3
+
     def __init__(self, env):
         self.env = env
         self.poll_url = None
         self.last_shown_log = None
+        self.sock = None
+        self.devices = []
+        self.has_logs = False
+        # set initial state
+        self.state = self.STATE_IDLE
+        # prevent multiple requests when http is pending
+        self.update_log_started = False
+        # no timer on start-up
+        self.keep_alive = None
+
+    def start(self):
+        if self.state == self.STATE_IDLE:
+            self.state = self.STATE_INIT
+            self.write_to_console(STR_MESSAGE_LOG_STREAM_REQUESTED)
+        else:
+            log_debug("Unexpected log manger state")
+
+    def stop(self, restart=False):
+        if self.state == self.STATE_POLL:
+            if restart:
+                self.write_to_console(STR_MESSAGE_LOG_STREAM_RESTART)
+                # set current state to idle
+                self.state = self.STATE_IDLE
+                # and then trigger log start
+                sublime.set_timeout_async(lambda: update_log_windows(False), 0)
+                return
+            # stop logs
+            self.write_to_console(STR_MESSAGE_LOG_STREAM_STOPPED)
+        elif self.state == self.STATE_INIT:
+            self.write_to_console(STR_MESSAGE_LOG_STREAM_NOT_STARTED)
+
+        # change current state depends on initial
+        self.state = self.STATE_IDLE
+    #
+    def check_imp_error(self, error):
+        if not error:
+            return False
+
+        # Handle invalid credentials use-case only
+        # the following string should restart logs via command
+        # which lead to access token renew
+        if error["code"] == ImpRequest.INVALID_CREDENTIALS:
+            sublime.set_timeout_async(
+                lambda: self.env.window.run_command("imp_show_console", {"cmd_on_complete": "auth"}), 0)
+
+        return True
+
+    def __read_logs(self):
+        if self.sock and type(self.sock) is not None and self.sock.fp is not None:
+            next_log = False
+            next_cmd = False
+            logs = []
+            log_message = ""
+            count = PL_LOGS_MAX_PER_REQUEST
+            while count > 0:
+                # lets read no more than coun logs per one loop
+                rd, wd, ed = select.select([self.sock], [], [], 0)
+                if not rd:
+                    break
+                else:
+                    for line in self.sock:
+                        if line == b'event: message\n':
+                            count -= 1
+                            if next_log and len(log_message) > 0:
+                                logs.append(log_message)
+                            log_message = ""
+                            next_log = True
+                            next_cmd = False
+                        elif line == b'event: state_change\n':
+                            count -= 1
+                            next_cmd = True
+                            next_log = False
+                        elif line == b'\n':
+                            next_log = False
+                            next_cmd = False
+                            break
+                        elif line == b': keep-alive\n':
+                            self.keep_alive = datetime.datetime.now()
+                            next_log = False
+                            next_cmd = False
+                        # if waiting for logs in a following format:
+                        # data: message\n
+                        # data: log start message and pretty print like this {\n
+                        # data:   value1: 123,\n
+                        # data:   value2: 123\n
+                        # data: }\n
+                        # \n
+                        elif next_log:
+                             message = line.decode("utf-8")
+                             if (message.find("data:") == 0):
+                                 log_message += message[6:]
+                             else:
+                                 # show unexpected messages too
+                                 log_message += message
+                        # if waiting for command
+                        elif next_cmd:
+                            next_cmd = False
+                            if line == b'data: closed\n':
+                                self.reset()
+                                logs.append("Stream was closed by server event.\n")
+                                return logs
+                            if line == b'data: opened\n':
+                                self.keep_alive = datetime.datetime.now()
+                                return logs
+                            if line != b'\n':
+                                logs.append(line.decode("utf-8"))
+                        else:
+                            log_debug("Unhandled command: " + str(line.decode("utf-8")))
+
+                        # append log to the list
+                        if not next_log and len(log_message) > 0:
+                            logs.append(log_message)
+                            log_message = ""
+
+                    # save log message on each exit from the for-loop
+                    if len(log_message) > 0:
+                        logs.append(log_message)
+                        log_message = ""
+
+            if len(logs) > 0:
+                # work around to keep stream active while logs are available
+                self.keep_alive = datetime.datetime.now()
+            elif self.keep_alive is not None:
+                # check that stream was not dropped
+                delta = datetime.datetime.now() - self.keep_alive
+                if delta.seconds > PL_KEEP_ALIVE_TIMEOUT:
+                    log_debug("Did not get keep alive on-time. Trigger log reset.")
+                    self.reset()
+
+            return logs
 
     def query_logs(self):
         log_request_time = False
-        device_id = self.env.project_manager.load_settings().get(EI_DEVICE_ID)
-        if not device_id:
-            # Nothing to do yet
-            return
-        if self.poll_url:
-            url = PL_BUILD_API_URL_BASE + self.poll_url
-        else:
-            url = PL_BUILD_API_URL_V4 + "devices/" + device_id + "/logs"
+
+        # check if it is polling procedure
+        if self.sock and type(self.sock) is not None and self.sock.fp is not None:
+            return {"logs": self.__read_logs()}
+
+        #
+        # Initialize logstream for the device group
+        #
+        device_group_id = self.env.project_manager.load_settings().get(EI_DEVICE_GROUP_ID)
+        self.error = None
+
+        if not device_group_id:
+            return None
+
+        logs = []
+        token = self.env.project_manager.get_access_token()
+
+        # Request the list of the devices for the device group
+        # on first connection and cache it for future
+        if not self.poll_url:
+            log_debug("Request devices")
+            devices, error = ImpCentral(self.env).list_devices(
+                token, None, device_group_id)
+
+            # Suppose that there is no logs if there is no device
+            if self.check_imp_error(error):
+                return None
+
+            if len(devices) == 0:
+                self.write_to_console(STR_MESSAGE_ASSIGN_DEVICE)
+                return None
+
+            # cache device list
+            # it could be re-use on the next connection
+            # and uses for smart log output
+            self.devices = devices
+
+        log_debug("Request logstream")
+        # request a new logstream instance
+        log_stream, error = ImpCentral(self.env).create_log_stream(token)
+
+        if self.check_imp_error(error):
+            return None
+
+        self.poll_url = log_stream["id"]
+
+        log_debug("Open stream")
+        self.sock = ImpCentral(self.env).open_log_stream(token, self.poll_url)
+
+        # something went wrong, reset current state
+        if not self.sock:
+            return None
+
+        log_debug("Attach devices")
+        # attach all devices from the device group to the logstream
+        for device in self.devices:
+            if (device and ("devicegroup" in device.get("relationships")) and
+                    (device_group_id == device["relationships"]["devicegroup"]["id"])):
+                response, error = ImpCentral(self.env).attach_device_to_log_stream(
+                    token, self.poll_url, device["id"])
+
+                if self.check_imp_error(error):
+                    return None
+
+        log_debug("Logstream subscription done, start polling")
+
+        self.state = self.STATE_POLL
+        self.write_to_console(STR_MESSAGE_LOG_STREAM_STARTED)
 
         start = None
         if log_request_time:
             start = datetime.datetime.now()
 
-        response, code = HTTP.get(key=self.env.project_manager.get_build_api_key(),
-                                  url=url, timeout=PL_LONG_POLL_TIMEOUT)
-
         if log_request_time:
             elapsed = datetime.datetime.now() - start
             log_debug("Time spent in calling the url: " + url + " is: " + str(elapsed))
 
-        # There was an error while retrieving logs from the server
-        if not HTTP.is_response_code_valid(code):
-            log_debug(STR_FAILED_TO_GET_LOGS)
-            return None
-        return response
-
-    @staticmethod
-    def get_poll_url(logs_json):
-        if not logs_json:
-            return None
-        return logs_json["poll_url"] if "poll_url" in logs_json else None
+        return {"logs": []}
 
     @staticmethod
     def logs_are_equal(first, second):
-        return first["type"] == second["type"] and \
-               first["message"] == second["message"] and \
-               first["timestamp"] == second["timestamp"]
+        return first == second
 
     def update_logs(self):
         def __update_logs():
-            logs_json = self.query_logs()
-            if not logs_json:
-                self.poll_url = None
+            self.update_log_started = True
+
+            try:
+                logs_json = self.query_logs()
+            except Exception as exc:
+                log_debug("An error query logs occurred")
+                log_debug(str(exc))
                 return
-            self.poll_url = LogManager.get_poll_url(logs_json)
+
+            # no logs available
+            if not logs_json:
+                self.reset()
+                self.update_log_started = False
+                return
+
             logs_list = logs_json["logs"]
+
             i = len(logs_list) if logs_list else 0
             while i > 0:
                 i -= 1
@@ -1363,11 +2555,18 @@ class LogManager:
                     break
             while i < len(logs_list):
                 log = logs_list[i]
-                self.write_to_console(log)
-                self.last_shown_log = log
                 i += 1
+                # skip empty logs
+                if not log:
+                    continue
 
-        sublime.set_timeout_async(__update_logs, 0)
+                self.write_to_console(log, False)
+                self.last_shown_log = log
+
+            self.update_log_started = False
+
+        if not self.update_log_started:
+            sublime.set_timeout_async(__update_logs, 0)
 
     def convert_line_numbers(self, log):
         message = log["message"]
@@ -1389,30 +2588,65 @@ class LogManager:
                     pass  # Use original message if failed to translate the error location
         return message
 
-    def write_to_console(self, log):
-        message = self.convert_line_numbers(log)
-        try:
-            log_type = {
-                "status": "[Server]",
-                "server.log": "[Device]",
-                "server.error": "[Device]",
-                "lastexitcode": "[Device]",
-                "agent.log": "[Agent] ",
-                "agent.error": "[Agent] "
-            }[log["type"]]
-        except KeyError:
-            log_debug("Unrecognized log type: " + log["type"])
-            log_type = "[Unrecognized]"
-        dt = datetime.datetime.strptime("".join(log["timestamp"].rsplit(":", 1)), "%Y-%m-%dT%H:%M:%S.%f%z")
-        self.env.ui_manager.write_to_console(dt.strftime('%Y-%m-%d %H:%M:%S%z') + " " + log_type + " " + message)
+    def __parse_log(self, log, status_log):
+        res = {}
+        ms = log.split(" ")
+        # is some case we could get wrong log format
+        # the following code is to handle such case
+        if len(ms) < 4 or status_log:
+            res["device"] = "sublime"
+            res["dt"] = datetime.datetime.now()
+            res["type"] = "[status.log]"
+            res["deployment"] = ""
+            res["message"] = log
+        else:
+            # date: deviceId timestamps deployment type log-string
+            res["device"] = ms.pop(0)
+            res["dt"] = datetime.datetime.strptime(ms.pop(0), IMPC_DATA_FORMAT)
+            res["deployment"] = ms.pop(0)
+            res["type"] = ms.pop(0)
+            res["message"] = " ".join(ms)[:-1]
 
-    def reset(self):
+        return res
+
+    def write_to_console(self, log, status_log=True):
+        # parse log string
+        # to extract log details
+        item = self.__parse_log(log, status_log)
+
+        # maps the error details to the corresponding
+        # filename and line numbers
+        item["message"] = self.convert_line_numbers(item)
+        # impCentral provides its own format of the logs
+        # but it is not comfortable for user to read such logs
+        # therefore the following line just re-format the same log
+        self.env.ui_manager.write_to_console(
+            item["dt"].strftime('%Y-%m-%d %H:%M:%S%z')
+            + " [" + item["device"] + "] " + item["type"] + " " + item["message"])
+
+    def reset(self, restart=False):
+        # this action should force to close the log stream
+        # but on the next request of logs stream should be
+        # instantiated
+        if self.sock:
+            self.sock.close()
+        self.sock = None
+        # reset poll url to reopen socket
         self.poll_url = None
+        # last shown log could be different after device sassing
+        # that's why log could be supplicated in the console
+        # after device assign/an-assign
         self.last_shown_log = None
+        # stop timer
+        self.keep_alive = None
+        # reset current state to idle
+        self.stop(restart)
 
 
 def update_log_windows(restart_timer=True):
     global project_env_map
+    time_start = datetime.datetime.now()
+    has_logs = False
     try:
         for (project_path, env) in list(project_env_map.items()):
             # Clean up project windows first
@@ -1421,7 +2655,25 @@ def update_log_windows(restart_timer=True):
                 del project_env_map[project_path]
                 log_debug("Removing project window: " + str(env.window) + ", total #: " + str(len(project_env_map)))
                 continue
-            env.log_manager.update_logs()
+
+            # there are two use-cases when it is possible to get logs
+            # on first start on transition from (STATE_IDLE -> STATE_INIT -> STATE_POLL)
+            # and on  POLL
+            if env.log_manager.state == env.log_manager.STATE_POLL:
+                env.log_manager.update_logs()
+                has_logs = True
+            elif env.log_manager.state == env.log_manager.STATE_IDLE and not restart_timer:
+                env.log_manager.start()
+                env.log_manager.update_logs()
+                has_logs = True
+            # skip logs request for the IDLE and FAIL states
     finally:
         if restart_timer:
-            sublime.set_timeout_async(update_log_windows, PL_LOGS_UPDATE_PERIOD)
+            # keep on reading logs while logs are available
+            # and keep on log polling once per second
+            ms = PL_LOGS_UPDATE_LONG_PERIOD
+            if has_logs:
+                ms = PL_LOGS_UPDATE_SHORT_PERIOD
+
+            sublime.set_timeout(update_log_windows, ms)
+    return True
