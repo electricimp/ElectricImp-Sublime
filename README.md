@@ -189,9 +189,9 @@ The Console shows live logs from the current device group if it is contain at le
 
 ### Adding a Device to the DeviceGroup
 
-You can add other devices enrolled into your account to the project's device group by selecting
-`Tools` > `Packages` > `Electric Imp` > `Assign Device`.
-The newly added device is automatically restart log stream, which means the Console will show its logs.
+To assign devices to the project's device group please go to
+`Tools` > `Packages` > `Electric Imp` > `Assign Device` and select a device from the list.
+The newly added device is automatically added to the console log stream.
 
 ### Removing a Device from the DeviceGroup
 
