@@ -90,8 +90,8 @@ Alternatively, follow these steps to install the plug-in manually:
     - **Windows**: *"%AppData%\Sublime Text 3\Packages\imp-developer%"*
 
 2. Do one of the following:
-    - Download the full GitHub source [repository](https://github.com/electricimp/ElectricImp-Sublime) as a zip file and extract it into the *plug-in folder* or
-    - Clone the contents of the source repository [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into the *plugin folder*.
+    - Download the full GitHub source [repository](https://github.com/electricimp/ElectricImp-Sublime) as a zip file and extract it's content into the *plug-in folder* (`Sublime Text 3/Packages/imp-developer`) or
+    - Clone the contents of the source repository [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into the *plugin folder* (`Sublime Text 3/Packages/imp-developer`).
 
 ## Usage
 
@@ -127,8 +127,8 @@ The `electric-imp.settings` file contains:
 
 ```
 {
-  "product-id"    : "my-model-id",
-  "devicegroup-id": "my-selected-device-id",
+  "product-id"    : "my-product-id",
+  "devicegroup-id": "my-device-group-id",
   "deployment-id" : "deployment-new" or "my-deployment-id"
   "device-file"   : "src/device.nut",
   "agent-file"    : "src/agent.nut"
@@ -190,7 +190,7 @@ The Console shows live logs from the current device group if it is contain at le
 ### Adding a Device to the DeviceGroup
 
 You can add other devices enrolled into your account to the project's device group by selecting
-`Tools` > `Packages` > `Electric Imp` > `Assing Device`.
+`Tools` > `Packages` > `Electric Imp` > `Assign Device`.
 The newly added device is automatically restart log stream, which means the Console will show its logs.
 
 ### Removing a Device from the DeviceGroup

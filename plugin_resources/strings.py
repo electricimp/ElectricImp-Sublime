@@ -15,7 +15,7 @@ STR_INVALID_BUILDER_CLI_PATH         = "Can't find the Builder cli.js at the pat
 STR_FOLDER_EXISTS                    = "The folder {} already exists. Do you want to create project in this folder? Existing project files will be overwritten. Existing sources will be left untouched"
 STR_BUILD_API_KEY                    = "Electric Imp Build API key:"
 STR_INVALID_API_KEY                  = "Build API key is invalid. Please try another one"
-STR_AGENT_URL_COPIED                 = "The agent URL is copied into the clipboard:\n\n Device :  {}\n\n Url :  {}"
+STR_AGENT_URL_COPIED                 = "The agent URL for device id {} is copied into the clipboard:\n\n{}"
 STR_FAILED_TO_GET_LOGS               = "An error returned for logs request."
 
 STR_INVALID_CREDENTIALS              = "Invalid user name or password. Please try again?"
