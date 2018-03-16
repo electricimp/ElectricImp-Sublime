@@ -1,4 +1,4 @@
-Electric Imp Sublime Plug-in (Beta)
+Electric Imp impCentral Sublime Plug-in (Beta)
 ==================================
 
 [Sublime Text 3](https://www.sublimetext.com/3) plug-in for [Electric Imp](https://electricimp.com) applications development.
