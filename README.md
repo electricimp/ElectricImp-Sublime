@@ -70,7 +70,8 @@ npm i -g Builder
 If you already have [Package Control](http://wbond.net/sublime_packages/package_control/) installed in Sublime Text:
 
 * Select `Install Package` from the Command Palette: <kbd>Ctrl+Shift+P</kbd> on Windows and Linux or <kbd>⇧⌘P</kbd> on macOS
-* Search for **Electric Imp Developer** and click <kbd>enter</kbd>.
+* Search for **Electric Imp Developer** and click <kbd>enter</kbd>
+* Restart Sublime Text 3 editor
 
 #### From Sublime Text Terminal
 
@@ -91,7 +92,8 @@ Alternatively, follow these steps to install the plug-in manually:
 
 2. Do one of the following:
     - Download the full GitHub source [repository](https://github.com/electricimp/ElectricImp-Sublime) as a zip file and extract it's content into the *plug-in folder* (`Sublime Text 3/Packages/imp-developer`) or
-    - Clone the contents of the source repository [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into the *plugin folder* (`Sublime Text 3/Packages/imp-developer`).
+    - Clone the contents of the source repository [https://github.com/electricimp/ElectricImp-Sublime](https://github.com/electricimp/ElectricImp-Sublime) into the *plugin folder* (`Sublime Text 3/Packages/imp-developer`)
+    - Restart Sublime Text 3 editor
 
 ## Usage
 
@@ -127,11 +129,18 @@ The `electric-imp.settings` file contains:
 
 ```
 {
-  "product-id"    : "my-product-id",
-  "devicegroup-id": "my-device-group-id",
-  "deployment-id" : "deployment-new" or "my-deployment-id"
-  "device-file"   : "src/device.nut",
-  "agent-file"    : "src/agent.nut"
+    "product-id"    : "<product id>",
+    "devicegroup-id": "<device group id>",
+    "deployment-id" : "<deployment id>",
+    "device-file"   : "<path to device source file, src/device.nut by default>",
+    "agent-file"    : "<path to agent source file, src/agent.nut by default>",
+    "cloud-url"     : "<impCentral base endpoint URL>",
+    "builder-settings": {
+        "variable-definitions": {<Builder variable definitions>}, 
+        "builder_cli_path": "<Path to the Builder's cli.js>", 
+        "node_path": "<path to Node.js (node) executable>"
+    }, 
+  
 }
 ```
 
