@@ -12,7 +12,7 @@ Electric Imp impCentral Sublime Plug-in (Beta)
     - [Creating a New Project](#creating-a-new-project)
     - [Opening an Existing Project](#opening-an-existing-project)
     - [Building and Running](#building-and-running)
-    - [Project Management](#project-management)
+    - [Project Creation](#project-creation)
     - [Logs Console](#logs-console)
     - [Selecting a Device](#selecting-a-device)
     - [Adding a Device to the DeviceGroup](#adding-a-device-to-the-devicegroup)
@@ -122,10 +122,12 @@ contains sensitive information!**
 
 The `electric-imp.settings` file contains:
 
-- Unique project identifier
-- Unique device group identifier
-- The latest deployment which was done via plug-in
-- Device and Agent code file names
+- Unique project identifier.
+- Unique device group identifier.
+- The latest deployment which was done via plug-in.
+- Device and Agent code file names.
+- [Builder](https://github.com/electricimp/builder) preprocessor configuration
+- impCentral REST API URL (that can be used to work with private clouds) 
 
 ```
 {
@@ -158,33 +160,39 @@ To open an existing Electric Imp project, select the `Project` > `Open Project..
 `<Project Name>.sublime-project` file from your project folder.
 
 **NOTE: The plug-in won't properly detect Electric Imp project if it is not opened as described, ie. if it is opened
-as a folder, not as a Text Sublime project!**
+as a folder (`File` > `Open...`), not as a Text Sublime project!**
 
 ### Building and Running
 
 To build and deploy the application code, please select the `Tools` > `Packages` > `Electric Imp` > `Build and Run`
 menu item. This action uploads the agent and the device code to the server,
-and restarts all of the devices assigned to the model.
+and restarts all of the devices assigned to the device group.
 
 When you build code (or perform any other action that requires access to the impCloud&trade;)
 for the first time, you will be asked to provide:
 
+- impCentral REST API base URL. **NOTE: The default value should be used, unless you are working with a private Electric Imp Cloud.** 
 - The path to the Node.js executable (if it is not automatically detected by the plug-in).
 - The location of the Builder *cli.js* command line tool (if not automatically detected by the plug-in).
-- User name and password, which you use for the [Electric Imp impCentral](https://impcentral.electricimp.com/)
-- Create a new project or select an existing one
-- Create a new device group or select an existing one
-- You could be offered to download the latest deployment if you select an existing product and devicegroup
+- User name and password, which you use for the [Electric Imp impCentral](https://impcentral.electricimp.com/).
+- Create a new project or select an existing one.
+- You can select a product that belongs to one of other. 
+users who granted your appropriate [collaborator roles](https://developer.electricimp.com/ideuserguide/collaboratorroles).
+- Create a new device group or select an existing one.
+- You could be offered to download the latest deployment if you select an existing product and device group.
 
-**NOTE**: To build and deploy your code for a newly created device group it isn’t necessary to select a device for your project. Even if you don’t have a device selected, you can still work on the code and see compilation errors reported by the server.
+If you want to have you code running on a specific devices and view the logs from that devices, you need 
+to select them using the `Tools` > `Packages` > `Electric Imp` > `Assign Device` menu item. 
+'Unassign Device' menu item removes a device from the project's device group.
 
-If you want to have you code running on a specific devices and view the logs from that devices, you need to select them using the `Tools` > `Packages` > `Electric Imp` > `Assign Device` menu item and 'Unassign Device' to remove all device which you are not interested in
+**NOTE**: To build and deploy your code it isn’t necessary to assign a device 
+to the device group. If you don’t have a device assigned, you can still work on the code and see 
+compilation errors reported by the server.
 
-### Project Management
+### Project Creation
 
-Each Electric Imp project is associated with a particular device group, i.e. the device and agent code that define your
-application. You can create a new project by selecting `Tools` > `Packages` > `Electric Imp` > `Create New Project`.
-
+Each Electric Imp project is associated with an Electric Imp product and a specific device group. 
+You can create a new project by selecting `Tools` > `Packages` > `Electric Imp` > `Create New Project`.
 
 **Important** The code which is deployed to the device group is preprocessed and contains line control markers.
 When you select an existing device group, the plug-in pulls down the code, but it doesn’t transfer the project
@@ -194,7 +202,7 @@ Imp plug-in project sources/structure via a source control system.
 ### Logs Console
 
 The Console can be popped up by selecting `Tools` > `Packages` > `Electric Imp` > `Show Console` menu item.
-The Console shows live logs from the current device group if it is contain at least one device.
+The Console shows live stream logs from the current device group if it contains at least one device.
 
 ### Adding a Device to the DeviceGroup
 
