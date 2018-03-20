@@ -93,7 +93,7 @@ STR_FAILED_CODE_DEPLOY               = "Code deploy failed because of the error:
 STR_UNHANDLED_HTTP_ERROR             = "Unhanded http error: {}"
 STR_TRY_AGAIN                        = "Try again"
 
-STR_PROVIDE_IMPCENTRAL_API_URL       = "Please provide the impCentral API URL"
+STR_PROVIDE_IMPCENTRAL_API_URL       = "Please provide the impCentral API URL.\n\nNOTE: always use the default, unless you use a private Electric Imp Cloud!"
 STR_IMPCENTRAL_API_URL               = "Electric Imp impCentral API URL:"
 STR_PLEASE_CHECK_URL                 = "Failed to request {} api, please check url"
 
