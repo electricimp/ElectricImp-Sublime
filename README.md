@@ -13,8 +13,7 @@ Electric Imp impCentral Sublime Plug-in (Beta)
     - [Creating a New Project](#creating-a-new-project)
     - [Opening an Existing Project](#opening-an-existing-project)
     - [Building and Running](#building-and-running)
-    - [Project Creation](#project-creation)
-    - [Logs Console](#logs-console)
+    - [The Log Console](#the-log-console)
     - [Adding a Device to the Project Device Group](#adding-a-device-to-the-project-device-group)
     - [Removing a Device from the Project Device Group](#removing-a-device-from-the-project-device-group)
     - [Retrieving a Device’s Agent URL](#retrieving-a-devices-agent-url)
@@ -151,6 +150,8 @@ If a project is created successfully, a new window with the project folder is op
 
 **Note** If you need to apply the Squirrel language syntax highlighting to files with extension other than `.nut`, please make sure you have ‘Squirrel (Electric Imp)’ language selected under the ‘View’ > ‘Syntax’ menu item.
 
+**Important** The code which is deployed to the Device Group is preprocessed and contains line control markers. When you select an existing Device Group, the plug-in pulls down the code, but it doesn’t transfer the project file/folder structure. So for collaborative work on the same project, please share the original Electric Imp plug-in project sources/structure via a source control system.
+
 ### Opening an Existing Project ###
 
 To open an existing Electric Imp project, select the ‘Project’ > ‘Open Project...’ menu option and choose the
@@ -180,13 +181,7 @@ to select them using the ‘Tools’ > ‘Packages’ > ‘Electric Imp’ > ‘
 
 **Note** To build and deploy your code it isn’t necessary to assign a device to the Device Group. If you don’t have a device assigned, you can still work on the code and see compilation errors reported by the server.
 
-### Project Creation ###
-
-Each project is associated with an Electric Imp Product and a specific Device Group. You can create a new project by selecting ‘Tools’ > ‘Packages’ > ‘Electric Imp’ > ‘Create New Project’.
-
-**Important** The code which is deployed to the Device Group is preprocessed and contains line control markers. When you select an existing Device Group, the plug-in pulls down the code, but it doesn’t transfer the project file/folder structure. So for collaborative work on the same project, please share the original Electric Imp plug-in project sources/structure via a source control system.
-
-### Logs Console ###
+### The Log Console ###
 
 The Console can be popped up by selecting ‘Tools’ > ‘Packages’ > ‘Electric Imp’ > ‘Show Console’ menu item. The Console shows live logs streamed from the current Device Group if the group contains at least one device.
 
@@ -234,7 +229,7 @@ Please use the project `<Project Name>/settings/auth.info` file to specify your 
 Please use the project `<Project Name>/settings/electric-imp.settings` file to specify the Builder variables definitions:
 
 ```
-{ "builder-settings": { ...
+{ "builder-settings": { ...,
                         "variable-definitions": { "key1": "value1",
                                                   "key2": "value2" },
                         ... }
