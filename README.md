@@ -108,12 +108,14 @@ The project folder will be set up with the following:
 ```
 -- <Project Name>
   |--> settings                           - Electric Imp settings folder
-  .   |--> auth.info                      - SENSITIVE: impCentral API tokens and GitHub authentication information
+  .   |--> auth.info                      - SENSITIVE: impCentral API tokens and 
+  .   |                                     GitHub authentication information
   .   |--> electric-imp.settings          - Generic Electric Imp settings
   |--> src                                - Source folder
   .   |--> device.nut                     - Device code
   .   |--> agent.nut                      - Agent code
-  |--> .gitignore                         - .gitignore file to exclude auth.info file from git repository
+  |--> .gitignore                         - .gitignore file to exclude auth.info file 
+  |                                         from git repository
   |--> electric-imp.sublime-project       - Sublime project file
 ```
 
