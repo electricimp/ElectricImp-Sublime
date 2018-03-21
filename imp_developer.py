@@ -718,7 +718,7 @@ class ImpCentral:
     def is_valid_api_path(self, url):
         self.url = url
         payload, error = self.account("")
-        return error.get("code") == ImpRequest.INVALID_CREDENTIALS
+        return error is None or error.get("code") == ImpRequest.INVALID_CREDENTIALS
 
     def handle_http_response(self, response, code):
         if HTTP.is_response_code_valid(code):
