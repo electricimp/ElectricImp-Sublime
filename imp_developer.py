@@ -64,18 +64,18 @@ PL_LOGS_UPDATE_SHORT_PERIOD = 300  # ms - polling logs
 PL_LOGS_MAX_PER_REQUEST     = 30   # maximum logs to read per request
 
 # Electric Imp project specific constants
-PR_DEFAULT_PROJECT_NAME  = "electric-imp-project"
-PR_TEMPLATE_DIR_NAME     = "project-template"
-PR_PROJECT_FILE_TEMPLATE = "electric-imp.sublime-project"
-PR_WS_FILE_TEMPLATE      = "electric-imp.sublime-workspace"
-PR_SETTINGS_FILE         = "electric-imp.settings"
-PR_AUTH_INFO_FILE        = "auth.info"
-PR_SOURCE_DIRECTORY      = "src"
-PR_SETTINGS_DIRECTORY    = "settings"
-PR_BUILD_DIRECTORY       = "build"
-PR_DEVICE_FILE_NAME      = "device.nut"
-PR_AGENT_FILE_NAME       = "agent.nut"
-PR_PREPROCESSED_PREFIX   = "preprocessed."
+PR_DEFAULT_PROJECT_NAME     = "electric-imp-project"
+PR_TEMPLATE_DIR_NAME        = "project-template"
+PR_PROJECT_FILE_TEMPLATE    = "electric-imp.sublime-project"
+PR_WS_FILE_TEMPLATE         = "electric-imp.sublime-workspace"
+PR_SETTINGS_FILE            = "electric-imp.settings"
+PR_AUTH_INFO_FILE           = "auth.info"
+PR_SOURCE_DIRECTORY         = "src"
+PR_SETTINGS_DIRECTORY       = "settings"
+PR_BUILD_DIRECTORY          = "build"
+PR_DEVICE_FILE_NAME         = "device.nut"
+PR_AGENT_FILE_NAME          = "agent.nut"
+PR_PREPROCESSED_PREFIX      = "preprocessed."
 
 # Electric Imp settings and project properties
 EI_CLOUD_URL                = "cloud-url"
@@ -107,10 +107,10 @@ EI_GITHUB_TOKEN             = "github-token"
 EI_VARIABLE_DEFINES         = "variable-definitions"
 
 # impCentral values mapping
-IMPC_EXPIRES_AT    = "expires_at"
-IMPC_ACCESS_TOKEN  = "access_token"
-IMPC_REFRESH_TOKEN = "refresh_token"
-IMPC_DATA_FORMAT   = "%Y-%m-%dT%H:%M:%S.%fZ"
+IMPC_EXPIRES_AT             = "expires_at"
+IMPC_ACCESS_TOKEN           = "access_token"
+IMPC_REFRESH_TOKEN          = "refresh_token"
+IMPC_DATA_FORMAT            = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 # Global variables
 plugin_settings = None
@@ -768,9 +768,9 @@ class Preprocessor:
         dest_dir = env.project_manager.get_build_directory_path()
         proj_dir = env.project_manager.get_project_directory_path()
 
-        source_agent_filename  = os.path.join(proj_dir, settings.get(EI_AGENT_FILE))
+        source_agent_filename  = settings.get(EI_AGENT_FILE)
         result_agent_filename  = os.path.join(dest_dir, PR_PREPROCESSED_PREFIX + PR_AGENT_FILE_NAME)
-        source_device_filename = os.path.join(proj_dir, settings.get(EI_DEVICE_FILE))
+        source_device_filename = settings.get(EI_DEVICE_FILE)
         result_device_filename = os.path.join(dest_dir, PR_PREPROCESSED_PREFIX + PR_DEVICE_FILE_NAME)
 
         if not os.path.exists(dest_dir):
@@ -809,7 +809,7 @@ class Preprocessor:
                         args.append("-D" + key)
                         args.append(variable_defines[key])
 
-                pipes = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                pipes = subprocess.Popen(args, cwd=proj_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 prep_out, prep_err = pipes.communicate()
 
                 def strip_off_color_control_chars(str):
@@ -2236,7 +2236,7 @@ class ImpErrorProcessor(sublime_plugin.EventListener):
 
         if orig_file is not None and orig_line is not None:
 
-            source_dir = os.path.join(os.path.dirname(window.project_file_name()), PR_SOURCE_DIRECTORY)
+            source_dir = os.path.dirname(window.project_file_name())
             file_name = os.path.join(source_dir, orig_file)
 
             if not os.path.exists(file_name):
