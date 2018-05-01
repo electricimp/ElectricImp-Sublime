@@ -529,7 +529,7 @@ class ImpCentral:
         return self.list_items(token, "devices", filters)
 
     def list_items(self, token, interface, filters=None):
-        url = self.url + interface
+        url = self.url + '/' + interface
 
         # Apply filters
         filter_query = ""
@@ -561,29 +561,29 @@ class ImpCentral:
         return items, None
 
     def get_device_group(self, token, device_group_id):
-        url = self.url + "devicegroups/" + device_group_id
+        url = self.url + "/devicegroups/" + device_group_id
         response, code = HTTP.get(token, url=url)
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
     def get_deployment(self, token, deployment_id):
-        url = self.url + "deployments/" + deployment_id
+        url = self.url + "/deployments/" + deployment_id
         response, code = HTTP.get(token, url=url)
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
     def get_device(self, token, device_id):
-        response, code = HTTP.get(token, self.url + "devices/" + device_id)
+        response, code = HTTP.get(token, self.url + "/devices/" + device_id)
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
     def get_product(self, token, product_id):
-        response, code = HTTP.get(token, self.url + "products/" + product_id)
+        response, code = HTTP.get(token, self.url + "/products/" + product_id)
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
     def create_product(self, token, product_name, collaborator):
-        url = self.url + "products"
+        url = self.url + "/products"
         payload = {
             "data": {
                 "type": "product",
@@ -608,7 +608,7 @@ class ImpCentral:
         return payload, error
 
     def create_device_group(self, token, product_id, device_group_name):
-        url = self.url + "devicegroups"
+        url = self.url + "/devicegroups"
         data = json.dumps({
             "data": {
                 "type": "development_devicegroup",
@@ -630,13 +630,13 @@ class ImpCentral:
 
     def create_log_stream(self, token):
         response, code = HTTP.post(token,
-            url=self.url + "logstream")
+            url=self.url + "/logstream")
         payload, error = self.handle_http_response(response, code)
         return payload, error
 
     def attach_device_to_log_stream(self, token, log_stream_id, device_id):
         response, code = HTTP.put(token,
-            url=self.url + "logstream/" + log_stream_id + "/" + device_id,
+            url=self.url + "/logstream/" + log_stream_id + "/" + device_id,
             data="{}")
         payload, error = self.handle_http_response(response, code)
         # Note: response in None in that case
@@ -645,7 +645,7 @@ class ImpCentral:
 
     def open_log_stream(self, token, log_stream_id):
         response = None
-        url = self.url + "logstream/" + log_stream_id
+        url = self.url + "/logstream/" + log_stream_id
         headers = HTTP.get_http_headers(token, HttpHeaders.STREAM_HEADERS)
         # open socket to start polling
         request = urllib.request.Request(
@@ -665,7 +665,7 @@ class ImpCentral:
         return response
 
     def create_deployment(self, token, device_group_id, agent_code, device_code):
-        url = self.url + "deployments"
+        url = self.url + "/deployments"
         data = ('{"data": {"type": "deployment",'
               ' "attributes": {'
               '  "description": "' + STR_DEPLOYMENT_DESCRIPTION + '"'
@@ -682,7 +682,7 @@ class ImpCentral:
         return self.handle_http_response(response, code)
 
     def assign_device(self, token, device_group_id, device_id):
-        url = self.url + "devicegroups/" + device_group_id + "/relationships/devices"
+        url = self.url + "/devicegroups/" + device_group_id + "/relationships/devices"
         data = json.dumps({
                 "data": [{
                     "type": "device",
@@ -695,7 +695,7 @@ class ImpCentral:
         return response, error
 
     def unassign_device(self, token, device_group_id, device_id):
-        url = self.url + "devicegroups/" + device_group_id + "/relationships/devices"
+        url = self.url + "/devicegroups/" + device_group_id + "/relationships/devices"
         data = json.dumps({
                 "data": [{
                     "type": "device",
@@ -709,7 +709,7 @@ class ImpCentral:
         return response, error
 
     def conditional_restart(self, token, device_group_id):
-        url = self.url + "devicegroups/" + device_group_id + "/conditional_restart"
+        url = self.url + "/devicegroups/" + device_group_id + "/conditional_restart"
         response, code = HTTP.post(token, url)
 
         payload, error = self.handle_http_response(response, code)
