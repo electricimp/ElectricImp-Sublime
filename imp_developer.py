@@ -470,7 +470,7 @@ class ImpCentral:
         self.url = settings.get(EI_CLOUD_URL)
 
     def auth(self, user_name, password):
-        url = self.url + "auth"
+        url = self.url + "/auth"
         response, code = HTTP.post(None, url,
             '{"id": "' + user_name + '", "password": "' + password + '"}',
             headers=HttpHeaders.AUTH_HEADERS)
@@ -716,8 +716,8 @@ class ImpCentral:
         return response, error
 
     def is_valid_api_path(self, url):
-        self.url = url
-        payload, error = self.account("")
+        response, code = HTTP.get('', url + "/accounts/me")
+        payload, error = self.handle_http_response(response, code)
         return error is None or error.get("code") == ImpRequest.INVALID_CREDENTIALS
 
     def handle_http_response(self, response, code):
