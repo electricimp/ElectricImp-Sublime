@@ -91,6 +91,7 @@ EI_ACCESS_TOKEN_EXPIRES_AT  = "access-token-expires"
 EI_REFRESH_TOKEN            = "refresh-token"
 EI_PRODUCT_ID               = "product-id"
 EI_DEVICE_GROUP_ID          = "device-group-id"
+EI_DEVICE_GROUP_TYPE        = "device-group-type"
 EI_DEPLOYMENT_ID            = "deployment-id"
 
 EI_DEPLOYMENT_NEW           = "deployment-new"
@@ -466,8 +467,8 @@ class ImpRequest():
 class ImpCentral:
 
     def __init__(self, env):
-        settings = env.project_manager.load_settings()
-        self.url = settings.get(EI_CLOUD_URL)
+        self.settings = env.project_manager.load_settings()
+        self.url = self.settings.get(EI_CLOUD_URL)
 
     def auth(self, user_name, password):
         url = self.url + "/auth"
@@ -666,17 +667,27 @@ class ImpCentral:
 
     def create_deployment(self, token, device_group_id, agent_code, device_code):
         url = self.url + "/deployments"
-        data = ('{"data": {"type": "deployment",'
-              ' "attributes": {'
-              '  "description": "' + STR_DEPLOYMENT_DESCRIPTION + '"'
-              ', "origin": "sublime"'
-              ', "tags": []'
-              ', "agent_code": ' + json.dumps(agent_code) +
-              ', "device_code": ' + json.dumps(device_code) +
-              '},'
-              '"relationships": {"devicegroup": {'
-              ' "type": "development_devicegroup", "id": "' + device_group_id + '"}}'
-              ' }}')
+        dg_type = self.settings.get(EI_DEVICE_GROUP_TYPE)
+        data = ('{\n'
+                '   "data": {\n'
+                '       "type": "deployment",\n'
+                '       "attributes": {\n'
+                '           "description": "' + STR_DEPLOYMENT_DESCRIPTION + '"\n'
+                '           ,"origin": "sublime"\n'
+                '           ,"tags": []\n'
+                '           ,"agent_code": ' + json.dumps(agent_code) + '\n'
+                '           ,"device_code": ' + json.dumps(device_code) + '\n'
+                '       },\n'
+                '       "relationships": {\n'
+                '           "devicegroup": {\n'
+                '               "type": "' + (dg_type if dg_type else 'development_devicegroup') + '"\n'
+                '               ,"id": "' + device_group_id + '"\n'
+                '           }\n'
+                '       }\n'                                                                                                 
+                '   }\n'
+                '}')
+        log_debug("Creating deployment...")
+        log_debug(str(data))
         # create a new deployment
         response, code = HTTP.post(token, url=url, data=data)
         return self.handle_http_response(response, code)
@@ -1232,7 +1243,7 @@ class ImpCheckCloudUrlCommand(BaseElectricImpCommand):
         self.window.show_input_panel(STR_IMPCENTRAL_API_URL, self.cloud, self.on_url_provided, None, None)
 
     def on_url_provided(self, url):
-        self.cloud = url
+        self.cloud = url.strip().rstrip('/')
 
         if not ImpCentral(self.env).is_valid_api_path(url):
             if not sublime.ok_cancel_dialog(STR_PLEASE_CHECK_URL.format(url)):
@@ -1415,6 +1426,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
 
         self.update_settings(EI_PRODUCT_ID, product["id"])
         self.update_settings(EI_DEVICE_GROUP_ID, None)
+        self.update_settings(EI_DEVICE_GROUP_TYPE, None)
         self.on_action_complete()
 
     def on_product_name_provided(self, index, names, owner_id):
@@ -1437,6 +1449,7 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
             # Save selected product in the settings file
             self.update_settings(EI_PRODUCT_ID, names[index-2][0])
             self.update_settings(EI_DEVICE_GROUP_ID, None)
+            self.update_settings(EI_DEVICE_GROUP_TYPE, None)
 
             self.on_action_complete()
 
@@ -1571,28 +1584,27 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             for dg in device_groups:
                 if dg["relationships"]["product"]["id"] == product_id:
                     all_names += [str(dg["attributes"]["name"])]
-                    details += [(dg["id"], str(dg["attributes"]["name"]))]
+                    details += [(dg["id"], dg["type"])]
 
         # make a new product creation option as a part of the product select menu
-        self.window.show_quick_panel([ STR_DEVICE_GROUP_CREATE_NEW ] + all_names,
-            lambda id: self.on_device_group_name_provided_async(id, details))
-
-    def on_device_group_name_provided_async(self, index, items):
-        sublime.set_timeout_async(lambda: self.on_device_group_name_provided(index, items), 0)
+        self.window.show_quick_panel([STR_DEVICE_GROUP_CREATE_NEW] + all_names,
+                                     lambda dg_ind: sublime.set_timeout_async(
+                                         lambda: self.on_device_group_name_provided(dg_ind, details), 0))
 
     def on_device_group_name_provided(self, index, items):
-        # prevent wrong index which should never happened
-        if (index < 0 or index > len(items)):
+        # check if the list got cancelled
+        if index == -1:
             self.on_action_complete(canceled=True)
             return
 
         if index == 0:
             self.on_create_new_device_group()
         else:
-            # the list of items does not contain the "new device group"
+            # The list of items does not contain the "new device group"
             # selection option which has index == 0
-            id = items[index-1][0]
-            self.update_settings(EI_DEVICE_GROUP_ID, id)
+            dg_details = items[index - 1]
+            self.update_settings(EI_DEVICE_GROUP_ID, dg_details[0])
+            self.update_settings(EI_DEVICE_GROUP_TYPE, dg_details[1])
             # Force to propose code loading from the web
             self.update_settings(EI_DEPLOYMENT_ID, None)
             self.on_action_complete()
@@ -1608,7 +1620,7 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
         token = self.env.project_manager.get_access_token()
         settings = self.load_settings()
         # request a new device group creation
-        device_group, error = ImpCentral(self.env).create_device_group(
+        dg, error = ImpCentral(self.env).create_device_group(
             token, settings[EI_PRODUCT_ID], name)
 
         if self.check_imp_error(error,
@@ -1616,7 +1628,9 @@ class ImpCreateNewDeviceGroupCommand(BaseElectricImpCommand):
             STR_RETRY_TO_GET_DEVICE_GROUP):
             return
 
-        self.update_settings(EI_DEVICE_GROUP_ID, device_group["id"])
+        self.update_settings(EI_DEVICE_GROUP_ID, dg["id"])
+        self.update_settings(EI_DEVICE_GROUP_TYPE, dg["type"])
+
         self.update_settings(EI_DEPLOYMENT_ID, EI_DEPLOYMENT_NEW)
         self.on_action_complete()
 
@@ -1815,12 +1829,17 @@ class ImpBuildAndRunCommand(BaseElectricImpCommand):
 
         settings = self.load_settings()
 
-        # post a new deployment into the current devicegroup
-        deployment, error = ImpCentral(self.env).create_deployment(
-            self.env.project_manager.get_access_token(),
-            settings.get(EI_DEVICE_GROUP_ID),
-            agent_code,
-            device_code)
+        imp_central = ImpCentral(self.env)
+        token = self.env.project_manager.get_access_token()
+        dg_id = settings.get(EI_DEVICE_GROUP_ID)
+
+        # check if dg type is stored in the settings file and add it if not
+        if EI_DEVICE_GROUP_TYPE not in settings:
+            dg, error = imp_central.get_device_group(token, dg_id)
+            self.update_settings(EI_DEVICE_GROUP_TYPE, dg["type"])
+
+        # post a new deployment into the current device group
+        deployment, error = imp_central.create_deployment(token, dg_id, agent_code, device_code)
 
         self.handle_deployment(deployment, error)
 

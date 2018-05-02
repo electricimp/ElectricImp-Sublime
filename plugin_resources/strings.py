@@ -33,8 +33,8 @@ STR_DEVICE_GROUP_CREATE_NEW           = "Create a new Device Group ..."
 STR_DEVICE_GROUP_CONDITIONAL_RESTART  = "Requested the conditional restart for the device group to apply the deployed source code"
 STR_DEVICE_GROUP_PROVIDE_NAME         = "Please provide a unique device group name"
 STR_DEVICE_GROUP_NAME                 = "Device group name:"
-STR_DEVICE_GROUP_CONFIRM_PULLING_CODE = "Do you want to pull the latest code revision from the DeviceGroup? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
-STR_DEVICE_GROUP_DESCRIPTION          = "Devicegroup created from sublime plugin"
+STR_DEVICE_GROUP_CONFIRM_PULLING_CODE = "Do you want to pull the latest code revision from the device group? Local source files will be overwritten with the remote ones and all the local changes will be lost!"
+STR_DEVICE_GROUP_DESCRIPTION          = "Device group created from sublime plugin"
 
 STR_DEPLOYMENT_DESCRIPTION            = "Code from the sublime plugin."
 
@@ -59,43 +59,43 @@ STR_FAILED_TO_LOGIN                    = "Failed to login: "
 STR_INVALID_USER_OR_PASSWORD         = "Invalid user-name or password. Try again?"
 
 STR_FAILED_TO_CREATE_PRODUCT         = "Failed to create new product: "
-STR_RETRY_CREATE_PRODUCT             = "Try to create product again ?"
+STR_RETRY_CREATE_PRODUCT             = "Try to create product again?"
 
 STR_FAILED_TO_GET_ACCOUNT_DETAILS    = "Failed to get account details: "
 STR_FAILED_TO_GET_PRODUCTS           = "Failed to get the list of products: "
 STR_RETRY_SELECT_PRODUCT             = "Try to load list of products again?"
 
 STR_FAILED_TO_GET_DEVICE_GROUPS      = "Failed to extract the device group list: "
-STR_RETRY_TO_GET_DEVICE_GROUPS       = "Something wend wrong, retry to extract the list of devicegroups ?"
+STR_RETRY_TO_GET_DEVICE_GROUPS       = "Something wend wrong, retry to extract the list of device groups?"
 
 STR_FAILED_TO_GET_DEVICE_GROUP       = "Failed to create device group: "
-STR_RETRY_TO_GET_DEVICE_GROUP        = "Wrong device group id. Type again ?"
+STR_RETRY_TO_GET_DEVICE_GROUP        = "Wrong device group id. Type again?"
 
 STR_FAILED_TO_ASSIGN_DEVICE          = "Failed to assign device: "
 STR_FAILED_TO_GET_DEVICELIST         = "Failed to extract list of devices: "
 
 STR_FAILED_TO_REMOVE_DEVICE          = "Failed to remove device from the group: "
-STR_RETRY_TO_REMOVE_DEVICE           = "Something went wrong with device unassing from the device group.\n\n Try again ?"
+STR_RETRY_TO_REMOVE_DEVICE           = "Something went wrong with unassigning device from the device group.\n\n Try again?"
 
 STR_FAILED_CONDITIONAL_RESTART       = "Failed to perform the conditional restart"
 STR_FAILED_TO_GET_DEVICE_AGENT_URL   = "Failed to get agent url for some device"
 
 STR_FAILED_TO_EXTRACT_CODE           = "Failed to extract source code"
-STR_RETRY_TO_EXTRACT_CODE            = "Try to download code again ?"
+STR_RETRY_TO_EXTRACT_CODE            = "Try to download code again?"
 
 STR_FAILED_TO_GET_DEPLOYMENT         = "Failed to load the latest deployment: "
 
-STR_FAILED_TOO_SHORT_CONTENT         = "Too short conten exception"
-STR_FAILED_RESOURCE_NOT_AVAILABLE    = "\n There is no Internet connection.\n Or requested resource not avialble."
+STR_FAILED_TOO_SHORT_CONTENT         = "Too short content exception"
+STR_FAILED_RESOURCE_NOT_AVAILABLE    = "\n There is no Internet connection.\n Or requested resource not available."
 
 STR_FAILED_CODE_DEPLOY               = "Code deploy failed because of the error: {}"
 
-STR_UNHANDLED_HTTP_ERROR             = "Unhanded http error: {}"
+STR_UNHANDLED_HTTP_ERROR             = "Unhandled http error: {}"
 STR_TRY_AGAIN                        = "Try again"
 
 STR_PROVIDE_IMPCENTRAL_API_URL       = "Please provide the impCentral API URL.\n\nNOTE: always use the default, unless you use a private Electric Imp Cloud!"
 STR_IMPCENTRAL_API_URL               = "Electric Imp impCentral API URL:"
-STR_PLEASE_CHECK_URL                 = "Failed to request {} api, please check url"
+STR_PLEASE_CHECK_URL                 = "Failed to request {} API, please check the impCentral API URL"
 
 STR_MESSAGE_ASSIGN_DEVICE            = "There is no devices in current device group. Please assign some device to start logging."
 STR_MESSAGE_DEVICE_LIST_EMPTY        = "The device list is empty, please register device first."
