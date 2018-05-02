@@ -1232,7 +1232,7 @@ class ImpCheckCloudUrlCommand(BaseElectricImpCommand):
         self.window.show_input_panel(STR_IMPCENTRAL_API_URL, self.cloud, self.on_url_provided, None, None)
 
     def on_url_provided(self, url):
-        self.cloud = url
+        self.cloud = url.strip().rstrip('/')
 
         if not ImpCentral(self.env).is_valid_api_path(url):
             if not sublime.ok_cancel_dialog(STR_PLEASE_CHECK_URL.format(url)):
