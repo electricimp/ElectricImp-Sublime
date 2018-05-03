@@ -16,7 +16,7 @@ STR_FOLDER_EXISTS                       = "The folder {} already exists. Do you 
 STR_BUILD_API_KEY                       = "Electric Imp Build API key: "
 STR_INVALID_API_KEY                     = "The Build API key you entered is invalid. Please enter it again"
 STR_AGENT_URL_COPIED                    = "The agent URL for device ID {} has been copied to the clipboard:\n\n{}"
-STR_FAILED_TO_GET_LOGS                  = "An error returned for logs request" ****
+STR_FAILED_TO_GET_LOGS                  = "An error returned for logs request"
 
 STR_INVALID_CREDENTIALS                 = "Your entered an invalid username and/or password. Please enter them again"
 STR_USER_ID                             = "Username or email: "
