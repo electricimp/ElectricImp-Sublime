@@ -2456,7 +2456,7 @@ class LogManager:
                 # check that stream was not dropped
                 delta = datetime.datetime.now() - self.keep_alive
                 if delta.seconds > PL_KEEP_ALIVE_TIMEOUT:
-                    log_debug("Did not get keep alive on-time. Trigger log reset.")
+                    log_debug("Did not hear from the server for awhile now. Reset the logs.")
                     self.reset()
 
             return logs
