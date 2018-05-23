@@ -2182,9 +2182,11 @@ class ImpLoadCodeCommand(BaseElectricImpCommand):
 
         if deployment and deployment["attributes"]:
             with open(agent_file, "w", encoding="utf-8") as file:
-                file.write(deployment["attributes"]["agent_code"])
+                code = deployment["attributes"]["agent_code"].replace("\r", "")
+                file.write(code)
             with open(device_file, "w", encoding="utf-8") as file:
-                file.write(deployment["attributes"]["device_code"])
+                code = deployment["attributes"]["device_code"].replace("\r", "")
+                file.write(code)
             # save the latest deployment id
             self.update_settings(EI_DEPLOYMENT_ID, deployment["id"])
         # trigger an original event on complete
