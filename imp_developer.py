@@ -1182,6 +1182,7 @@ class ImpCheckNodejsPathCommand(BaseElectricImpCommand):
         # Loop back to the main settings check
         self.on_action_complete()
 
+
 #
 # Check the Builder path
 # Builder uses for preprocessing libraries
@@ -1199,7 +1200,6 @@ class ImpCheckBuilderPathCommand(BaseElectricImpCommand):
         if need_to_confirm and not sublime.ok_cancel_dialog(STR_PROVIDE_BUILDER_CLI_PATH):
             self.on_action_complete(canceled=True)
             return
-        self.callback = callback
         AnfNewProject(self.window, STR_BUILDER_CLI_PATH, self.on_builder_cli_path_provided).run("/")
 
     def on_builder_cli_path_provided(self, path):
