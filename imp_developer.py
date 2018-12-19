@@ -1501,8 +1501,8 @@ class ImpCreateNewProductCommand(BaseElectricImpCommand):
         items = []
         for c in self.collaborators:
             attr = c.get("attributes")
-            if attr and attr.get("name"):
-                items.append(attr.get("name"))
+            if attr and attr.get("username"):
+                items.append(attr.get("username"))
 
         self.window.show_quick_panel(items, lambda id: self.on_collaborator_selected(id, items))
 
