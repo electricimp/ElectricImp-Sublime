@@ -351,8 +351,9 @@ class HTTP:
     @staticmethod
     def do_request(key, url, method, data=None, timeout=None, headers=None):
         log_debug("[HTTP] " + method + " " + url + " " + str(data))
-        if data:
-            data = data.encode('utf-8')
+        if not data:
+            data = ""
+        data = data.encode('utf-8')
         req = urllib.request.Request(url,
                                      headers=HTTP.get_http_headers(key, headers),
                                      data=data,
@@ -1745,7 +1746,7 @@ class ImpUnassignDeviceCommand(BaseElectricImpCommand):
     def on_device_selected(self, index, devices):
         # prevent wrong index which
         # happen on cancel
-        if (index < 0 or index >= len(devices)):
+        if index < 0 or index >= len(devices):
             log_debug("There is no device selected")
             return
         # there is no option for create new device
