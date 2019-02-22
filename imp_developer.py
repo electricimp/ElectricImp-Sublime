@@ -819,7 +819,12 @@ class Preprocessor:
                 if variable_defines:
                     for key in variable_defines:
                         args.append("-D" + key)
-                        args.append(variable_defines[key])
+                        key_str = str(variable_defines[key])
+                        if type(variable_defines[key]) is bool:
+                            key_str = "true" if variable_defines[key] else "false"
+                        elif variable_defines[key] is None:
+                            key_str = "null"
+                        args.append(key_str)
 
                 pipes = subprocess.Popen(args, cwd=proj_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 prep_out, prep_err = pipes.communicate()
