@@ -472,10 +472,24 @@ class ImpCentral:
 
     def auth(self, user_name, password):
         url = self.url + "/auth"
-        response, code = HTTP.post(None, url,
-            '{"id": "' + user_name + '", "password": "' + password + '"}',
-            headers=HttpHeaders.AUTH_HEADERS)
+        params = {
+            'id': user_name,
+            'password': password,
+        }
+        response, code = HTTP.post(
+            None, url, json.dumps(params), headers=HttpHeaders.AUTH_HEADERS
+        )
+        payload, error = self.handle_http_response(response, code)
+        return response, error
 
+    def otp_auth(self, login_token, otp):
+        url = self.url + "/auth"
+        params = {'login_token': login_token}
+        headers = HttpHeaders.AUTH_HEADERS.copy()
+        headers['X-Electricimp-OTP-Token'] = otp
+        response, code = HTTP.post(
+            None, url, json.dumps(params), headers=headers
+        )
         payload, error = self.handle_http_response(response, code)
         return response, error
 
@@ -1310,8 +1324,40 @@ class ImpAuthCommand(BaseElectricImpCommand):
                 self.pwd = self.pwd + chg
             sublime.set_timeout_async(lambda: self.request_credentials(user_name, self.pwd), 0)
 
+    @staticmethod
+    def status_is_403(response):
+        errors = response.get('errors', [])
+        for error in errors:
+            if error.get('status', None) == '403':
+                return True
+
     def request_credentials(self, user_name, password):
         response, error = ImpCentral(self.env).auth(user_name, password)
+
+        if self.status_is_403(response):
+            # try to find login token for 2FA
+            login_token = None
+            for error in response['errors']:
+                meta = error.get('meta', {})
+                login_token = meta.get('login_token', None)
+                if login_token:
+                    break
+
+            # get OTP
+            if login_token:
+                self.env.window.show_input_panel(
+                    'Input one-time password from your OTP app', '',
+                    lambda otp: self.request_otp(login_token, otp), None, None,
+                )
+                return
+
+        self.on_login_complete(response, error)
+
+    def request_otp(self, login_token, otp):
+        log_debug('2FA is enabled for this account')
+
+        response, error = ImpCentral(self.env).otp_auth(login_token, otp)
+
         self.on_login_complete(response, error)
 
     def on_login_complete(self, payload, error):
