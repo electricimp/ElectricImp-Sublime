@@ -22,6 +22,7 @@ STR_INVALID_CREDENTIALS                 = "Your entered an invalid username and/
 STR_USER_ID                             = "Username or email: "
 STR_PASSWORD                            = "Password: "
 STR_PROVIDE_USER_ID                     = "Please sign in to access the Electric Imp impCloud"
+STR_PROVIDE_OTP                         = "One-time password (OTP): "
 
 STR_PRODUCT_NAME                        = "Product name: "
 STR_PRODUCT_SERVER_ERROR                = "Failed to get a list of Products"

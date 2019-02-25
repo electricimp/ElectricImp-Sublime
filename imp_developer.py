@@ -1352,7 +1352,7 @@ class ImpAuthCommand(BaseElectricImpCommand):
             # get OTP
             if login_token:
                 self.env.window.show_input_panel(
-                    'Input one-time password from your OTP app', '',
+                    STR_PROVIDE_OTP, '',
                     lambda otp: self.request_otp(login_token, otp), None, None,
                 )
                 return
