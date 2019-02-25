@@ -172,7 +172,7 @@ When you first build code (or perform any other action that requires access to t
 - The impCentral API base URL. The default value should be used, unless you are working with an Electric Imp Private impCloud.
 - The path to the Node.js executable (if not automatically detected by the plug-in).
 - The location of the Builder *cli.js* command line tool (if not automatically detected by the plug-in).
-- Your Electric Imp account user name and password.
+- Your Electric Imp account user name, password and one-time password (OTP) as needed.
 - Whether the tool should create a new project or open an existing one.
 - A Product that belongs to another user who has granted your appropriate [collaborator roles](https://developer.electricimp.com/tools/impcentral/collaboratoractions).
 - Whether the tool should create a new Device Group or select an existing one.
